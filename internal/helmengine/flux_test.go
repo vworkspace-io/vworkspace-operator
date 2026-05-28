@@ -35,9 +35,9 @@ func TestFluxEngineEnsureRelease(t *testing.T) {
 }
 
 func TestMapHelmReleaseConditions(t *testing.T) {
-	reason, message, ready, reconciling, degraded := mapHelmReleaseConditions([]interface{}{
-		map[string]interface{}{"type": "Ready", "status": "True", "message": "all good"},
-		map[string]interface{}{"type": "Reconciling", "status": "False"},
+	reason, message, ready, reconciling, degraded := mapHelmReleaseConditions([]any{
+		map[string]any{"type": "Ready", "status": "True", "message": "all good"},
+		map[string]any{"type": "Reconciling", "status": "False"},
 	})
 	if !ready || reconciling || degraded {
 		t.Fatalf("unexpected snapshot: ready=%v reconciling=%v degraded=%v", ready, reconciling, degraded)
