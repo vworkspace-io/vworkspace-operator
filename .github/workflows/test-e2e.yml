@@ -2,7 +2,13 @@ name: E2E Tests
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+
+concurrency:
+  group: ${{ github.repository }}-self-hosted
+  cancel-in-progress: false
 
 permissions: {}
 
