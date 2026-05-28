@@ -1,0 +1,41 @@
+# vworkspace-operator .gitignore
+#
+# Conventions:
+# - Build outputs go under bin/ and dist/.
+# - Generated kustomize render output lives under config/render/.
+# - Helm chart archives (*.tgz) are release artifacts and are not committed.
+
+# Go build outputs and tooling
+bin/
+dist/
+vendor/
+*.test
+*.out
+*.coverprofile
+coverage.txt
+cover.*
+__debug_bin*
+
+# Kubebuilder / controller-runtime
+config/render/
+
+# Helm
+*.tgz
+
+# Editor and IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+.DS_Store
+
+# Local environment
+.envrc
+.env
+.env.*
+!.env.example
+
+# Misc
+*.log
+.tmp/

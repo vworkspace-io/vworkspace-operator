@@ -1,0 +1,73 @@
+vworkspace-operator — high-level architecture
+=============================================
+
++-----------------------------------------------------------------------------+
+| ODOO (single install, owner-controlled)                                     |
+|                                                                             |
+|  - App catalog + policy                                                     |
+|  - ApplicationInstance / Operation intent (desired state)                   |
+|  - Cluster registry + per-cluster identity                                  |
+|  - Audit log + Discuss surface for the AI assistant                         |
+|                                                                             |
+|  /api/agent/jobs     /api/agent/jobs/{id}/ack    /api/agent/events          |
+|  /api/agent/jobs/{id}/status                     /api/agent/jobs/{id}/result|
++-----------------------------------------------------------------------------+
+              |                       |                          |
+   Push       |                   Pull (default)           GitOps
+   (Odoo -> K8s API)        (Cluster -> Odoo, outbound)  (Odoo -> Git; Cluster -> Git)
+              |                       |                          |
+              v                       v                          v
++---------------------------------------------------------------------+
+| Cluster A                                                            |
+|                                                                      |
+|  +-----------------------------+    +----------------------------+   |
+|  | vworkspace-app-operator     |    | Flux Helm Controller       |   |
+|  | - reconciles                |    | - reconciles HelmRelease   |   |
+|  |     ApplicationInstance     |    | - install / upgrade /      |   |
+|  | - creates HelmRelease       |--->|   rollback / drift remedy  |   |
+|  | - reconciles Operation CRs  |    +-------------+--------------+   |
+|  | - drives connectivity loop  |                  |                  |
+|  +-+---------------------------+                  v                  |
+|    |                                  Chart renders K8s objects      |
+|    |                              (Deployments, Services, Ingresses, |
+|    |                                  Jobs, PVCs, Secrets, ...)      |
+|    |                                                                 |
+|    +-> Ops controllers driven by Operation CRs:                      |
+|        - Velero            (Backup, Restore)                          |
+|        - CSI snapshots     (VolumeSnapshot)                           |
+|        - VolSync           (ReplicationSource / Destination)          |
+|        - Argo Workflows    (Workflow templates: prechecks ->          |
+|                             quiesce -> snapshot -> verify -> ...)     |
+|        - Kubernetes Jobs   (one-shot tasks)                           |
+|        - Helm hooks        (chart-provided migration / upgrade jobs)  |
+|                                                                      |
+|    Supporting cluster add-ons:                                       |
+|        - cert-manager           (TLS for ingress and chart hooks)     |
+|        - external-secrets       (chart values from secret stores)     |
+|        - Ingress controller     (north-south routing)                 |
+|                                                                      |
+|    Operator self-state:                                              |
+|        - Cluster CR              (Connected / Disconnected /          |
+|                                   Authenticated / ControllersHealthy) |
++---------------------------------------------------------------------+
+
++---------------------------------------------------------------------+
+| Cluster B (same pattern, isolated blast radius)                     |
+|                                                                      |
+|  +-----------------------------+    +----------------------------+   |
+|  | vworkspace-app-operator     |    | Flux Helm Controller       |   |
+|  +-----------------------------+    +----------------------------+   |
+|  Ops controllers: Velero, CSI snapshots, VolSync, Argo Workflows,    |
+|  Kubernetes Jobs, Helm hooks                                         |
+|  Add-ons: cert-manager, external-secrets, Ingress controller         |
++---------------------------------------------------------------------+
+
+Key properties
+--------------
+- One operator per cluster. The cluster boundary is the trust boundary.
+- The same CRDs (ApplicationInstance, Operation) and the same in-cluster
+  reconciliation loop run in every connectivity mode. Only the transport
+  between Odoo and the cluster changes.
+- Odoo never holds a kubeconfig in the default Pull-mode deployment.
+- An Odoo outage does not take down running applications; the operator
+  keeps reconciling the last applied desired state.

@@ -1,0 +1,7 @@
+# vworkspace-operator code owners
+#
+# See https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Catch-all: every change requires review from the maintainers team.
+
+* @vworkspace-io/maintainers

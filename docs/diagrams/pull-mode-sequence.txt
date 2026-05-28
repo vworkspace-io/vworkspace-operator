@@ -1,0 +1,105 @@
+vworkspace-operator — Pull-mode apply sequence
+==============================================
+
+End-to-end flow for "Odoo asks cluster-prod-1 to ensure the ApplicationInstance
+nextcloud-myteam exists in namespace org-myteam, with chart nextcloud 6.6.0."
+
+Operator                Odoo               Cluster                Flux Helm
+(in cluster)         (control plane)      K8s API server          Controller
+   |                      |                     |                     |
+   | 1. GET /api/agent/jobs?cluster=cluster-prod-1&wait=30s            |
+   |    Authorization: Bearer <token>           |                     |
+   |    Accept: application/vnd.vworkspace.agent.v1+json               |
+   |--------------------->|                     |                     |
+   |                      |  long-poll holds open until job ready     |
+   |                      |  (or wait elapses)                        |
+   |                      |                     |                     |
+   | 2. 200 OK            |                     |                     |
+   |    { "jobs": [ {                          |                     |
+   |        "id": "j-01HXYZA1B2C3",            |                     |
+   |        "kind": "apply",                   |                     |
+   |        "payload": { ApplicationInstance manifest },              |
+   |        "idempotencyKey":                                          |
+   |          "applicationinstance/org-myteam/nextcloud-myteam@7",    |
+   |        "createdAt": "...", "expiresAt": "..." } ] }              |
+   |<---------------------|                     |                     |
+   |                      |                     |                     |
+   | 3. POST /api/agent/jobs/j-01HXYZA1B2C3/ack                        |
+   |--------------------->|                     |                     |
+   |          204 No Content                    |                     |
+   |<---------------------|                     |                     |
+   |                      |                     |                     |
+   | 4. Server-side apply ApplicationInstance to local API server     |
+   |    fieldManager: vworkspace-operator                              |
+   |    labels: app.vworkspace.io/managed-by=odoo,                    |
+   |            app.vworkspace.io/cluster-id=cluster-prod-1            |
+   |----------------------------------------->|                     |
+   |          201 Created (or 200 OK on update)                       |
+   |<-----------------------------------------|                     |
+   |                      |                     |                     |
+   | 5. Reconcile ApplicationInstance:                                |
+   |    - materialize OCIRepository (chart source)                    |
+   |    - materialize HelmRelease nextcloud-myteam                    |
+   |      labels: app.vworkspace.io/application-instance=             |
+   |              nextcloud-myteam                                    |
+   |----------------------------------------->|                     |
+   |          200 OK                            |                     |
+   |<-----------------------------------------|                     |
+   |                      |                     |                     |
+   |                      |        watch event: HelmRelease created  |
+   |                      |                     |-------------------->|
+   |                      |                     |                     |
+   | 6. POST /api/agent/jobs/j-01HXYZA1B2C3/status                     |
+   |    { "phase": "Reconciling",                                     |
+   |      "conditions": [ { "type": "Reconciling", "status": "True",  |
+   |                        "reason": "HelmReleaseInstalling" } ] }   |
+   |--------------------->|                     |                     |
+   |          204 No Content                    |                     |
+   |<---------------------|                     |                     |
+   |                      |                     |                     |
+   |                      |   Flux fetches chart from OCIRepository   |
+   |                      |   and renders K8s objects                 |
+   |                      |   (Deployments, Services, Ingresses, ...) |
+   |                      |                     |<--------------------|
+   |                      |                     |   200 OK (applies)  |
+   |                      |                     |-------------------->|
+   |                      |                     |                     |
+   |                      |   Flux updates HelmRelease.status:        |
+   |                      |   Ready=True, reason=InstallSucceeded     |
+   |                      |                     |<--------------------|
+   |                      |                     |                     |
+   | 7. Operator informer sees HelmRelease Ready=True,                |
+   |    updates ApplicationInstance.status.conditions:                |
+   |      Ready=True (reason HelmReleaseReady),                       |
+   |      Reconciling=False (reason Stable)                           |
+   |    Emits Kubernetes Event "ReleaseReady".                        |
+   |----------------------------------------->|                     |
+   |          200 OK                            |                     |
+   |<-----------------------------------------|                     |
+   |                      |                     |                     |
+   | 8. POST /api/agent/jobs/j-01HXYZA1B2C3/result                    |
+   |    { "outcome": "succeeded",                                     |
+   |      "appliedRef": { kind: "ApplicationInstance",                |
+   |                      namespace: "org-myteam",                    |
+   |                      name: "nextcloud-myteam",                   |
+   |                      uid: "8c9e5a3d-...", generation: 7 },       |
+   |      "timestamp": "2026-05-28T10:00:15Z" }                       |
+   |--------------------->|                     |                     |
+   |          204 No Content                    |                     |
+   |<---------------------|                     |                     |
+   |                      |                     |                     |
+   |       (job closed; further updates flow through                  |
+   |        POST /api/agent/events as ConditionTransition events)     |
+   |                      |                     |                     |
+
+Notes
+-----
+- Replays of the same job (same idempotencyKey) are no-ops; the operator
+  re-applies under its stable field manager, sees no change, and posts a
+  result with outcome=noop.
+- A failure during Flux reconciliation flows back as a result with
+  outcome=failed and an explicit error; subsequent recoveries flow as
+  ConditionTransition events on /api/agent/events.
+- If the operator loses connectivity between step 5 and step 8, status
+  and result events are queued locally and flushed on reconnect. The
+  in-cluster reconciliation continues regardless.

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/vworkspace-io/vworkspace-operator/discussions
+    about: Ask a question, share an idea, or discuss design. Prefer this over an issue for open-ended topics.
+  - name: Security vulnerability
+    url: https://github.com/vworkspace-io/vworkspace-operator/blob/main/SECURITY.md
+    about: Do not report security issues in public. Follow the private disclosure process.
+  - name: vWorkspace parent project
+    url: https://github.com/vworkspace-io/vworkspace
+    about: For issues about the Odoo control plane, the catalog, or the broader product, please file against the parent repository.
