@@ -1,11 +1,11 @@
 # Build and test
 
-**Status:** Alpha — Makefile targets are the intended interface.
-**Last Updated:** 2026-05-28
+**Status:** Alpha — Makefile targets match the Phase 1 scaffold.
+**Last Updated:** 2026-05-29
 
 This document is the cookbook for building, testing, and running the operator during development. The Makefile is the canonical interface; if a command does something other than what this document says, the Makefile is right and this document is stale. Open an issue (or a PR) when that happens.
 
-The commands below are placeholders in the sense that exact tool versions evolve. The argument names (`IMG=...`, `KUBECONFIG=...`) and the target names (`make manifests`, `make test`) are stable.
+The commands below reflect the current repository. Tool versions are pinned in the `Makefile` (`controller-gen`, `kustomize`, `envtest`, `golangci-lint`).
 
 ## Make targets
 
@@ -33,7 +33,7 @@ The commands below are placeholders in the sense that exact tool versions evolve
 The shortest feedback loop for changes to a reconciler:
 
 ```
-# 1. Make your code change in controllers/operation_controller.go
+# 1. Make your code change in internal/controller/operation_controller.go
 # 2. Regenerate manifests if you changed an RBAC marker
 make manifests
 # 3. Run the unit tests
@@ -45,7 +45,7 @@ kubectl apply -f config/samples/operations/backup-velero.yaml
 kubectl get operation -A -w
 ```
 
-When you change the API types under `api/v1alpha1/`, also run `make generate` to refresh the deep-copy methods.
+When you change the API types under `api/apps/v1alpha1/` or `api/ops/v1alpha1/`, also run `make generate` to refresh the deep-copy methods.
 
 ## Running unit tests and envtest
 
@@ -140,9 +140,9 @@ The same `make` targets run in CI. To reproduce a CI failure locally:
 ```
 make fmt vet lint
 make manifests generate
-git diff --exit-code   # CI fails if generated files differ
+./hack/verify-generated.sh
 make test
-make e2e
+make test-e2e    # requires kind; optional locally
 ```
 
 Running them in order matches the CI's gating set. If `git diff --exit-code` reports a diff, you forgot to commit a generated file; commit it.
