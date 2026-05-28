@@ -130,7 +130,7 @@ func (c *HTTPClient) FetchJobs(ctx context.Context, waitSeconds int) ([]Job, err
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.decodeError(resp)
 	}
@@ -147,7 +147,7 @@ func (c *HTTPClient) AckJob(ctx context.Context, jobID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusConflict {
 		return nil
 	}
@@ -160,7 +160,7 @@ func (c *HTTPClient) ReportStatus(ctx context.Context, jobID string, update Stat
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
@@ -173,7 +173,7 @@ func (c *HTTPClient) ReportResult(ctx context.Context, jobID string, result JobR
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusConflict {
 		return nil
 	}
@@ -186,7 +186,7 @@ func (c *HTTPClient) PostEvents(ctx context.Context, events EventsRequest) error
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}

@@ -15,12 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const (
-	fieldManager = "vworkspace-operator"
-	fluxHelmAPI  = "helm.toolkit.fluxcd.io/v2"
-	sourceAPI    = "source.toolkit.fluxcd.io/v1"
-)
-
 var (
 	helmReleaseGVK = schema.GroupVersionKind{Group: "helm.toolkit.fluxcd.io", Version: "v2", Kind: "HelmRelease"}
 	helmRepoGVK    = schema.GroupVersionKind{Group: "source.toolkit.fluxcd.io", Version: "v1", Kind: "HelmRepository"}
@@ -97,11 +91,12 @@ func mapHelmReleaseConditions(conditions []interface{}) (reason, message string,
 		messageVal, _ := cond["message"].(string)
 		switch typ {
 		case "Ready":
-			if status == "True" {
+			switch status {
+			case "True":
 				ready = true
 				reason = "HelmReleaseReady"
 				message = messageVal
-			} else if status == "False" {
+			case "False":
 				reason = "HelmReleaseFailed"
 				message = messageVal
 			}

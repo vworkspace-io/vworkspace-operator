@@ -171,8 +171,8 @@ func outputKey(opType opsv1alpha1.OperationType) string {
 	return "backupName"
 }
 
-func toStringMap(in map[string]string) map[string]interface{} {
-	out := make(map[string]interface{}, len(in))
+func toStringMap(in map[string]string) map[string]any {
+	out := make(map[string]any, len(in))
 	for k, v := range in {
 		out[k] = v
 	}

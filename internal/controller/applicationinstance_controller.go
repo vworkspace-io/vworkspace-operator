@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
@@ -69,7 +68,7 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	if !app.DeletionTimestamp.IsZero() {
-		return r.finalize(ctx, log, app)
+		return r.finalize(ctx, app)
 	}
 
 	if err := ValidateApplicationInstanceSpec(app); err != nil {
@@ -122,7 +121,8 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 	return ctrl.Result{}, nil
 }
 
-func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, log logr.Logger, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Uninstalling", "Removing HelmRelease")
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)

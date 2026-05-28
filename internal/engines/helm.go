@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
@@ -16,7 +17,7 @@ import (
 
 type helmParameters struct {
 	TargetVersion string                 `json:"targetVersion"`
-	ValuesPatch   map[string]interface{} `json:"valuesPatch"`
+	ValuesPatch   map[string]any `json:"valuesPatch"`
 }
 
 // HelmEngine upgrades an ApplicationInstance by patching its HelmRelease.
@@ -51,11 +52,9 @@ func (e *HelmEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation,
 		if len(params.ValuesPatch) > 0 {
 			current, _, _ := unstructured.NestedMap(hr.Object, "spec", "values")
 			if current == nil {
-				current = map[string]interface{}{}
+				current = map[string]any{}
 			}
-			for k, v := range params.ValuesPatch {
-				current[k] = v
-			}
+			maps.Copy(current, params.ValuesPatch)
 			if err := unstructured.SetNestedMap(hr.Object, current, "spec", "values"); err != nil {
 				return err
 			}
