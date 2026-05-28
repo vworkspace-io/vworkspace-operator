@@ -16,7 +16,7 @@ import (
 )
 
 type helmParameters struct {
-	TargetVersion string                 `json:"targetVersion"`
+	TargetVersion string         `json:"targetVersion"`
 	ValuesPatch   map[string]any `json:"valuesPatch"`
 }
 

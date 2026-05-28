@@ -79,9 +79,9 @@ func (e *FluxEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.Applicati
 	return snapshot, nil
 }
 
-func mapHelmReleaseConditions(conditions []interface{}) (reason, message string, ready, reconciling, degraded bool) {
+func mapHelmReleaseConditions(conditions []any) (reason, message string, ready, reconciling, degraded bool) {
 	for _, item := range conditions {
-		cond, ok := item.(map[string]interface{})
+		cond, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -190,7 +190,7 @@ func (e *FluxEngine) ensureHelmRelease(ctx context.Context, app *appsv1alpha1.Ap
 		if err := unstructured.SetNestedField(hr.Object, app.Spec.Chart.Name, "spec", "chart", "spec", "chart"); err != nil {
 			return err
 		}
-		if err := unstructured.SetNestedMap(hr.Object, map[string]interface{}{
+		if err := unstructured.SetNestedMap(hr.Object, map[string]any{
 			"kind": sourceKind,
 			"name": sourceName,
 		}, "spec", "chart", "spec", "sourceRef"); err != nil {
@@ -210,20 +210,20 @@ func (e *FluxEngine) ensureHelmRelease(ctx context.Context, app *appsv1alpha1.Ap
 	return err
 }
 
-func buildValues(app *appsv1alpha1.ApplicationInstance) (map[string]interface{}, error) {
+func buildValues(app *appsv1alpha1.ApplicationInstance) (map[string]any, error) {
 	switch app.Spec.Values.Source {
 	case appsv1alpha1.ValuesSourceInline:
 		if app.Spec.Values.Inline == nil {
 			return nil, nil
 		}
-		values := map[string]interface{}{}
+		values := map[string]any{}
 		if err := json.Unmarshal(app.Spec.Values.Inline.Raw, &values); err != nil {
 			return nil, fmt.Errorf("decode inline values: %w", err)
 		}
 		return values, nil
 	default:
 		// secretRef/configMapRef resolution is deferred to a later phase.
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
 }
 
