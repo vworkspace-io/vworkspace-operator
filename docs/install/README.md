@@ -11,10 +11,11 @@ The intended reader is a platform engineer or homelab operator who already runs 
 
 1. [prerequisites.md](prerequisites.md) — Kubernetes version, CNI, default StorageClass with snapshot support, ingress controller, egress to Odoo, RBAC required to install.
 2. [quickstart.md](quickstart.md) — The supported install path: one Helm install plus one registration command. Validation steps.
-3. [kubernetes-distros.md](kubernetes-distros.md) — Distro-specific gotchas for k3s, Talos, Harvester, EKS/GKE/AKS, and a single-node Docker host running embedded k3s.
-4. [cluster-bootstrap.md](cluster-bootstrap.md) — The six-step bootstrap in full, including the one-time registration token exchange in Odoo.
-5. [offline-and-airgapped.md](offline-and-airgapped.md) — Image mirroring, OCI chart mirroring, transferring the registration token, configuring HTTP/HTTPS proxy for outbound Pull-mode connections.
-6. [uninstall.md](uninstall.md) — Pause reconciliation, optional final backup, delete `Cluster`, `helm uninstall`. What persists, how to fully purge.
+3. [helm.md](helm.md) — Full Helm chart reference, values, kind validation, upgrade and uninstall.
+4. [kubernetes-distros.md](kubernetes-distros.md) — Distro-specific gotchas for k3s, Talos, Harvester, EKS/GKE/AKS, and a single-node Docker host running embedded k3s.
+5. [cluster-bootstrap.md](cluster-bootstrap.md) — The six-step bootstrap in full, including the one-time registration token exchange in Odoo.
+6. [offline-and-airgapped.md](offline-and-airgapped.md) — Image mirroring, OCI chart mirroring, transferring the registration token, configuring HTTP/HTTPS proxy for outbound Pull-mode connections.
+7. [uninstall.md](uninstall.md) — Pause reconciliation, optional final backup, delete `Cluster`, `helm uninstall`. What persists, how to fully purge.
 
 ## Choosing an install path
 

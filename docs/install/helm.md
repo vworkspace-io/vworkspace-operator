@@ -1,0 +1,170 @@
+# Helm install guide
+
+**Status:** Alpha
+**Last Updated:** 2026-05-29
+
+This document is the full reference for installing `vworkspace-operator` with the in-repo Helm chart at `charts/vworkspace-operator/`. For the shortest path, start with [quickstart.md](quickstart.md) Option A.
+
+The chart installs **only** the operator controller, its CRDs, and RBAC. Flux, Velero, cert-manager, and other prerequisites remain separate — see [prerequisites.md](prerequisites.md).
+
+## Prerequisites
+
+- Kubernetes 1.28 or newer with `cluster-admin` access via `kubectl`.
+- Helm 3.13 or newer.
+- A container registry pull path for `vworkspace/vworkspace-operator` (Docker Hub by default) or a locally built image.
+- Optional: [kind](https://kind.sigs.k8s.io/) for local validation (`hack/validate-helm-kind.sh`).
+
+## Install from repository checkout
+
+```bash
+helm install vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --create-namespace \
+  --set image.tag=latest
+```
+
+The release name (`vworkspace-operator`) and namespace (`vworkspace-system`) are conventions. The chart works with any release name; if you change the namespace, set `Cluster.spec` and registration commands to match.
+
+### Tested values (kind validation)
+
+These values are exercised by `./hack/validate-helm-kind.sh`:
+
+| Key | Value | Notes |
+|-----|-------|-------|
+| `image.repository` | `vworkspace/vworkspace-operator` | Chart default |
+| `image.tag` | `latest` or locally built `helm-validate` | Use `latest` when pulling from Docker Hub |
+| `crds.install` | `true` | Installs ApplicationInstance, Operation, Cluster CRDs |
+| `agent.enabled` | `false` | Enable after cluster registration |
+| `agent.odooBaseUrl` | Odoo or mock URL | Required when `agent.enabled=true` |
+| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Written by registration |
+
+Example with Pull-mode enabled against mock Odoo (local dev):
+
+```bash
+helm install vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --create-namespace \
+  --set image.tag=latest \
+  --set agent.enabled=true \
+  --set agent.odooBaseUrl=http://mock-odoo:8080
+```
+
+## Values reference
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `image.repository` | `vworkspace/vworkspace-operator` | Operator container image |
+| `image.tag` | Chart `appVersion` | Image tag (`latest` for CI-published builds on `main`) |
+| `image.pullPolicy` | `IfNotPresent` | Kubernetes pull policy |
+| `replicaCount` | `1` | Manager Deployment replicas |
+| `crds.install` | `true` | Render CRDs from `crds/` via chart template |
+| `agent.enabled` | `false` | Start Pull-mode job poller |
+| `agent.odooBaseUrl` | `https://odoo.example.org` | Odoo base URL (flag `--odoo-base-url`) |
+| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret with `token`, `cluster-id`, `odoo-base-url` |
+| `agent.pollIntervalSeconds` | `30` | Long-poll interval |
+| `rbac.create` | `true` | ClusterRole and ClusterRoleBinding |
+| `serviceAccount.create` | `true` | Dedicated ServiceAccount |
+
+See [charts/vworkspace-operator/values.yaml](../../charts/vworkspace-operator/values.yaml) for manager flags, resources, and scheduling.
+
+## CRD installation
+
+CRDs ship under `charts/vworkspace-operator/crds/` and are applied when `crds.install=true` through `templates/crds.yaml` (Helm template glob). This matches the Phase 1d-b pattern: one release installs CRDs and the Deployment together.
+
+To manage CRDs outside Helm (GitOps or cluster bootstrap), set `crds.install=false` and apply CRDs separately:
+
+```bash
+kubectl apply -f charts/vworkspace-operator/crds/
+```
+
+## Post-install: register and enable agent
+
+After `helm install`, the operator is running but not yet connected to Odoo.
+
+1. **Register** — exchange a one-time token for bootstrap credentials ([cluster-bootstrap.md](cluster-bootstrap.md)):
+
+   ```bash
+   kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
+     /manager register \
+       --token=<one-time-token> \
+       --odoo-endpoint=https://workspace.example.org \
+       --cluster-name=cluster-prod-1
+   ```
+
+   Registration creates `Secret/vworkspace-agent-credentials` in the release namespace.
+
+2. **Enable Pull-mode** (if not already set at install time):
+
+   ```bash
+   helm upgrade vworkspace-operator ./charts/vworkspace-operator \
+     -n vworkspace-system \
+     --reuse-values \
+     --set agent.enabled=true \
+     --set agent.odooBaseUrl=https://workspace.example.org
+   ```
+
+3. **Validate** — see [quickstart.md](quickstart.md) Step 3.
+
+Helm prints the same hints in the release notes (`NOTES.txt`).
+
+## Upgrade and uninstall
+
+Upgrade after changing values or image tag:
+
+```bash
+helm upgrade vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --reuse-values \
+  --set image.tag=<new-tag>
+```
+
+Uninstall the release ([uninstall.md](uninstall.md)):
+
+```bash
+helm uninstall vworkspace-operator -n vworkspace-system
+```
+
+CRDs installed by the chart are not removed automatically. Delete them explicitly if decommissioning the cluster:
+
+```bash
+kubectl delete -f charts/vworkspace-operator/crds/ --ignore-not-found
+```
+
+## Local validation on kind
+
+Run the automated check (creates a kind cluster, installs the chart, waits for Ready, optional Flux CRDs):
+
+```bash
+chmod +x hack/validate-helm-kind.sh
+./hack/validate-helm-kind.sh
+```
+
+Environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `KIND_CLUSTER` | `vworkspace-operator-helm-validate` | kind cluster name |
+| `USE_PUBLISHED_IMAGE` | `0` | Set to `1` to pull `latest` from Docker Hub instead of building locally |
+| `INSTALL_FLUX_CRDS` | `false` | Apply Flux `crds/core.yaml` for HelmRelease CRD smoke check |
+| `DELETE_CLUSTER` | `true` | Delete kind cluster when the script created it |
+
+Or via Makefile:
+
+```bash
+make validate-helm-kind
+```
+
+## Render without applying
+
+```bash
+helm template vworkspace-operator ./charts/vworkspace-operator \
+  --namespace vworkspace-system \
+  --set agent.enabled=true
+```
+
+## Related material
+
+- [quickstart.md](quickstart.md) — Supported install path and validation steps.
+- [cluster-bootstrap.md](cluster-bootstrap.md) — Registration token flow on the Odoo side.
+- [container-images.md](container-images.md) — Published tags and registry secrets.
+- [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) — Chart maintainer notes.
