@@ -34,8 +34,11 @@ kubectl -n vworkspace-system rollout status deploy/vworkspace-app-operator --tim
 The operator needs to know who it is. Generate a one-time registration token in Odoo (Cluster Registry → New Cluster → Issue registration token) and exchange it via either the CLI helper:
 
 ```
-kubectl -n vworkspace-system exec deploy/vworkspace-app-operator \
-  -- vworkspace-app-operator register --token=<one-time-token>
+kubectl -n vworkspace-system exec deploy/controller-manager -- \
+  /manager register \
+    --token=<one-time-token> \
+    --odoo-endpoint=https://workspace.example.org \
+    --cluster-name=cluster-prod-1
 ```
 
 …or by applying a `Cluster` CR that carries the token:
@@ -48,30 +51,19 @@ metadata:
   name: cluster-prod-1
   namespace: vworkspace-system
 spec:
-  connectivityMode: pull
-  odoo:
-    endpoint: https://workspace.example.org
-  registration:
-    token: <one-time-token>
+  clusterId: cluster-prod-1
+  odooBaseUrl: https://workspace.example.org
+  registrationToken: <one-time-token>
 EOF
 ```
 
 The two paths produce identical results. The CLI helper is convenient for terminals; the CR path is convenient for GitOps and for the air-gapped install where the token is delivered out of band.
 
-The operator's `Cluster` reconciler exchanges the token for a long-lived bootstrap credential ([../security/authentication.md](../security/authentication.md)), persists it in a Kubernetes `Secret`, and begins pulling jobs when Pull-mode is enabled.
+The operator's `Cluster` reconciler exchanges the token for a long-lived bootstrap credential ([../security/authentication.md](../security/authentication.md)), persists it in `Secret/vworkspace-agent-credentials`, clears `spec.registrationToken`, and sets `status.credentialStatus.registrationTokenConsumed=true`.
 
 ### Enable the Pull-mode agent
 
-Create a Secret with the bootstrap credential (or set equivalent flags on the Deployment):
-
-```bash
-kubectl -n vworkspace-system create secret generic vworkspace-agent-credentials \
-  --from-literal=odoo-base-url=https://workspace.example.org \
-  --from-literal=cluster-id=cluster-prod-1 \
-  --from-literal=token='<long-lived-token>'
-```
-
-Patch the operator Deployment to enable the agent loop:
+Patch the operator Deployment to enable the agent loop (credentials are loaded from the Secret written during registration):
 
 ```bash
 kubectl -n vworkspace-system patch deploy controller-manager \
@@ -84,6 +76,8 @@ kubectl -n vworkspace-system patch deploy controller-manager \
     ]}
   ]'
 ```
+
+After registration completes, the agent runtime reloads credentials from the Secret automatically; no manual Secret creation is required when using the registration flow above.
 
 See [../connectivity/pull-mode.md](../connectivity/pull-mode.md) for the full flag and Secret key reference.
 

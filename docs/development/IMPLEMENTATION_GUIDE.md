@@ -74,21 +74,31 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 - [x] `internal/agent/credentials_test.go` — Secret loading.
 - [x] `internal/helmengine/flux_test.go` — secretRef/configMapRef values.
 
-### Phase 1c — Install path and samples (next)
+### Phase 1c — Install path and registration (in progress)
 
-**Goal:** Documented end-to-end path on kind/k3s.
+**Goal:** Documented end-to-end path on kind/k3s with cluster registration and persistent Pull-mode idempotency.
 
-| Deliverable | Path |
-|-------------|------|
-| Sample CRs | `config/samples/` |
-| Quickstart validation | `docs/install/quickstart.md` |
-| RBAC review | `config/rbac/role.yaml` vs `docs/security/rbac.md` |
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| Cluster registration flow | `internal/controller/cluster_controller.go`, `internal/agent/register.go` | Done |
+| Persistent idempotency store | `internal/agent/idempotency.go` | Done |
+| Agent runtime + credential reload | `internal/agent/runtime.go`, `cmd/main.go` | Done |
+| Pull-mode metrics | `internal/agent/metrics.go` | Done |
+| Register CLI | `internal/cli/register.go` (`manager register`) | Done |
+| Operation validating webhook (stub) | `internal/webhook/operation_webhook.go` | Done |
+| Sample Cluster CR | `config/samples/ops_v1alpha1_cluster.yaml` | Done |
+| Quickstart / bootstrap docs | `docs/install/quickstart.md`, `docs/install/cluster-bootstrap.md` | Done |
+| RBAC review | `config/rbac/role.yaml` vs `docs/security/rbac.md` | Remaining |
 
 **Acceptance criteria**
 
-- `make deploy IMG=...` installs operator + CRDs on kind.
-- Sample `ApplicationInstance` reconciles when Flux CRDs are present.
-- Velero CRD present for backup `Operation`.
+- [x] Cluster reconciler exchanges `spec.registrationToken` for bootstrap credential in Secret `vworkspace-agent-credentials`.
+- [x] Applied Pull-mode `idempotencyKey` values persist in ConfigMap across operator restarts.
+- [x] Agent poller reloads credentials from Secret after registration.
+- [x] Prometheus metrics: `vworkspace_operator_pull_job_lag_seconds`, `vworkspace_operator_connectivity_state`, `vworkspace_operator_applied_jobs_total`.
+- [ ] `make deploy IMG=...` installs operator + CRDs on kind (manual validation).
+- [ ] Sample `ApplicationInstance` reconciles when Flux CRDs are present (envtest/e2e gap).
+- [ ] Velero CRD present for backup `Operation` (documented prerequisite).
 
 ## Dependency order
 
@@ -175,5 +185,5 @@ Run everything: `make test`.
 
 1. Harden `make deploy` on kind with published Docker Hub image.
 2. Add Flux CRDs to envtest or document e2e-only Helm assertions.
-3. Registration token exchange in Cluster reconciler (credential bootstrap).
-4. Persist applied `idempotencyKey` set across operator restarts (ConfigMap).
+3. RBAC review against `docs/security/rbac.md` (Secret/ConfigMap write rules).
+4. Credential rotation (`POST /api/agent/credentials/rotate`).

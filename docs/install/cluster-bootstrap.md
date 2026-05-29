@@ -77,8 +77,8 @@ You have two equivalent paths.
 ### Path A: CLI helper
 
 ```
-kubectl -n vworkspace-system exec deploy/vworkspace-app-operator -- \
-  vworkspace-app-operator register \
+kubectl -n vworkspace-system exec deploy/controller-manager -- \
+  /manager register \
     --token=<one-time-token> \
     --odoo-endpoint=https://workspace.example.org \
     --cluster-name=cluster-prod-1
@@ -89,7 +89,7 @@ The CLI helper applies a `Cluster` CR for you and waits up to two minutes for th
 ```
 registering cluster cluster-prod-1 with https://workspace.example.org ...
 exchanged registration token for bootstrap credential
-credential persisted to Secret vworkspace-system/vworkspace-operator-credentials
+credential persisted to Secret vworkspace-system/vworkspace-agent-credentials
 Cluster cluster-prod-1 condition Connected=True (OdooReachable)
 ```
 
@@ -103,15 +103,13 @@ metadata:
   name: cluster-prod-1
   namespace: vworkspace-system
 spec:
-  connectivityMode: pull
-  odoo:
-    endpoint: https://workspace.example.org
-  registration:
-    token: <one-time-token>
+  clusterId: cluster-prod-1
+  odooBaseUrl: https://workspace.example.org
+  registrationToken: <one-time-token>
 EOF
 ```
 
-The operator's `Cluster` reconciler picks up the CR, exchanges the token with Odoo, persists the resulting credential to `Secret/vworkspace-system/vworkspace-operator-credentials`, and clears `spec.registration.token` (so the one-time token is not retained in the CR after exchange).
+The operator's `Cluster` reconciler picks up the CR, calls `POST /api/agent/register`, persists the resulting credential to `Secret/vworkspace-system/vworkspace-agent-credentials`, clears `spec.registrationToken`, and sets `status.credentialStatus.registrationTokenConsumed=true`.
 
 Watch the exchange:
 
