@@ -8,12 +8,16 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Phase 1f-a admission webhook hardening: `Operation` validation (namespace allow-list via `ops.vworkspace.io/allowed-types`, target existence, concurrency) and `ApplicationInstance` inline-secret rejection (`internal/webhook/`).
+- ApplicationInstance validating webhook (`internal/webhook/applicationinstance_webhook.go`).
+- Envtest webhook suite (`internal/webhook/webhook_envtest_test.go`) and expanded unit tests with fake client coverage.
+- Kustomize webhook bundle (`config/webhook/`, `config/default/manager_webhook_patch.yaml`) and Helm `webhooks.enabled` templates (`charts/vworkspace-operator/templates/webhook.yaml`).
 - Phase 1f-b Helm kind validation: `hack/validate-helm-kind.sh`, [docs/install/helm.md](docs/install/helm.md), chart `NOTES.txt`, values polish (`agent.odooBaseUrl`, `image.repository` default `vworkspace/vworkspace-operator`).
 - Phase 1e Pull-mode integration tests (`test/integration/pull_loop_test.go`): mock Odoo enqueue, poller `PollOnce`, applier SSA, `ApplicationInstance` reconciler with Flux engine on fake client, idempotent replay `noop`.
 - Mock Odoo test helper `test/mockodoo/testserver.go` (`NewTestServer`, job result/status inspection).
 - `hack/dev-pull-loop.sh` for local mock Odoo + operator agent workflow.
 - E2E skip placeholder for kind + mock Odoo (`test/e2e/pull_loop_test.go`, deferred to Phase 1f).
-- Operation validating webhook unit tests scaffold (`internal/webhook/operation_webhook_test.go`).
+- Operation validating webhook tests (`internal/webhook/operation_webhook_test.go`, `webhook_envtest_test.go`).
 - Helm chart scaffold at `charts/vworkspace-operator/` (Deployment, RBAC, CRDs, agent values).
 - Quickstart Option A documents in-repo `helm install` path.
 - In-repo mock Odoo Pull-mode agent API (`test/mockodoo/`) for development without real Odoo modules.

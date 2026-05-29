@@ -191,6 +191,31 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 
 **Branch:** `feat/helm-kind-validate`.
 
+#### Phase 1f-a — Admission webhook hardening (`feat/webhook-hardening`)
+
+**Goal:** Harden validating webhooks beyond the Phase 1d-c scaffold: namespace allow-lists, target existence, concurrency, and inline-secret rejection.
+
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| Shared validation | `internal/webhook/validation.go` | Done |
+| Operation webhook | `internal/webhook/operation_webhook.go` | Done |
+| ApplicationInstance webhook | `internal/webhook/applicationinstance_webhook.go` | Done |
+| Unit tests | `internal/webhook/operation_webhook_test.go` | Done |
+| Envtest suite | `internal/webhook/webhook_envtest_test.go` | Done |
+| Kustomize webhook bundle | `config/webhook/`, `config/default/manager_webhook_patch.yaml` | Done |
+| Helm webhooks | `charts/vworkspace-operator/templates/webhook.yaml`, `values.yaml` | Done |
+
+**Acceptance criteria**
+
+- [x] Reject unknown `Operation` types and types not listed in `ops.vworkspace.io/allowed-types` on the namespace.
+- [x] Reject `Operation` when target `ApplicationInstance` does not exist.
+- [x] Reject concurrent conflicting operations (e.g. second `Upgrade` while one is running).
+- [x] Reject inline secret-like values in `ApplicationInstance.spec.values.inline` (password/secret/token keys).
+- [x] Webhook unit and envtest coverage for accept and reject cases.
+- [x] `--webhooks-enabled` and Helm `webhooks.enabled` documented with TLS prerequisites.
+
+**Branch:** `feat/webhook-hardening`.
+
 #### Phase 1d-c — Admission webhooks (`feat/admission-webhooks`)
 
 **Goal:** Harden Operation validating webhook beyond type enum check.
