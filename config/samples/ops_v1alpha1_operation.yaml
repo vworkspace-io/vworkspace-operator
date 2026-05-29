@@ -1,0 +1,27 @@
+apiVersion: ops.vworkspace.io/v1alpha1
+kind: Operation
+metadata:
+  name: nextcloud-myteam-backup
+  namespace: org-myteam
+  labels:
+    app.vworkspace.io/managed-by: odoo
+    app.vworkspace.io/cluster-id: cluster-prod-1
+    app.vworkspace.io/application-instance: nextcloud-myteam
+spec:
+  targetRef:
+    apiVersion: apps.vworkspace.io/v1alpha1
+    kind: ApplicationInstance
+    name: nextcloud-myteam
+  type: Backup
+  engine: velero
+  parameters:
+    retention: "720h"
+    snapshotClassName: csi-rbd
+---
+apiVersion: ops.vworkspace.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-prod-1
+spec:
+  clusterId: cluster-prod-1
+  odooBaseUrl: https://odoo.example.com

@@ -10,10 +10,11 @@ The reader is assumed to be a Go developer who has read the [concepts chapter](.
 ## Read in order
 
 1. [contributing.md](contributing.md) — Dev workflow. Setting up a local kind cluster, installing CRDs, running the operator locally against kind, running unit tests, generating CRDs and RBAC, running envtest, debugging conditions.
-2. [project-layout.md](project-layout.md) — The intended Kubebuilder Go layout. Planned, not yet implemented. What each directory holds and where the Argo CD adapter will live later.
-3. [build-and-test.md](build-and-test.md) — Make targets and concrete commands. `make manifests`, `make generate`, `make fmt vet`, `make test`, `make docker-build`, `make deploy`, `make undeploy`. Running unit tests, envtest, and e2e tests against kind.
-4. [release-process.md](release-process.md) — SemVer pre-1.0; signed tags; container image publishing; OCI Helm chart releases; `CHANGELOG.md`; Release-Please-like vs hand-curated options; CRD conversion-webhook discipline for breaking changes.
-5. [coding-style.md](coding-style.md) — Go style: `gofmt`, `goimports`, `golangci-lint`. Naming. Logging fields. Reflection. Test layout. Conventional commits.
+2. [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) — Phase 1 handoff: sub-phases, acceptance criteria, dependency order, rollback strategy, and what to pick up next.
+3. [project-layout.md](project-layout.md) — The Kubebuilder Go layout and where vWorkspace-specific packages live.
+4. [build-and-test.md](build-and-test.md) — Make targets and concrete commands. `make manifests`, `make generate`, `make fmt vet`, `make test`, `make docker-build`, `make deploy`, `make undeploy`. Running unit tests, envtest, and e2e tests against kind.
+5. [release-process.md](release-process.md) — SemVer pre-1.0; signed tags; container image publishing; OCI Helm chart releases; `CHANGELOG.md`; Release-Please-like vs hand-curated options; CRD conversion-webhook discipline for breaking changes.
+6. [coding-style.md](coding-style.md) — Go style: `gofmt`, `goimports`, `golangci-lint`. Naming. Logging fields. Reflection. Test layout. Conventional commits.
 
 ## How this chapter differs from `CONTRIBUTING.md`
 
@@ -23,9 +24,9 @@ If you find a contradiction between this chapter and `CONTRIBUTING.md`, `CONTRIB
 
 ## Current state versus planned state
 
-The operator is in active early development; not every file in the repository tree exists yet. Where this chapter describes a layout, a tool, or a CI gate, it is the **intended** state — what the project is converging on. Where the description matches what is on disk today, it is also the current state.
+Phase 1 foundation code is on disk: CRD types under `api/apps/v1alpha1` and `api/ops/v1alpha1`, reconcilers under `internal/controller/`, Flux and operation engines, and a Pull-mode HTTP client stub. Admission webhooks, full agent job applier, and e2e coverage against kind are still in progress — see [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) for the sub-phase breakdown.
 
-The intended-vs-actual gap is called out in [project-layout.md](project-layout.md) (the Kubebuilder Go layout described there is the planned layout). The build commands in [build-and-test.md](build-and-test.md) work today against the parts of the repository that exist; commands that depend on files that have not been written yet are marked as such.
+The intended-vs-actual gap for later milestones (Argo CD adapter, workflow engines, webhooks) is tracked in [project-layout.md](project-layout.md) and [ROADMAP.md](../../ROADMAP.md).
 
 ## Related material
 

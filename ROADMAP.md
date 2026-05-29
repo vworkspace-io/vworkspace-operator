@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-29
 **Audience:** Maintainers, contributors, operators planning to adopt vworkspace-operator.
 **Scope:** This document covers the operator only. For the broader product roadmap, see the parent project's [ROADMAP.md](https://github.com/vworkspace-io/vworkspace/blob/main/docs/ROADMAP.md).
 
@@ -15,18 +15,20 @@ The operator is built incrementally. We would rather ship a small, predictable s
 - ADRs for the irreversible early decisions: Helm-first via Flux HelmRelease, Pull mode as default, two CRDs only, one operator per cluster. See [docs/adr/](docs/adr/README.md).
 - Issue and pull request templates under [.github/](.github/).
 
-## Phase 1 — MVP, `v0.0.x` (Q3 2026)
+## Phase 1 — MVP, `v0.0.x` (Q3 2026, in progress)
 
 The first working operator. Tagged as `v0.0.x` pre-releases; not yet recommended for production use.
 
-- Kubebuilder skeleton with controller-runtime; intended layout described in [docs/development/project-layout.md](docs/development/project-layout.md).
-- `ApplicationInstance` (`apps.vworkspace.io/v1alpha1`) and `Operation` (`ops.vworkspace.io/v1alpha1`) CRDs. See [docs/api/](docs/api/README.md).
-- Flux `HelmRelease` as the Helm engine. `ApplicationInstance` is reconciled into a `HelmRelease`; the Helm controller does the rest.
-- Two operation engines: `helmUpgrade` (chart version or values bump) and `velero` (namespace-scoped backup and restore). See [docs/operations/](docs/operations/README.md).
-- Pull-mode transport with HTTP long-poll and a batched status endpoint. See [docs/connectivity/pull-mode.md](docs/connectivity/pull-mode.md) and [docs/connectivity/job-protocol.md](docs/connectivity/job-protocol.md).
-- Push-mode transport for in-cluster Odoo installs.
-- Minimum RBAC and namespace isolation. No admission webhook yet; basic validation via OpenAPI schema only.
-- Bootstrap on k3s, Talos, and a single-node Docker host with embedded k3s, documented end-to-end in [docs/install/cluster-bootstrap.md](docs/install/cluster-bootstrap.md).
+- [x] Kubebuilder skeleton with controller-runtime; layout in [docs/development/project-layout.md](docs/development/project-layout.md).
+- [x] `ApplicationInstance` (`apps.vworkspace.io/v1alpha1`) and `Operation` (`ops.vworkspace.io/v1alpha1`) CRDs. See [docs/api/](docs/api/README.md). `Cluster` CR added for connectivity status.
+- [x] Flux `HelmRelease` as the Helm engine (MVP adapter). `ApplicationInstance` reconciled into `HelmRelease`.
+- [x] Two operation engines: `helm` (chart version / values bump) and `velero` (namespace-scoped backup and restore stubs).
+- [~] Pull-mode transport: HTTP client and heartbeat; job applier loop not complete. See [docs/connectivity/pull-mode.md](docs/connectivity/pull-mode.md).
+- [ ] Push-mode transport for in-cluster Odoo installs.
+- [~] Minimum RBAC generated; namespace isolation enforcement via webhook still pending.
+- [ ] Bootstrap on k3s, Talos, and single-node Docker documented end-to-end in [docs/install/cluster-bootstrap.md](docs/install/cluster-bootstrap.md).
+
+Continuations tracked in [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md).
 
 Exit criteria: A user can install the operator on a fresh k3s cluster, register it with an Odoo instance, deploy Nextcloud through Odoo, take a Velero backup, and restore it, all via the documented commands.
 

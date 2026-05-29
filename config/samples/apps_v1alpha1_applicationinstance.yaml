@@ -1,0 +1,9 @@
+apiVersion: apps.vworkspace.io/v1alpha1
+kind: ApplicationInstance
+metadata:
+  labels:
+    app.kubernetes.io/name: vworkspace-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: applicationinstance-sample
+spec:
+  # TODO(user): Add fields here

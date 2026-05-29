@@ -8,15 +8,17 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Kubebuilder v4 Go scaffold: `ApplicationInstance`, `Operation`, and `Cluster` CRDs at `v1alpha1`.
+- Flux `HelmRelease` engine adapter (`internal/helmengine`), operation engines (`helm`, `velero`), and Pull-mode HTTP agent client stub.
+- Reconcilers for ApplicationInstance, Operation, and Cluster with condition helpers and basic concurrency guards.
+- Unit and envtest coverage for validation, Helm materialization, Velero CR creation, and agent protocol parsing.
+- Makefile, multi-stage Dockerfile, CI workflow (`.github/workflows/ci.yml`), and `hack/verify-generated.sh`.
+- [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md) — Phase 1 handoff document.
+
 ### Changed
 
-### Deprecated
-
-### Removed
-
-### Fixed
-
-### Security
+- Project status from documentation-only to alpha scaffold with working `make test` / `make build`.
+- Updated development, config, and hack README files to reflect the live layout.
 
 ## [0.0.0] - 2026-05-28
 

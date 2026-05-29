@@ -51,7 +51,9 @@ Detailed documentation lives under [docs/](docs/README.md):
 
 ## Project status
 
-This is an early-stage open-source project. The CRDs are at `v1alpha1`; the API may evolve, but breaking changes will go through a conversion webhook and a deprecation window of at least one minor release (see [docs/operate/upgrades.md](docs/operate/upgrades.md)). The first public release is targeted for Q1 2027 in line with the parent project's [ROADMAP](https://github.com/vworkspace-io/vworkspace/blob/main/docs/ROADMAP.md); see this repository's [ROADMAP.md](ROADMAP.md) for operator-specific milestones.
+This is an early-stage open-source project. Phase 1 foundation code is present: Kubebuilder scaffold, `v1alpha1` CRDs, Flux and Velero engine adapters, reconcilers, and unit/envtest coverage (`make test`). Pull-mode job application and production install paths are not complete — see [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md).
+
+The CRDs are at `v1alpha1`; the API may evolve, but breaking changes will go through a conversion webhook and a deprecation window of at least one minor release (see [docs/operate/upgrades.md](docs/operate/upgrades.md)). The first public release is targeted for Q1 2027 in line with the parent project's [ROADMAP](https://github.com/vworkspace-io/vworkspace/blob/main/docs/ROADMAP.md); see this repository's [ROADMAP.md](ROADMAP.md) for operator-specific milestones.
 
 ## License
 

@@ -1,0 +1,9 @@
+# More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
+# Ignore everything by default and re-include only needed paths for the manager image.
+**
+
+!cmd/
+!api/
+!internal/
+!go.mod
+!go.sum
