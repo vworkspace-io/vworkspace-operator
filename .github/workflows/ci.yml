@@ -127,34 +127,62 @@ jobs:
 
       - name: Ensure Docker is available
         run: |
+          set -euo pipefail
           if ! command -v docker >/dev/null 2>&1; then
-            curl -fsSL https://get.docker.com | sh
-            sudo usermod -aG docker "$USER" || true
+            echo "::error::docker not installed. Pre-install on the runner (see docs/development/self-hosted-runner.md)."
+            exit 1
           fi
           if ! docker info >/dev/null 2>&1; then
-            sudo -n systemctl start docker 2>/dev/null \
-              || sudo -n service docker start 2>/dev/null \
-              || true
+            if sudo -n true 2>/dev/null; then
+              sudo -n systemctl start docker 2>/dev/null \
+                || sudo -n service docker start 2>/dev/null \
+                || true
+            fi
+            if ! docker info >/dev/null 2>&1; then
+              echo "::error::docker info failed. Add github-runner to the docker group and restart the runner service:"
+              echo "::error::  sudo usermod -aG docker github-runner"
+              exit 1
+            fi
           fi
           docker info
 
       - name: Ensure kind is available
         run: |
-          if ! command -v kind >/dev/null 2>&1; then
-            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
-            chmod +x ./kind
-            sudo install -o root -g root -m 0755 ./kind /usr/local/bin/kind
+          set -euo pipefail
+          if command -v kind >/dev/null 2>&1; then
+            kind version
+            exit 0
+          fi
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          chmod +x ./kind
+          if sudo -n true 2>/dev/null; then
+            sudo -n install -o root -g root -m 0755 ./kind /usr/local/bin/kind
+          elif install -o "$(id -u)" -g "$(id -g)" -m 0755 ./kind "$HOME/.local/bin/kind" 2>/dev/null; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          else
+            echo "::error::kind not installed and cannot install without passwordless sudo. Pre-install kind on the runner."
+            exit 1
           fi
           kind version
 
       - name: Ensure kubectl is available
         run: |
-          if ! command -v kubectl >/dev/null 2>&1; then
-            ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-            VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-            curl -LO "https://dl.k8s.io/release/${VERSION}/bin/linux/${ARCH}/kubectl"
-            chmod +x kubectl
-            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          set -euo pipefail
+          if command -v kubectl >/dev/null 2>&1; then
+            kubectl version --client
+            exit 0
+          fi
+          ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+          curl -LO "https://dl.k8s.io/release/${VERSION}/bin/linux/${ARCH}/kubectl"
+          chmod +x kubectl
+          if sudo -n true 2>/dev/null; then
+            sudo -n install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          elif install -m 0755 kubectl "$HOME/.local/bin/kubectl" 2>/dev/null; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          else
+            echo "::error::kubectl not installed and cannot install without passwordless sudo. Pre-install kubectl on the runner."
+            exit 1
           fi
           kubectl version --client
 

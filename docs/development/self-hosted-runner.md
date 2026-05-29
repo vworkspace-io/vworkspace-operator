@@ -59,6 +59,82 @@ echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.profile
 
 Or install via your distribution package manager / snap if it provides Go 1.22 or newer.
 
+
+## Runner user and sudo
+
+CI runs as the dedicated service user (for example `github-runner` on **harbor**). That user must not block non-interactive jobs.
+
+### If you set a password by mistake
+
+Setting a login password with `sudo passwd github-runner` does **not** by itself break CI, but any step that runs `sudo` will prompt for that password and the job will fail with:
+
+`sudo: a terminal is required to read the password`
+
+**Recommended — lock password login (service account):**
+
+```bash
+sudo passwd -l github-runner
+```
+
+SSH key authentication can still work; password login is disabled.
+
+**Remove the password (empty password — not recommended on exposed hosts):**
+
+```bash
+sudo passwd -d github-runner
+```
+
+### Recommended host setup (harbor)
+
+Run once as root or with sudo:
+
+```bash
+# 1) Lock password login (optional but recommended)
+sudo passwd -l github-runner
+
+# 2) Pre-install CI tools (avoids apt in the workflow)
+sudo apt-get update
+sudo apt-get install -y make build-essential git curl
+
+# 3) Docker without sudo in jobs
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker github-runner
+# Restart the runner service so group membership applies, e.g.:
+# sudo systemctl restart actions.runner.*.service
+
+# 4) Optional: kind + kubectl (or let CI install to ~/.local/bin if tools are missing)
+```
+
+### Passwordless sudo (only if you want CI to install packages)
+
+Prefer pre-installing tools above. If CI must run `apt-get` or `systemctl` as the runner user:
+
+```bash
+sudo visudo -f /etc/sudoers.d/github-runner
+```
+
+Example (narrow):
+
+```
+github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/systemctl, /usr/bin/service, /usr/bin/install
+```
+
+Broader (less secure):
+
+```
+github-runner ALL=(ALL) NOPASSWD: ALL
+```
+
+Workflow steps use `sudo -n` and fail with a clear error if NOPASSWD is not configured.
+
+### Add user to docker group (avoid sudo for Docker)
+
+```bash
+sudo usermod -aG docker github-runner
+```
+
+Restart the GitHub Actions runner service after changing groups.
+
 ## CI isolation details
 
 | Job    | Checkout path | `LOCALBIN` override              |
