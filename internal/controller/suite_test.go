@@ -81,7 +81,14 @@ var _ = AfterSuite(func() {
 })
 
 func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "bin", "k8s")
+	if dir := os.Getenv("KUBEBUILDER_ASSETS"); dir != "" {
+		return dir
+	}
+	localbin := os.Getenv("LOCALBIN")
+	if localbin == "" {
+		localbin = filepath.Join("..", "..", "bin")
+	}
+	basePath := filepath.Join(localbin, "k8s")
 	entries, err := os.ReadDir(basePath)
 	if err != nil {
 		return ""
