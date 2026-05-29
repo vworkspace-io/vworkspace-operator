@@ -113,6 +113,31 @@ func (s *Server) Events(clusterID string) []agent.Event {
 	return out
 }
 
+// JobStatuses returns interim status updates posted for a job.
+func (s *Server) JobStatuses(jobID string) []agent.StatusUpdate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, cs := range s.clusters {
+		if updates, ok := cs.statuses[jobID]; ok {
+			out := make([]agent.StatusUpdate, len(updates))
+			copy(out, updates)
+			return out
+		}
+	}
+	return nil
+}
+
+// PendingJobCount returns how many jobs are queued for a cluster.
+func (s *Server) PendingJobCount(clusterID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.clusters[clusterID]
+	if cs == nil {
+		return 0
+	}
+	return len(cs.pending)
+}
+
 // Handler returns the HTTP handler for the mock API.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(s.serveHTTP)
