@@ -35,7 +35,8 @@ type CredentialsConfig struct {
 	SecretNamespace string
 	SecretName      string
 
-	K8s client.Client
+	// K8s reads credentials; use a direct API reader before the manager cache starts.
+	K8s client.Reader
 }
 
 // Load resolves credentials: explicit flag/env values win; missing fields are filled from the Secret.

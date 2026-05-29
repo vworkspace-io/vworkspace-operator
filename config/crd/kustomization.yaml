@@ -3,6 +3,8 @@
 # It should be run by config/default
 resources:
 - bases/apps.vworkspace.io_applicationinstances.yaml
+- bases/ops.vworkspace.io_clusters.yaml
+- bases/ops.vworkspace.io_operations.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

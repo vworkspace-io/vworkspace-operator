@@ -134,7 +134,7 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 | Mock test server helper | `test/mockodoo/testserver.go` | Done |
 | Pull loop integration tests | `test/integration/pull_loop_test.go` | Done |
 | Poller single-iteration API | `internal/agent/poller.go` (`PollOnce`) | Done |
-| E2E placeholder (kind + mock deferred) | `test/e2e/pull_loop_test.go` | Skipped with reason |
+| E2E placeholder (kind + mock deferred) | `test/e2e/pull_loop_test.go` | Done (Phase 1f-c) |
 | Local dev script | `hack/dev-pull-loop.sh` | Done |
 | Documentation | `docs/development/mock-odoo.md`, this guide | Done |
 
@@ -145,9 +145,31 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 - [x] Mock Odoo records ack and terminal `succeeded` result for the job.
 - [x] Second integration test verifies idempotent replay returns `noop` on mock Odoo.
 - [x] `make test`, `make lint`, and `./hack/verify-generated.sh` pass.
-- [ ] E2e on kind with in-cluster mock Odoo sidecar (Phase 1f).
 
-**Branch:** `feat/phase-1e-e2e-pull-loop`.
+### Phase 1f-c — E2E Pull loop with mock Odoo (done)
+
+**Goal:** Ginkgo e2e on kind: in-cluster mock Odoo, operator agent enabled, registration, job enqueue, ApplicationInstance + HelmRelease, mock result.
+
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| Mock Odoo container image | `Dockerfile.mockodoo`, `make docker-build-mockodoo` | Done |
+| Mock Odoo admin enqueue API | `test/mockodoo/admin.go` | Done |
+| E2E Pull loop tests | `test/e2e/pull_loop_test.go`, `pull_loop_helpers.go` | Done |
+| Flux CRD install in e2e suite | `test/e2e/e2e_suite_test.go`, `test/utils/flux.go` | Done |
+| Optional Velero backup e2e | `test/e2e/pull_loop_test.go` (skips without CRD) | Done |
+| Documentation | `docs/development/mock-odoo.md`, this guide | Done |
+
+**Acceptance criteria**
+
+- [x] Mock Odoo runs in-cluster (Deployment + Service); operator reaches it via cluster DNS.
+- [x] Operator deployed with `--agent-enabled=true` and pre-seeded credentials Secret.
+- [x] Cluster CR registration exchanges token and persists credentials.
+- [x] Admin API enqueues `apply` job; operator poller applies `ApplicationInstance`; reconciler materializes `HelmRelease` when Flux CRDs installed.
+- [x] Mock Odoo records terminal `succeeded` result for the job.
+- [x] Optional backup operation e2e creates Velero `Backup` CR when Velero CRD installed (`E2E_INSTALL_VELERO=true`).
+- [x] `make test-e2e` passes on kind with docker.
+
+**Branch:** `feat/e2e-mock-odoo`.
 
 #### Phase 1d-b — Helm install bundle (`feat/helm-install-bundle`)
 
@@ -311,6 +333,7 @@ Disable Pull-mode by leaving `--agent-enabled=false`; in-cluster reconcilers con
 | HelmRelease materialization | `internal/helmengine` | fake client |
 | Agent HTTP + applier | `internal/agent` | httptest + fake client |
 | Pull loop (mock Odoo → applier → reconciler) | `test/integration` | fake client + mock Odoo |
+| Pull loop e2e (kind + in-cluster mock Odoo) | `test/e2e` | kind + ginkgo |
 | Reconciler integration | `internal/controller` | envtest |
 
 Run everything: `make test`.
@@ -322,9 +345,34 @@ Run everything: `make test`.
 - [ADR 0004 — Two CRDs](../adr/0004-two-crds-applicationinstance-and-operation.md)
 - [ADR 0005 — One operator per cluster](../adr/0005-one-operator-per-cluster.md)
 
+#### Phase 1f-a — Admission webhook hardening (`feat/webhook-hardening`)
+
+**Goal:** Harden validating admission webhooks for `Operation` and `ApplicationInstance` beyond the Phase 1d-c scaffold.
+
+| Deliverable | Path |
+|-------------|------|
+| Shared validation helpers | `internal/webhook/validation.go` |
+| Operation webhook | `internal/webhook/operation_webhook.go` |
+| ApplicationInstance webhook | `internal/webhook/applicationinstance_webhook.go` |
+| Unit tests | `internal/webhook/operation_webhook_test.go` |
+| Envtest integration | `internal/webhook/webhook_envtest_test.go` |
+| Kustomize webhook bundle | `config/webhook/` |
+| Helm webhook templates | `charts/vworkspace-operator/templates/webhook.yaml` |
+
+**Acceptance criteria**
+
+- [x] Reject unknown or namespace-disallowed `Operation` types (`ops.vworkspace.io/allowed-types` namespace annotation).
+- [x] Reject concurrent `Operation` requests when the target `ApplicationInstance` already has a Running/Accepted operation.
+- [x] Reject `Operation` requests whose target `ApplicationInstance` does not exist.
+- [x] Reject inline secret-like values in `ApplicationInstance.spec.values.inline`; prefer `secretRef` / `configMapRef`.
+- [x] Envtest coverage: allowed type passes, disallowed type rejected, concurrent rejected, inline secret rejected.
+- [x] `--webhooks-enabled` registers both webhooks; Helm/kustomize manifests document TLS prerequisites.
+
+**Branch:** `feat/webhook-hardening`.
+
 ## Phase 1f next session (suggested)
 
-1. Deploy mock Odoo in kind (sidecar or Service) and enable skipped e2e in `test/e2e/pull_loop_test.go`.
-2. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo).
-3. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over).
+1. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo).
+2. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over).
+3. Enable Velero backup e2e in CI (`E2E_INSTALL_VELERO=true`) once Velero CRD install is stable on runners.
 4. Sample `ApplicationInstance` with Flux controllers on kind (extend `hack/validate-helm-kind.sh` with `INSTALL_FLUX_CRDS=true`).

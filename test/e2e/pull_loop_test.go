@@ -20,14 +20,115 @@ limitations under the License.
 package e2e
 
 import (
+	"encoding/json"
+	"os/exec"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
+	"github.com/vworkspace-io/vworkspace-operator/test/utils"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// Pull-mode e2e against mock Odoo inside kind is deferred: the operator pod cannot
-// reach the test process's httptest server without a sidecar or in-cluster mock deployment.
-// Full loop coverage lives in test/integration/pull_loop_test.go (runs under make test).
-var _ = Describe("Pull-mode job loop", func() {
+var _ = Describe("Pull-mode job loop", Ordered, func() {
+	BeforeAll(func() {
+		skipUnlessKindAvailable()
+		deployMockOdoo()
+		createPullLoopNamespaces()
+		deployOperatorWithAgent()
+		startMockOdooPortForward()
+	})
+
+	AfterAll(func() {
+		stopMockOdooPortForward()
+		teardownPullLoopNamespaces()
+		teardownMockOdoo()
+		teardownOperatorWithAgent()
+	})
+
+	SetDefaultEventuallyTimeout(3 * time.Minute)
+	SetDefaultEventuallyPollingInterval(2 * time.Second)
+
+	It("registers the cluster via Cluster CR", func() {
+		applyClusterRegistrationCR()
+	})
+
 	It("applies jobs from mock Odoo through the deployed operator", func() {
-		Skip("Phase 1f: deploy mock Odoo sidecar or in-cluster mock service; see test/integration/pull_loop_test.go")
+		const (
+			appName        = "pull-loop-e2e-app"
+			jobID          = "job-e2e-pull-1"
+			idempotencyKey = "pull-loop-e2e-key-1"
+		)
+
+		app := sampleE2EApplicationInstance(appName)
+		enqueueApplyJob(jobID, idempotencyKey, app)
+
+		waitForApplicationInstance(appName)
+		waitForHelmRelease(appName)
+
+		result := waitForMockJobSucceeded(jobID)
+		Expect(result.AppliedRef).NotTo(BeNil())
+		Expect(result.AppliedRef.Kind).To(Equal("ApplicationInstance"))
+		Expect(result.AppliedRef.Name).To(Equal(appName))
+		Expect(result.AppliedRef.Namespace).To(Equal(appTestNamespace))
+	})
+
+	It("creates a Velero Backup CR from a backup operation job", func() {
+		if !utils.IsVeleroCRDsInstalled() {
+			Skip("Velero Backup CRD is not installed; install Velero CRDs in e2e BeforeSuite or set E2E_INSTALL_VELERO=true")
+		}
+
+		const (
+			opName  = "backup-e2e-1"
+			appName = "pull-loop-e2e-app"
+			jobID   = "job-e2e-backup-1"
+		)
+
+		op := &opsv1alpha1.Operation{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: opsv1alpha1.GroupVersion.String(),
+				Kind:       "Operation",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      opName,
+				Namespace: appTestNamespace,
+			},
+			Spec: opsv1alpha1.OperationSpec{
+				Type: opsv1alpha1.OperationTypeBackup,
+				TargetRef: opsv1alpha1.TargetRef{
+					Kind: "ApplicationInstance",
+					Name: appName,
+				},
+				Engine: opsv1alpha1.EngineVelero,
+				Parameters: &runtime.RawExtension{
+					Raw: []byte(`{"storageLocation":"default"}`),
+				},
+			},
+		}
+		payload, err := json.Marshal(op)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("enqueueing backup operation apply job on mock Odoo")
+		Expect(mockOdooAdminClient.EnqueueJob(pullLoopClusterID, agent.Job{
+			ID:        jobID,
+			Kind:      "apply",
+			Payload:   payload,
+			ExpiresAt: time.Now().Add(time.Hour),
+		})).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "backup", opName, "-n", appTestNamespace)
+			_, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred(), "Velero Backup CR should be created")
+		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+		result := waitForMockJobSucceeded(jobID)
+		Expect(result.Outcome).To(Equal(agent.OutcomeSucceeded))
+		Expect(result.AppliedRef).NotTo(BeNil())
+		Expect(result.AppliedRef.Kind).To(Equal("Operation"))
 	})
 })

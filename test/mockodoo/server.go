@@ -20,6 +20,9 @@ const mediaTypeV1 = "application/vnd.vworkspace.agent.v1+json"
 type Server struct {
 	mu sync.Mutex
 
+	// AdminToken when set protects /api/admin/* routes (e2e enqueue helpers).
+	AdminToken string
+
 	// registrationTokens maps one-time registration tokens to cluster IDs.
 	registrationTokens map[string]string
 	// clusters holds per-cluster state keyed by cluster ID.
@@ -159,6 +162,9 @@ func (s *Server) ensureClusterLocked(clusterID string) *clusterState {
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
+	case r.Method == http.MethodGet && path == "/healthz":
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
 	case r.Method == http.MethodPost && path == "/api/agent/register":
 		s.handleRegister(w, r)
 	case r.Method == http.MethodGet && path == "/api/agent/jobs":
@@ -174,6 +180,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleResult(w, r, jobID)
 	case r.Method == http.MethodPost && path == "/api/agent/events":
 		s.handleEvents(w, r)
+	case r.Method == http.MethodPost && path == "/api/admin/enqueue":
+		s.handleAdminEnqueue(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/api/admin/jobs/") && strings.HasSuffix(path, "/result"):
+		jobID := strings.TrimSuffix(strings.TrimPrefix(path, "/api/admin/jobs/"), "/result")
+		s.handleAdminJobResult(w, r, jobID)
 	default:
 		writeError(w, http.StatusNotFound, "NotFound", "unknown endpoint")
 	}

@@ -192,7 +192,7 @@ func main() {
 			Token:           agentToken,
 			SecretNamespace: credNamespace,
 			SecretName:      agentCredentialsSecret,
-			K8s:             mgr.GetClient(),
+			K8s:             mgr.GetAPIReader(),
 		}.Load(context.Background())
 		if err != nil {
 			setupLog.Error(err, "unable to load agent credentials")
