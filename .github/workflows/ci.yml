@@ -15,6 +15,9 @@ concurrency:
 permissions: {}
 
 env:
+  # Per-job Go caches avoid actions/cache tar conflicts on shared runners.
+  GOMODCACHE: ${{ github.workspace }}/.cache/gomod-${{ github.job }}
+  GOCACHE: ${{ github.workspace }}/.cache/gocache-${{ github.job }}
   # Isolate envtest binaries per job on shared self-hosted runners.
   LOCALBIN: ${{ github.workspace }}/bin-${{ github.job }}
 
@@ -36,10 +39,9 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: ./.github/actions/setup-go-if-needed
         with:
-          go-version-file: verify/go.mod
-          cache-dependency-path: verify/go.sum
+          working-directory: verify
 
       - name: Verify generated manifests
         working-directory: verify
@@ -64,10 +66,9 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: ./.github/actions/setup-go-if-needed
         with:
-          go-version-file: test/go.mod
-          cache-dependency-path: test/go.sum
+          working-directory: test
 
       - name: Run tests
         working-directory: test
@@ -94,10 +95,9 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: ./.github/actions/setup-go-if-needed
         with:
-          go-version-file: lint/go.mod
-          cache-dependency-path: lint/go.sum
+          working-directory: lint
 
       - name: Check linter configuration
         working-directory: lint
@@ -124,10 +124,9 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: ./.github/actions/setup-go-if-needed
         with:
-          go-version-file: e2e/go.mod
-          cache-dependency-path: e2e/go.sum
+          working-directory: e2e
 
       - name: Ensure Docker is available
         run: |

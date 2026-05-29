@@ -1,14 +1,14 @@
 # Self-hosted GitHub Actions runner
 
 **Status:** Alpha
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 This repository's CI workflow (`.github/workflows/ci.yml`) targets runners labeled `self-hosted`. Jobs run **in parallel** with isolated checkout directories (`verify/`, `test/`, `lint/`, `e2e/`) so multiple jobs on one machine do not clobber `GITHUB_WORKSPACE`.
 
 ## Recommended setup
 
 - Install **multiple** runner processes on the same host if you have spare CPU and memory (each registers with label `self-hosted`).
-- Pre-install tools below so CI skips slow `apt` steps.
+- Pre-install tools below so CI skips slow `apt` and `actions/setup-go` steps (see [Pre-installed tools profile](#pre-installed-tools-profile-fast-ci)).
 - Configure **passwordless sudo** for the runner user if you rely on CI to install missing packages (`sudo apt-get`, `systemctl start docker`). Otherwise pre-install everything in this section.
 - Give each runner its own work directory via the default GitHub Actions layout; do not share a single manual checkout path between runners.
 
@@ -153,3 +153,36 @@ Workflow concurrency for the same branch cancels in-progress runs: `group: ${{ g
 ## Registering a runner
 
 Follow [GitHub's self-hosted runner documentation](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners). Use labels `self-hosted` and `linux` to match the workflow.
+
+## Pre-installed tools profile (fast CI)
+
+When the runner host already has Go 1.22+ (matching `go` in `go.mod`), `make`, `git`, and `curl`, CI **skips** `actions/setup-go` and `apt-get` in `hack/ensure-build-tools.sh`. Typical time saved per job: **~30–90 seconds** (Go download/extract + module cache restore; apt when tools were missing).
+
+### Runner environment variables
+
+Configure these on the runner service (`.env` / `systemd` `Environment=`, or `/etc/environment`):
+
+| Variable | Purpose |
+|----------|---------|
+| `RUNNER_GO_PREINSTALLED=true` | Tells CI to disable `actions/setup-go` module cache restore/save (use when `GOMODCACHE` is pre-warmed on the host). |
+| `GOMODCACHE` | Optional shared module cache on disk (e.g. `/var/cache/github-runner/gomod`). If unset, the workflow uses per-job `${{ github.workspace }}/.cache/gomod-${{ github.job }}`. |
+| `GOCACHE` | Optional shared build cache; workflow default is `${{ github.workspace }}/.cache/gocache-${{ github.job }}`. |
+
+Pre-warm modules once on the host (as the runner user):
+
+```bash
+export GOMODCACHE="${GOMODCACHE:-/var/cache/github-runner/gomod}"
+mkdir -p "$GOMODCACHE"
+cd /path/to/vworkspace-operator
+go mod download
+```
+
+Then set `RUNNER_GO_PREINSTALLED=true` on the runner process so jobs do not tarball-restore `go.sum` via `actions/cache`.
+
+### What CI checks
+
+- **Go:** `go` on `PATH` with version ≥ minimum in job `go.mod` (see `.github/actions/setup-go-if-needed/`). Otherwise falls back to `actions/setup-go` (same as before).
+- **Build tools:** `hack/ensure-build-tools.sh` exits immediately when `make`, `gcc`, `git`, and `curl` exist.
+- **Passwordless sudo:** still used only when something is missing (Docker start, kind/kubectl install, apt).
+
+Runners **without** preinstalled Go behave unchanged: `setup-go-if-needed` runs `actions/setup-go` with caching enabled (unless you set `RUNNER_GO_PREINSTALLED=true` without pre-warming — avoid that).

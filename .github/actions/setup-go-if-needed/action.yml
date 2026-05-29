@@ -1,0 +1,57 @@
+name: Setup Go if needed
+description: Use preinstalled Go when it meets go.mod; otherwise run actions/setup-go
+inputs:
+  working-directory:
+    description: Checkout subdirectory for this job (verify, test, lint, e2e)
+    required: true
+  go-version-file:
+    description: Path to go.mod relative to working-directory
+    required: false
+    default: go.mod
+  cache-dependency-path:
+    description: go.sum path for actions/setup-go module cache
+    required: false
+    default: go.sum
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GO_VERSION_FILE: ${{ inputs.go-version-file }}
+      run: |
+        set -euo pipefail
+        min_go=$(grep -E '^go [0-9]' "${GO_VERSION_FILE}" | head -1 | awk '{print $2}')
+        if [ -z "${min_go}" ]; then
+          echo "::error::Could not read minimum Go version from ${GO_VERSION_FILE}"
+          exit 1
+        fi
+        use_setup_go=true
+        if command -v go >/dev/null 2>&1; then
+          have_go=$(go env GOVERSION | sed 's/^go//')
+          if [ "$(printf '%s\n%s\n' "${min_go}" "${have_go}" | sort -V | tail -1)" = "${have_go}" ]; then
+            use_setup_go=false
+            echo "Go preinstalled (${have_go}) meets go.mod (>= ${min_go}): $(go version)"
+            echo "GOROOT=$(go env GOROOT)" >> "${GITHUB_ENV}"
+            go_bin=$(command -v go)
+            go_bin_dir=$(dirname "${go_bin}")
+            echo "PATH=${go_bin_dir}:${PATH}" >> "${GITHUB_ENV}"
+            if [ "${RUNNER_GO_PREINSTALLED:-}" = "true" ]; then
+              echo "RUNNER_GO_PREINSTALLED=true — skipping actions/setup-go module cache"
+            fi
+          else
+            echo "Preinstalled Go ${have_go} is below go.mod minimum ${min_go}; will run actions/setup-go"
+          fi
+        else
+          echo "go not on PATH; will run actions/setup-go"
+        fi
+        echo "use_setup_go=${use_setup_go}" >> "${GITHUB_OUTPUT}"
+
+    - name: Setup Go
+      if: steps.detect.outputs.use_setup_go == 'true'
+      uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      with:
+        go-version-file: ${{ inputs.working-directory }}/${{ inputs.go-version-file }}
+        cache-dependency-path: ${{ inputs.working-directory }}/${{ inputs.cache-dependency-path }}
+        cache: ${{ env.RUNNER_GO_PREINSTALLED != 'true' }}

@@ -7,6 +7,7 @@ command -v gcc >/dev/null 2>&1 || missing+=(build-essential)
 command -v git >/dev/null 2>&1 || missing+=(git)
 command -v curl >/dev/null 2>&1 || missing+=(curl)
 if [ "${#missing[@]}" -eq 0 ]; then
+  echo "Build tools already present; skipping apt install."
   command -v make
   command -v git
   command -v curl
