@@ -49,6 +49,8 @@ sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
 
 ### Go (1.22+)
 
+See also [local-setup.md](local-setup.md) for workstation install without sudo.
+
 Use the official tarball (adjust version and architecture as needed):
 
 ```bash

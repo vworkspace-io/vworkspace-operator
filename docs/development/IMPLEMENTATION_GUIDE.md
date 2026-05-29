@@ -74,7 +74,7 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 - [x] `internal/agent/credentials_test.go` — Secret loading.
 - [x] `internal/helmengine/flux_test.go` — secretRef/configMapRef values.
 
-### Phase 1c — Install path and registration (in progress)
+### Phase 1c — Install path and registration (done)
 
 **Goal:** Documented end-to-end path on kind/k3s with cluster registration and persistent Pull-mode idempotency.
 
@@ -100,6 +100,71 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 - [ ] Sample `ApplicationInstance` reconciles when Flux CRDs are present (envtest/e2e gap).
 - [ ] Velero CRD present for backup `Operation` (documented prerequisite).
 
+### Phase 1d — Parallel tracks (mock Odoo, Helm, webhooks)
+
+Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until real Odoo modules exist in the parent vWorkspace repo.
+
+#### Phase 1d-a — Mock Odoo server (`feat/mock-odoo-server`)
+
+**Goal:** In-repo HTTP server implementing the Pull-mode agent API for dev and CI without Odoo.
+
+| Deliverable | Path |
+|-------------|------|
+| Mock server library | `test/mockodoo/server.go` |
+| Runnable binary | `test/mockodoo/cmd/mockodoo` (`go run ./test/mockodoo/cmd/mockodoo`) |
+| Poller integration tests | `test/mockodoo/server_test.go` |
+| Documentation | `docs/development/mock-odoo.md` |
+
+**Acceptance criteria**
+
+- [ ] `POST /api/agent/register` returns bootstrap token for a configured registration token.
+- [ ] `GET /api/agent/jobs` long-polls and returns enqueued jobs for the authenticated cluster.
+- [ ] `POST .../ack`, `.../status`, `.../result`, and `POST /api/agent/events` behave per [job-protocol.md](../connectivity/job-protocol.md).
+- [ ] Operator `AgentPoller` + `Applier` integration test passes against mock server (httptest).
+- [ ] `go test ./test/mockodoo/...` and `make test` pass.
+
+**Branch:** `feat/mock-odoo-server` (merge first — unblocks Pull-mode e2e against mock).
+
+#### Phase 1d-b — Helm install bundle (`feat/helm-install-bundle`)
+
+**Goal:** Helm chart installing operator, CRDs, and RBAC (complement to kustomize).
+
+| Deliverable | Path |
+|-------------|------|
+| Helm chart | `charts/vworkspace-operator/` |
+| Values | agent enabled flag, Odoo URL placeholder, image `docker.io/vworkspace/vworkspace-operator` |
+| Install docs | `docs/install/quickstart.md` — `helm install` section |
+
+**Acceptance criteria**
+
+- [ ] `helm template` renders Deployment, ServiceAccount, ClusterRole(Binding), CRDs.
+- [ ] Values override image, agent flags, and Odoo base URL.
+- [ ] Chart README or quickstart documents install on kind/k3s.
+- [ ] `make test` unchanged (chart validation optional in CI).
+
+**Branch:** `feat/helm-install-bundle` (merge after or parallel with 1d-a).
+
+#### Phase 1d-c — Admission webhooks (`feat/admission-webhooks`)
+
+**Goal:** Harden Operation validating webhook beyond type enum check.
+
+| Deliverable | Path |
+|-------------|------|
+| Webhook validation | `internal/webhook/operation_webhook.go` |
+| Shared validation | `internal/controller/operation_validation.go` |
+| Webhook tests | `internal/webhook/operation_webhook_test.go` (envtest) |
+| Kustomize enablement | cert-manager or dev self-signed in `config/webhook/` |
+
+**Acceptance criteria**
+
+- [ ] Reject unsupported `Operation` types and invalid engine/type pairs.
+- [ ] Reject concurrent conflicting operations (e.g. restore during upgrade) per namespace.
+- [ ] Reject inline secrets in referenced `ApplicationInstance` values where policy requires refs only.
+- [ ] Webhook unit/envtest coverage for accept and reject cases.
+- [ ] `--webhooks-enabled` documented with TLS prerequisites.
+
+**Branch:** `feat/admission-webhooks` (merge after 1d-a; independent of Helm chart).
+
 ## Dependency order
 
 ```mermaid
@@ -121,9 +186,10 @@ flowchart TD
 
 ### Branch strategy
 
-- `main` — merged Phase 1a/1b; container images published from CI.
-- `feat/phase-1b-pull-mode` — Phase 1b Pull-mode and CI (this session).
-- Future: `feat/phase-1c-install` for install hardening.
+- `main` — merged Phase 1a–1c; container images published from CI.
+- `feat/mock-odoo-server` — Phase 1d-a mock Odoo API.
+- `feat/helm-install-bundle` — Phase 1d-b Helm chart.
+- `feat/admission-webhooks` — Phase 1d-c validating webhook hardening.
 
 ### Daily startup checklist
 
@@ -181,9 +247,10 @@ Run everything: `make test`.
 - [ADR 0004 — Two CRDs](../adr/0004-two-crds-applicationinstance-and-operation.md)
 - [ADR 0005 — One operator per cluster](../adr/0005-one-operator-per-cluster.md)
 
-## Phase 1c next session (suggested)
+## Phase 1d next session (suggested)
 
-1. Harden `make deploy` on kind with published Docker Hub image.
-2. Add Flux CRDs to envtest or document e2e-only Helm assertions.
-3. RBAC review against `docs/security/rbac.md` (Secret/ConfigMap write rules).
-4. Credential rotation (`POST /api/agent/credentials/rotate`).
+1. Merge `feat/mock-odoo-server`; run operator against `go run ./test/mockodoo/cmd/mockodoo` locally.
+2. Merge `feat/helm-install-bundle`; validate `helm install` on kind.
+3. Merge `feat/admission-webhooks`; enable webhooks with cert-manager on dev cluster.
+4. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over).
+5. E2e job loop against mock Odoo (optional follow-up).

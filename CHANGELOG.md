@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- In-repo mock Odoo Pull-mode agent API (`test/mockodoo/`) for development without real Odoo modules.
+- [docs/development/local-setup.md](docs/development/local-setup.md) — Go install and local `make test` workflow.
+- [docs/development/mock-odoo.md](docs/development/mock-odoo.md) — mock server usage and endpoints.
+
+### Added (Phase 1c)
+
 - Cluster registration flow: `spec.registrationToken` on `Cluster`, `POST /api/agent/register` client, credential persistence to `Secret/vworkspace-agent-credentials`, and `manager register` CLI subcommand.
 - Persistent Pull-mode idempotency via ConfigMap `vworkspace-applied-jobs` (`internal/agent/idempotency.go`).
 - Agent runtime with credential reload from Secret after registration (`internal/agent/runtime.go`).
