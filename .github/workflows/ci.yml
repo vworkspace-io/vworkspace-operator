@@ -199,6 +199,29 @@ jobs:
           go mod tidy
           make test-e2e
 
+  # Optional: Helm chart validation on kind. Not enabled in CI by default because
+  # not all runners have kind/helm/docker. Run locally: ./hack/validate-helm-kind.sh
+  # helm-kind:
+  #   permissions:
+  #     contents: read
+  #   name: Helm chart (kind)
+  #   runs-on: self-hosted
+  #   steps:
+  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+  #       with:
+  #         path: helm-kind
+  #         persist-credentials: false
+  #     - name: Ensure build tools
+  #       working-directory: helm-kind
+  #       run: ./hack/ensure-build-tools.sh
+  #     - name: Validate Helm on kind
+  #       working-directory: helm-kind
+  #       env:
+  #         KIND_CLUSTER: vworkspace-operator-helm-${{ github.run_id }}
+  #       run: |
+  #         chmod +x hack/validate-helm-kind.sh
+  #         ./hack/validate-helm-kind.sh
+
   docker:
     permissions:
       contents: read
