@@ -20,6 +20,7 @@
         "terminal.integrated.shell.linux": "/bin/bash"
       },
       "extensions": [
+        "golang.go",
         "ms-kubernetes-tools.vscode-kubernetes-tools",
         "ms-azuretools.vscode-docker"
       ]
