@@ -244,7 +244,15 @@ func deployOperatorWithAgent() {
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Failed to deploy operator")
 
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "rollout", "status",
+			"deployment/vworkspace-operator-controller-manager", "-n", namespace, "--timeout=60s")
+		_, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+	}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
 	patch := fmt.Sprintf(`[
+  {"op": "replace", "path": "/spec/strategy", "value": {"type": "Recreate"}},
   {"op": "replace", "path": "/spec/template/spec/containers/0/args", "value": [
     "--leader-elect",
     "--health-probe-bind-address=:8081",
@@ -265,10 +273,10 @@ func deployOperatorWithAgent() {
 
 	Eventually(func(g Gomega) {
 		cmd := exec.Command("kubectl", "rollout", "status",
-			"deployment/vworkspace-operator-controller-manager", "-n", namespace, "--timeout=5s")
+			"deployment/vworkspace-operator-controller-manager", "-n", namespace, "--timeout=60s")
 		_, err := utils.Run(cmd)
 		g.Expect(err).NotTo(HaveOccurred())
-	}, 3*time.Minute, 2*time.Second).Should(Succeed())
+	}, 5*time.Minute, 5*time.Second).Should(Succeed())
 }
 
 func teardownOperatorWithAgent() {
