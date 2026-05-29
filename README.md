@@ -33,7 +33,13 @@ The same CRDs and the same in-cluster reconciliation loop are used in every mode
 
 ## Quick install
 
-See [docs/install/quickstart.md](docs/install/quickstart.md) for the supported install path. The short version, once the project has its first tagged release, will look like a single Helm install plus a one-line cluster-registration step that exchanges a one-time token for a long-lived bootstrap credential. The bundle installs the operator, Flux Helm Controller, cert-manager, external-secrets, and Velero on a stock Kubernetes cluster.
+See [docs/install/quickstart.md](docs/install/quickstart.md) for the supported install path. Deploy the operator image from Docker Hub:
+
+```bash
+make deploy IMG=docker.io/vworkspace/vworkspace-operator:latest
+```
+
+Enable Pull-mode with `--agent-enabled` and a credentials Secret (see [docs/connectivity/pull-mode.md](docs/connectivity/pull-mode.md)). The bundle installs the operator, Flux Helm Controller, cert-manager, external-secrets, and Velero on a stock Kubernetes cluster.
 
 ## Documentation
 
@@ -51,7 +57,7 @@ Detailed documentation lives under [docs/](docs/README.md):
 
 ## Project status
 
-This is an early-stage open-source project. Phase 1 foundation code is present: Kubebuilder scaffold, `v1alpha1` CRDs, Flux and Velero engine adapters, reconcilers, and unit/envtest coverage (`make test`). Pull-mode job application and production install paths are not complete — see [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md).
+This is an early-stage open-source project. Phase 1a/1b foundation code is present: Kubebuilder scaffold, `v1alpha1` CRDs, Flux and Velero engine adapters, reconcilers, Pull-mode job applier and poller, and unit/envtest coverage (`make test`). Container images publish to Docker Hub as `docker.io/vworkspace/vworkspace-operator` — see [docs/install/container-images.md](docs/install/container-images.md). Install path hardening remains in Phase 1c — see [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md).
 
 The CRDs are at `v1alpha1`; the API may evolve, but breaking changes will go through a conversion webhook and a deprecation window of at least one minor release (see [docs/operate/upgrades.md](docs/operate/upgrades.md)). The first public release is targeted for Q1 2027 in line with the parent project's [ROADMAP](https://github.com/vworkspace-io/vworkspace/blob/main/docs/ROADMAP.md); see this repository's [ROADMAP.md](ROADMAP.md) for operator-specific milestones.
 

@@ -1,7 +1,7 @@
 # Observability
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-29
 
 `vworkspace-operator` emits the signals an operator (the person) needs to answer "is this cluster healthy and what happened on it recently". The four surfaces are Prometheus metrics, structured JSON logs, Kubernetes events on every condition transition, and an audit-event stream posted to Odoo's `POST /api/agent/events`. Each is documented below with the concrete metric names, log fields, and endpoints.
 
@@ -18,9 +18,9 @@ The operator exposes metrics on `:8080/metrics` (the controller-runtime default)
 | `vworkspace_operator_reconcile_total`                   | Counter   | `controller=<applicationinstance|operation|cluster>`, `result=<requeue|success|error>`           | Reconciles per controller and outcome.                                                                                            |
 | `vworkspace_operator_reconcile_duration_seconds`        | Histogram | `controller`                                                                                    | Reconcile wall time. Buckets: 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s.                                       |
 | `vworkspace_operator_operation_total`                   | Counter   | `type=<Backup|Restore|Upgrade|Migration|RunCommand|Runbook>`, `engine=<velero|workflow|job|helm|helmHookJob|volsync|snapshot>`, `outcome=<succeeded|failed|cancelled|blocked>` | Operation completions, useful for SLO calculations per verb and per engine.                                                       |
-| `vworkspace_operator_pull_job_lag_seconds`              | Gauge     | (none)                                                                                          | Age (seconds) of the oldest job the operator has fetched but not yet applied. A persistent non-zero gauge indicates a stuck loop. |
+| `vworkspace_operator_pull_job_lag_seconds`              | Gauge     | (none)                                                                                          | Age (seconds) of the oldest job the operator has fetched but not yet applied. A persistent non-zero gauge indicates a stuck loop. **Planned** — not yet exported; use structured logs from `agent-poller` until Phase 2 metrics wiring. |
 | `vworkspace_operator_connectivity_state`                | Gauge     | `mode=<pull|push|gitops>`                                                                       | `1` connected, `0` reconnecting, `-1` disconnected. The same signal feeds `Cluster.status.conditions[Connected]`.                  |
-| `vworkspace_operator_event_buffer_occupancy`            | Gauge     | (none)                                                                                          | Current depth of the outbound event buffer (Pull mode). Useful to detect a slow upstream Odoo before the buffer overflows.        |
+| `vworkspace_operator_event_buffer_occupancy`            | Gauge     | (none)                                                                                          | Current depth of the outbound event buffer (Pull mode). **Planned** — `internal/agent/events.go` batches events; metric export is Phase 2. |
 | `vworkspace_operator_managed_namespaces`                | Gauge     | (none)                                                                                          | Count of namespaces carrying `app.vworkspace.io/managed-by=vworkspace`.                                                            |
 | `vworkspace_operator_credential_age_seconds`            | Gauge     | (none)                                                                                          | Age of the current bootstrap credential. Used to verify rotation is happening.                                                    |
 

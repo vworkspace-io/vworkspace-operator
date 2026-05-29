@@ -1,0 +1,7 @@
+name: Ensure build tools
+description: Install make and common build dependencies on fresh self-hosted runners
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "${GITHUB_ACTION_PATH}/../../../hack/ensure-build-tools.sh"

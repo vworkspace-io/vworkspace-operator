@@ -19,83 +19,62 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 
 ## Phase breakdown
 
-### Phase 1a — Scaffold and CRDs (done in this session)
+### Phase 1a — Scaffold and CRDs (done)
 
 **Goal:** Runnable Kubebuilder project with typed CRDs and generated manifests.
 
-| Deliverable | Path |
-|-------------|------|
-| Go module | `go.mod`, `go.sum` |
-| ApplicationInstance types | `api/apps/v1alpha1/` |
-| Operation + Cluster types | `api/ops/v1alpha1/` |
-| Generated CRDs | `config/crd/bases/*.yaml` |
-| Kustomize install layout | `config/default/`, `config/manager/`, `config/rbac/` |
-| Makefile / Dockerfile / CI | `Makefile`, `Dockerfile`, `.github/workflows/ci.yml` |
-| Condition helpers | `internal/conditions/` |
-| Label constants | `internal/labels/` |
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| Go module | `go.mod`, `go.sum` | Done |
+| ApplicationInstance types | `api/apps/v1alpha1/` | Done |
+| Operation + Cluster types | `api/ops/v1alpha1/` | Done |
+| Generated CRDs | `config/crd/bases/*.yaml` | Done |
+| Kustomize install layout | `config/default/`, `config/manager/`, `config/rbac/` | Done |
+| Makefile / Dockerfile / CI | `Makefile`, `Dockerfile`, `.github/workflows/ci.yml` | Done |
+| Condition helpers | `internal/conditions/` | Done |
+| Label constants | `internal/labels/` | Done |
 
-**Acceptance criteria**
+**Acceptance criteria:** met (`make test`, `./hack/verify-generated.sh`).
 
-- `make manifests generate` succeeds and produces committed CRD YAML.
-- `make test` passes (unit + envtest controller suite).
-- `./hack/verify-generated.sh` exits 0 on a clean tree.
-- CRD OpenAPI validates required fields on `ApplicationInstance` and `Operation`.
+### Phase 1b — Reconcilers, engines, and Pull-mode agent (done)
 
-**Tests**
-
-- `internal/controller/validation_test.go` — spec validation.
-- envtest suite bootstraps CRDs from `config/crd/bases`.
-
-### Phase 1b — Reconcilers and engines (partially done)
-
-**Goal:** Idempotent reconciliation with interface-driven engines.
+**Goal:** Idempotent reconciliation with interface-driven engines and a working Pull-mode job loop.
 
 | Deliverable | Path | Status |
 |-------------|------|--------|
 | ApplicationInstance reconciler | `internal/controller/applicationinstance_controller.go` | MVP |
 | Operation reconciler | `internal/controller/operation_controller.go` | MVP |
-| Cluster reconciler | `internal/controller/cluster_controller.go` | Stub |
-| Flux Helm engine | `internal/helmengine/flux.go` | MVP |
+| Cluster reconciler | `internal/controller/cluster_controller.go` | MVP (heartbeat) |
+| Flux Helm engine | `internal/helmengine/flux.go` | MVP (+ secretRef/configMapRef) |
 | Helm upgrade engine | `internal/engines/helm.go` | MVP |
 | Velero engine | `internal/engines/velero.go` | MVP |
 | Engine registry | `internal/engines/registry.go` | Done |
+| Agent credential loader | `internal/agent/credentials.go` | Done |
+| Job applier (SSA) | `internal/agent/applier.go` | Done |
+| Agent poller | `internal/agent/poller.go` | Done |
+| Event batcher | `internal/agent/events.go` | Done |
+| Wire agent in `cmd/main.go` | flags + goroutines | Done |
+| Docker Hub publish | `.github/workflows/ci.yml` `docker` job | Done |
 
 **Acceptance criteria**
 
-- Applying a valid `ApplicationInstance` creates `HelmRelease` + chart source (Flux).
-- Invalid spec sets `Blocked=True` without panicking.
-- `Operation` with `engine: velero` creates `velero.io/Backup`.
-- Conflicting operations on the same target set `Blocked=True` (reason `ConflictingOperation`).
-- Deleting `ApplicationInstance` removes finalizer after HelmRelease cleanup attempt.
-
-**Tests to extend**
-
-- HelmRelease materialization assertions in envtest (Flux CRDs not yet in envtest — use fake client tests in `internal/helmengine/`).
-- Operation concurrency matrix table tests.
-- Velero restore parameter validation.
-
-### Phase 1c — Pull-mode agent loop (stub)
-
-**Goal:** HTTP client matching job protocol; job application deferred.
-
-| Deliverable | Path | Status |
-|-------------|------|--------|
-| Agent interface + HTTP client | `internal/agent/client.go` | MVP |
-| Poll loop stub | `internal/agent/poller.go` | Stub |
-| Credential loading from Secret | `internal/agent/credentials.go` | Not started |
-| Server-side apply of job payloads | `internal/agent/applier.go` | Not started |
-
-**Acceptance criteria**
-
-- Unit tests parse request/response shapes (`internal/agent/client_test.go`).
-- `Cluster` reconciler reports `Connected=True` when heartbeat succeeds (mock server test).
-- Poller goroutine registered from `cmd/main.go` when env configured.
+- [x] Applying a valid `ApplicationInstance` creates `HelmRelease` + chart source (Flux).
+- [x] Invalid spec sets `Blocked=True` without panicking.
+- [x] `Operation` with `engine: velero` creates `velero.io/Backup`.
+- [x] Pull-mode `apply` / `delete` / `intent` jobs applied with field manager `vworkspace-agent`.
+- [x] Idempotent replay via `idempotencyKey`.
+- [x] `values.secretRef` / `values.configMapRef` resolved into HelmRelease values.
+- [x] Agent enabled via `--agent-enabled` and credentials Secret or flags.
+- [x] `make test` and `make lint` pass.
 
 **Tests**
 
-- httptest coverage for `FetchJobs`, `AckJob`, `ReportResult`, `PostEvents`.
+- [x] `internal/agent/applier_test.go` — apply, delete, intent, idempotency.
+- [x] `internal/agent/poller_test.go` — httptest end-to-end ack/apply/result.
+- [x] `internal/agent/credentials_test.go` — Secret loading.
+- [x] `internal/helmengine/flux_test.go` — secretRef/configMapRef values.
 
-### Phase 1d — Install path and samples (next)
+### Phase 1c — Install path and samples (next)
 
 **Goal:** Documented end-to-end path on kind/k3s.
 
@@ -121,74 +100,58 @@ flowchart TD
   B --> E[engines registry]
   E --> F[helm engine]
   E --> G[velero engine]
-  A --> H[Phase 1c: agent HTTP client]
+  A --> H[Phase 1b: agent HTTP + applier]
   H --> I[Cluster reconciler connectivity]
-  B --> J[Phase 1d: samples + install docs]
+  B --> J[Phase 1c: samples + install docs]
   D --> J
   G --> J
 ```
-
-Hard ordering:
-
-1. API types before `make manifests`.
-2. Generated CRDs before envtest controller tests.
-3. Helm engine before ApplicationInstance reconciler integration tests against real apiserver.
-4. Agent client before Pull-mode job applier.
-5. Admission webhooks (Phase 2) after validation helpers in `internal/controller/`.
 
 ## How to resume work
 
 ### Branch strategy
 
-- `main` — docs + released tags only after Phase 1 exit criteria.
-- `feat/phase-1-foundation` — active Phase 1 work (this session).
-- Future: `feat/phase-1b-agent-applier`, `feat/phase-1c-install` as focused PRs.
+- `main` — merged Phase 1a/1b; container images published from CI.
+- `feat/phase-1b-pull-mode` — Phase 1b Pull-mode and CI (this session).
+- Future: `feat/phase-1c-install` for install hardening.
 
 ### Daily startup checklist
 
 ```bash
 cd vworkspace-operator
 git fetch origin
-git checkout feat/phase-1-foundation   # or your topic branch
-make setup-envtest                     # first time only
+git checkout main   # or your topic branch
+make setup-envtest  # first time only
 make test
-make run                               # optional, against kind
+make run            # optional, against kind
 ```
 
 ### Definition of done (per sub-phase)
 
-A sub-phase is **done** when:
-
 1. All acceptance criteria above are met.
 2. `make test` and `./hack/verify-generated.sh` pass.
-3. Relevant docs updated in the same PR (not deferred).
+3. Relevant docs updated in the same PR.
 4. CHANGELOG `[Unreleased]` entry added.
-5. ROADMAP checkboxes updated.
 
 ## Rollback and versioning
 
 ### Git tags
 
 - Pre-release tags: `v0.0.x` aligned with [ROADMAP.md](../../ROADMAP.md).
-- Tag only from `main` after CI green; container image tag matches git tag.
+- Container image tag matches git tag on release.
 
 ### Feature flags
 
-Use command-line flags and environment variables (no compile-time toggles):
-
 | Flag / env | Purpose |
 |------------|---------|
-| `--odoo-base-url` / `ODOO_BASE_URL` | Enable Pull-mode client |
+| `--odoo-base-url` / `ODOO_BASE_URL` | Odoo host for Pull-mode |
 | `--agent-token` / `VWORKSPACE_AGENT_TOKEN` | Bearer token |
 | `--cluster-id` / `VWORKSPACE_CLUSTER_ID` | Cluster identity |
+| `--agent-enabled` | Start long-poll job loop |
+| `--agent-poll-interval` | Long-poll wait (default 30s) |
+| `--agent-credentials-secret` | Secret with `odoo-base-url`, `cluster-id`, `token` |
 
-Disable Pull-mode by omitting Odoo URL; reconcilers continue for in-cluster CRs.
-
-### CRD versioning
-
-- All APIs at `v1alpha1`; stored version only.
-- Breaking changes require a new API version and conversion webhook (Phase 2 scaffold in `internal/webhook/`).
-- Roll back operator Deployment independently of CRDs; CRDs are backward-compatible within `v1alpha1` unless documented.
+Disable Pull-mode by leaving `--agent-enabled=false`; in-cluster reconcilers continue.
 
 ## Testing requirements summary
 
@@ -196,10 +159,7 @@ Disable Pull-mode by omitting Odoo URL; reconcilers continue for in-cluster CRs.
 |------|---------|------|
 | ApplicationInstance validation | `internal/controller` | unit |
 | HelmRelease materialization | `internal/helmengine` | fake client |
-| Condition mapping | `internal/helmengine` | unit |
-| Engine registry | `internal/engines` | unit |
-| Velero CR creation | `internal/engines` | fake client |
-| Agent HTTP protocol | `internal/agent` | httptest |
+| Agent HTTP + applier | `internal/agent` | httptest + fake client |
 | Reconciler integration | `internal/controller` | envtest |
 
 Run everything: `make test`.
@@ -211,10 +171,9 @@ Run everything: `make test`.
 - [ADR 0004 — Two CRDs](../adr/0004-two-crds-applicationinstance-and-operation.md)
 - [ADR 0005 — One operator per cluster](../adr/0005-one-operator-per-cluster.md)
 
-## Phase 1b next session (suggested)
+## Phase 1c next session (suggested)
 
-1. Wire agent poller in `cmd/main.go` with credential Secret loader.
-2. Implement server-side apply for `apply` jobs (`internal/agent/applier.go`).
-3. Add envtest or integration test with Flux CRDs loaded.
-4. Resolve `values.secretRef` / `values.configMapRef` in helm engine.
-5. Push-mode is already CR-native; document that Pull-mode job applier is the remaining transport piece.
+1. Harden `make deploy` on kind with published Docker Hub image.
+2. Add Flux CRDs to envtest or document e2e-only Helm assertions.
+3. Registration token exchange in Cluster reconciler (credential bootstrap).
+4. Persist applied `idempotencyKey` set across operator restarts (ConfigMap).

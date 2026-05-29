@@ -16,6 +16,11 @@ import (
 
 const (
 	mediaTypeV1 = "application/vnd.vworkspace.agent.v1+json"
+
+	OutcomeSucceeded = "succeeded"
+	OutcomeFailed    = "failed"
+	OutcomeNoop      = "noop"
+	OutcomeConflict  = "conflict"
 )
 
 // Job represents a Pull-mode work item from Odoo.
