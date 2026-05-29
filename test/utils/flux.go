@@ -23,21 +23,28 @@ import (
 )
 
 const (
-	fluxVersion   = "v2.4.0"
-	fluxCRDURL    = "https://github.com/fluxcd/flux2/releases/download/" + fluxVersion + "/crds/core.yaml"
+	// helmControllerCRDURL and sourceControllerCRDURL are pinned to flux2 v2.4.0 install.yaml.
+	helmControllerCRDURL = "https://github.com/fluxcd/helm-controller/releases/download/v1.1.0/" +
+		"helm-controller.crds.yaml"
+	sourceControllerCRDURL = "https://github.com/fluxcd/source-controller/releases/download/v1.4.1/" +
+		"source-controller.crds.yaml"
 	veleroVersion = "v1.15.0"
 )
+
+var fluxCRDURLs = []string{helmControllerCRDURL, sourceControllerCRDURL}
 
 var veleroCRDURL = "https://raw.githubusercontent.com/vmware-tanzu/velero/" + veleroVersion +
 	"/config/crd/v1/bases/velero.io_backups.yaml"
 
 // InstallFluxCRDs installs minimal Flux CRDs required for HelmRelease materialization.
 func InstallFluxCRDs() error {
-	cmd := exec.Command("kubectl", "apply", "-f", fluxCRDURL)
-	if _, err := Run(cmd); err != nil {
-		return err
+	for _, url := range fluxCRDURLs {
+		cmd := exec.Command("kubectl", "apply", "-f", url)
+		if _, err := Run(cmd); err != nil {
+			return err
+		}
 	}
-	cmd = exec.Command("kubectl", "wait",
+	cmd := exec.Command("kubectl", "wait",
 		"--for=condition=Established", "crd/helmreleases.helm.toolkit.fluxcd.io", "--timeout=120s")
 	_, err := Run(cmd)
 	return err
@@ -70,9 +77,11 @@ func IsVeleroCRDsInstalled() bool {
 
 // UninstallFluxCRDs removes Flux CRDs installed for e2e (best effort).
 func UninstallFluxCRDs() {
-	cmd := exec.Command("kubectl", "delete", "-f", fluxCRDURL, "--ignore-not-found", "--wait=false")
-	if _, err := Run(cmd); err != nil {
-		warnError(err)
+	for _, url := range fluxCRDURLs {
+		cmd := exec.Command("kubectl", "delete", "-f", url, "--ignore-not-found", "--wait=false")
+		if _, err := Run(cmd); err != nil {
+			warnError(err)
+		}
 	}
 }
 

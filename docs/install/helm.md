@@ -145,7 +145,7 @@ Environment variables:
 |----------|---------|---------|
 | `KIND_CLUSTER` | `vworkspace-operator-helm-validate` | kind cluster name |
 | `USE_PUBLISHED_IMAGE` | `0` | Set to `1` to pull `latest` from Docker Hub instead of building locally |
-| `INSTALL_FLUX_CRDS` | `false` | Apply Flux `crds/core.yaml` for HelmRelease CRD smoke check |
+| `INSTALL_FLUX_CRDS` | `false` | Apply Flux helm/source controller CRDs for HelmRelease smoke check |
 | `DELETE_CLUSTER` | `true` | Delete kind cluster when the script created it |
 
 Or via Makefile:

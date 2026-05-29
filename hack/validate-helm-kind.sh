@@ -38,7 +38,9 @@ cleanup() {
   fi
   if [[ "${FLUX_CRDS_INSTALLED}" == "true" ]]; then
     log "removing Flux CRDs installed for validation"
-    kubectl delete -f "https://github.com/fluxcd/flux2/releases/download/${FLUX_VERSION}/crds/core.yaml" \
+    kubectl delete -f "https://github.com/fluxcd/helm-controller/releases/download/v1.1.0/helm-controller.crds.yaml" \
+      --ignore-not-found --wait=false
+    kubectl delete -f "https://github.com/fluxcd/source-controller/releases/download/v1.4.1/source-controller.crds.yaml" \
       --ignore-not-found --wait=false 2>/dev/null || true
   fi
   if [[ "${CREATED_CLUSTER}" == "true" && "${DELETE_CLUSTER}" == "true" ]]; then
@@ -98,7 +100,8 @@ kubectl get crd applicationinstances.apps.vworkspace.io clusters.ops.vworkspace.
 
 if [[ "${INSTALL_FLUX_CRDS}" == "true" ]]; then
   log "installing minimal Flux CRDs (${FLUX_VERSION}) for HelmRelease support"
-  kubectl apply -f "https://github.com/fluxcd/flux2/releases/download/${FLUX_VERSION}/crds/core.yaml"
+  kubectl apply -f "https://github.com/fluxcd/helm-controller/releases/download/v1.1.0/helm-controller.crds.yaml"
+  kubectl apply -f "https://github.com/fluxcd/source-controller/releases/download/v1.4.1/source-controller.crds.yaml"
   FLUX_CRDS_INSTALLED=true
   kubectl get crd helmreleases.helm.toolkit.fluxcd.io helmcharts.source.toolkit.fluxcd.io
 fi
