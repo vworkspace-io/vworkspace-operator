@@ -1,5 +1,6 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+IMG ?= docker.io/vworkspace/vworkspace-operator:$(VERSION)
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 

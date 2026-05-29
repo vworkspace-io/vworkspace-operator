@@ -1,7 +1,7 @@
 # Pull mode
 
 **Status:** Alpha — default connectivity mode.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-29
 
 Pull mode is the default. The operator initiates an outbound HTTPS connection to Odoo, fetches jobs targeted at its own cluster identity, applies them to its own API server, and reports status back over the same outbound channel. Odoo never opens a socket to the cluster and never holds a kubeconfig. The cluster holds an outbound bearer token (and optionally a client certificate); Odoo holds the cluster's identity record.
 
@@ -36,6 +36,20 @@ Pull-mode auth is a small, well-scoped credential set, with all of the long-live
 
 - **One-time registration token.** During bootstrap, an Odoo administrator (or the AI assistant on the administrator's behalf) generates a single-use token bound to a not-yet-existing cluster identity. The operator presents this token on first connect.
 - **Long-lived bootstrap credential.** Odoo exchanges the one-time token for a long-lived, rotateable bearer token (and optionally a client certificate). This credential is stored only on the cluster, in a Kubernetes `Secret` the operator reads at startup.
+
+### Operator configuration (implemented)
+
+Enable Pull-mode in the operator Deployment:
+
+| Source | Keys / flags |
+|--------|----------------|
+| Flags | `--agent-enabled=true`, `--odoo-base-url`, `--cluster-id`, `--agent-token`, `--agent-poll-interval` (default `30s`) |
+| Environment | `ODOO_BASE_URL`, `VWORKSPACE_CLUSTER_ID`, `VWORKSPACE_AGENT_TOKEN` |
+| Secret (`--agent-credentials-secret`, default name `vworkspace-agent-credentials`) | `odoo-base-url`, `cluster-id`, `token` |
+
+Flag and environment values override Secret data when both are set. The operator uses field manager `vworkspace-agent` and sets labels `app.vworkspace.io/managed-by=odoo` and `app.vworkspace.io/cluster-id=<cluster-id>` on applied objects.
+
+Container image: `docker.io/vworkspace/vworkspace-operator` — see [../install/container-images.md](../install/container-images.md).
 - **Cluster identity.** Every cluster has a stable identity record in Odoo: ID, display name, owning organization, public key (if mTLS or signed payloads are enabled), allowed namespaces, allowed app catalog entries, allowed operation engines.
 - **Optional mTLS.** Operators who can manage a small PKI may pin Odoo's certificate and present a client certificate, with the bearer token reduced to a session marker. The default does not require mTLS; the option exists.
 - **Scoped tokens per cluster.** A token can only fetch jobs for its own cluster identity. Server-side authorization enforces this for every request. Cross-cluster reads are rejected by construction.

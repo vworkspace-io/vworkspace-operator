@@ -4,13 +4,19 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   pull_request:
 
 concurrency:
-  group: ${{ github.repository }}-self-hosted
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions: {}
+
+env:
+  # Isolate envtest binaries per job on shared self-hosted runners.
+  LOCALBIN: ${{ github.workspace }}/bin-${{ github.job }}
 
 jobs:
   verify:
@@ -19,23 +25,20 @@ jobs:
     name: Verify generated artifacts
     runs-on: self-hosted
     steps:
-      - name: Prepare workspace
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE"
-          mkdir -p "$GITHUB_WORKSPACE"
-
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          path: verify
           persist-credentials: false
-          clean: false
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version-file: go.mod
+          go-version-file: verify/go.mod
+          cache-dependency-path: verify/go.sum
 
       - name: Verify generated manifests
+        working-directory: verify
         run: |
           chmod +x hack/verify-generated.sh
           ./hack/verify-generated.sh
@@ -45,25 +48,23 @@ jobs:
       contents: read
     name: Unit and envtest
     runs-on: self-hosted
-    needs: verify
     steps:
-      - name: Prepare workspace
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE"
-          mkdir -p "$GITHUB_WORKSPACE"
-
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          path: test
           persist-credentials: false
-          clean: false
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version-file: go.mod
+          go-version-file: test/go.mod
+          cache-dependency-path: test/go.sum
 
       - name: Run tests
+        working-directory: test
+        env:
+          LOCALBIN: ${{ github.workspace }}/bin-test
         run: |
           go mod tidy
           make test
@@ -73,82 +74,125 @@ jobs:
       contents: read
     name: golangci-lint
     runs-on: self-hosted
-    needs: test
     steps:
-      - name: Prepare workspace
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE"
-          mkdir -p "$GITHUB_WORKSPACE"
-
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          path: lint
           persist-credentials: false
-          clean: false
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version-file: go.mod
+          go-version-file: lint/go.mod
+          cache-dependency-path: lint/go.sum
 
       - name: Check linter configuration
+        working-directory: lint
         run: make lint-config
 
       - name: Lint
+        working-directory: lint
         run: make lint
 
   e2e:
     permissions:
       contents: read
-    name: Run on Ubuntu
+    name: E2E (kind)
     runs-on: self-hosted
-    needs: lint
     steps:
-      - name: Prepare workspace
-        run: |
-          sudo rm -rf "$GITHUB_WORKSPACE"
-          mkdir -p "$GITHUB_WORKSPACE"
-
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          path: e2e
           persist-credentials: false
-          clean: false
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version-file: go.mod
+          go-version-file: e2e/go.mod
+          cache-dependency-path: e2e/go.sum
 
-      - name: Setup Docker
+      - name: Ensure Docker is available
         run: |
           if ! command -v docker >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io
+            curl -fsSL https://get.docker.com | sh
+            sudo usermod -aG docker "$USER" || true
           fi
-          sudo systemctl start docker || sudo service docker start
-          sudo chmod 666 /var/run/docker.sock
+          sudo systemctl start docker 2>/dev/null || sudo service docker start
           docker info
 
-      - name: Install the latest version of kind
+      - name: Ensure kind is available
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+          if ! command -v kind >/dev/null 2>&1; then
+            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+            chmod +x ./kind
+            sudo install -o root -g root -m 0755 ./kind /usr/local/bin/kind
+          fi
+          kind version
 
-      - name: Verify kind installation
-        run: kind version
-
-      - name: Install kubectl
+      - name: Ensure kubectl is available
         run: |
-          ARCH=$(go env GOARCH)
-          VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-          curl -LO "https://dl.k8s.io/release/${VERSION}/bin/linux/${ARCH}/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/kubectl
+          if ! command -v kubectl >/dev/null 2>&1; then
+            ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+            VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+            curl -LO "https://dl.k8s.io/release/${VERSION}/bin/linux/${ARCH}/kubectl"
+            chmod +x kubectl
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          fi
           kubectl version --client
 
       - name: Running Test e2e
+        working-directory: e2e
+        env:
+          LOCALBIN: ${{ github.workspace }}/bin-e2e
+          KIND_CLUSTER: vworkspace-operator-e2e-${{ github.run_id }}
         run: |
           go mod tidy
           make test-e2e
+
+  docker:
+    permissions:
+      contents: read
+    name: Build and push image
+    runs-on: self-hosted
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: docker
+          persist-credentials: false
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@5e3e6e406f7bcf192c896b457d659f62d4aa2b5a # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set image tags
+        id: meta
+        working-directory: docker
+        run: |
+          SHA_TAG="docker.io/vworkspace/vworkspace-operator:${GITHUB_SHA}"
+          echo "sha_tag=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            echo "also_latest=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version_tag=docker.io/vworkspace/vworkspace-operator:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        working-directory: docker
+        run: |
+          docker build -t "${{ steps.meta.outputs.sha_tag }}" .
+          docker push "${{ steps.meta.outputs.sha_tag }}"
+          if [ "${{ steps.meta.outputs.also_latest }}" = "true" ]; then
+            docker tag "${{ steps.meta.outputs.sha_tag }}" docker.io/vworkspace/vworkspace-operator:latest
+            docker push docker.io/vworkspace/vworkspace-operator:latest
+          fi
+          if [ -n "${{ steps.meta.outputs.version_tag }}" ]; then
+            docker tag "${{ steps.meta.outputs.sha_tag }}" "${{ steps.meta.outputs.version_tag }}"
+            docker push "${{ steps.meta.outputs.version_tag }}"
+          fi

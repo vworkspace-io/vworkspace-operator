@@ -63,7 +63,13 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
-        image: controller:latest
+          - --agent-enabled=false
+        image: docker.io/vworkspace/vworkspace-operator:latest
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         name: manager
         ports:
         - containerPort: 8081

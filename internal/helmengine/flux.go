@@ -8,11 +8,13 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/labels"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/yaml"
 )
 
 var (
@@ -196,7 +198,7 @@ func (e *FluxEngine) ensureHelmRelease(ctx context.Context, app *appsv1alpha1.Ap
 		}, "spec", "chart", "spec", "sourceRef"); err != nil {
 			return err
 		}
-		values, err := buildValues(app)
+		values, err := e.buildValues(ctx, app)
 		if err != nil {
 			return err
 		}
@@ -210,7 +212,7 @@ func (e *FluxEngine) ensureHelmRelease(ctx context.Context, app *appsv1alpha1.Ap
 	return err
 }
 
-func buildValues(app *appsv1alpha1.ApplicationInstance) (map[string]any, error) {
+func (e *FluxEngine) buildValues(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (map[string]any, error) {
 	switch app.Spec.Values.Source {
 	case appsv1alpha1.ValuesSourceInline:
 		if app.Spec.Values.Inline == nil {
@@ -221,10 +223,55 @@ func buildValues(app *appsv1alpha1.ApplicationInstance) (map[string]any, error) 
 			return nil, fmt.Errorf("decode inline values: %w", err)
 		}
 		return values, nil
+	case appsv1alpha1.ValuesSourceSecretRef:
+		if app.Spec.Values.SecretRef == nil {
+			return nil, fmt.Errorf("secretRef values source requires secretRef")
+		}
+		return e.loadValuesFromSecret(ctx, app.Namespace, app.Spec.Values.SecretRef)
+	case appsv1alpha1.ValuesSourceConfigMapRef:
+		if app.Spec.Values.ConfigMapRef == nil {
+			return nil, fmt.Errorf("configMapRef values source requires configMapRef")
+		}
+		return e.loadValuesFromConfigMap(ctx, app.Namespace, app.Spec.Values.ConfigMapRef)
 	default:
-		// secretRef/configMapRef resolution is deferred to a later phase.
-		return map[string]any{}, nil
+		return nil, fmt.Errorf("unsupported values source %q", app.Spec.Values.Source)
 	}
+}
+
+func (e *FluxEngine) loadValuesFromSecret(ctx context.Context, defaultNS string, ref *appsv1alpha1.ObjectKeyRef) (map[string]any, error) {
+	secret := &corev1.Secret{}
+	ns := defaultNS
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: ref.Name}, secret); err != nil {
+		return nil, fmt.Errorf("get secret %s/%s: %w", ns, ref.Name, err)
+	}
+	raw, ok := secret.Data[ref.Key]
+	if !ok {
+		return nil, fmt.Errorf("secret %s/%s missing key %q", ns, ref.Name, ref.Key)
+	}
+	return decodeValuesBytes(raw)
+}
+
+func (e *FluxEngine) loadValuesFromConfigMap(ctx context.Context, defaultNS string, ref *appsv1alpha1.ObjectKeyRef) (map[string]any, error) {
+	cm := &corev1.ConfigMap{}
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: defaultNS, Name: ref.Name}, cm); err != nil {
+		return nil, fmt.Errorf("get configmap %s/%s: %w", defaultNS, ref.Name, err)
+	}
+	raw, ok := cm.Data[ref.Key]
+	if !ok {
+		return nil, fmt.Errorf("configmap %s/%s missing key %q", defaultNS, ref.Name, ref.Key)
+	}
+	return decodeValuesBytes([]byte(raw))
+}
+
+func decodeValuesBytes(raw []byte) (map[string]any, error) {
+	values := map[string]any{}
+	if err := json.Unmarshal(raw, &values); err == nil {
+		return values, nil
+	}
+	if err := yaml.Unmarshal(raw, &values); err != nil {
+		return nil, fmt.Errorf("decode values as JSON or YAML: %w", err)
+	}
+	return values, nil
 }
 
 func chartSourceName(app *appsv1alpha1.ApplicationInstance) string {

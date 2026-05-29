@@ -1,7 +1,7 @@
 # Quickstart
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-29
 
 This is the supported install path. Two commands install the operator, three more verify it, and the rest of this document describes what to check if something goes wrong. The complete bootstrap procedure (including issuing the registration token in Odoo) is in [cluster-bootstrap.md](cluster-bootstrap.md).
 
@@ -58,7 +58,42 @@ EOF
 
 The two paths produce identical results. The CLI helper is convenient for terminals; the CR path is convenient for GitOps and for the air-gapped install where the token is delivered out of band.
 
-The operator's `Cluster` reconciler exchanges the token for a long-lived bootstrap credential ([../security/authentication.md](../security/authentication.md)), persists it in `Secret/vworkspace-system/vworkspace-operator-credentials`, and begins pulling jobs.
+The operator's `Cluster` reconciler exchanges the token for a long-lived bootstrap credential ([../security/authentication.md](../security/authentication.md)), persists it in a Kubernetes `Secret`, and begins pulling jobs when Pull-mode is enabled.
+
+### Enable the Pull-mode agent
+
+Create a Secret with the bootstrap credential (or set equivalent flags on the Deployment):
+
+```bash
+kubectl -n vworkspace-system create secret generic vworkspace-agent-credentials \
+  --from-literal=odoo-base-url=https://workspace.example.org \
+  --from-literal=cluster-id=cluster-prod-1 \
+  --from-literal=token='<long-lived-token>'
+```
+
+Patch the operator Deployment to enable the agent loop:
+
+```bash
+kubectl -n vworkspace-system patch deploy controller-manager \
+  --type=json -p='[
+    {"op":"replace","path":"/spec/template/spec/containers/0/args","value":[
+      "--leader-elect",
+      "--health-probe-bind-address=:8081",
+      "--agent-enabled=true",
+      "--agent-credentials-secret=vworkspace-agent-credentials"
+    ]}
+  ]'
+```
+
+See [../connectivity/pull-mode.md](../connectivity/pull-mode.md) for the full flag and Secret key reference.
+
+Install the published image with kustomize:
+
+```bash
+make deploy IMG=docker.io/vworkspace/vworkspace-operator:latest
+```
+
+See [container-images.md](container-images.md) for Docker Hub tags and CI publishing.
 
 ## Step 3: validate
 

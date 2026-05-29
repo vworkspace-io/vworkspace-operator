@@ -1,3 +1,6 @@
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+
 /*
 Copyright 2026 vWorkspace Contributors.
 
@@ -17,9 +20,11 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
@@ -61,6 +66,10 @@ func main() {
 	var clusterID string
 	var odooBaseURL string
 	var agentToken string
+	var agentEnabled bool
+	var agentPollInterval time.Duration
+	var agentCredentialsSecret string
+	var agentCredentialsNamespace string
 	var tlsOpts []func(*tls.Config)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to.")
@@ -80,6 +89,14 @@ func main() {
 	flag.StringVar(&odooBaseURL, "odoo-base-url", os.Getenv("ODOO_BASE_URL"), "Odoo base URL for Pull-mode connectivity.")
 	flag.StringVar(&agentToken, "agent-token", os.Getenv("VWORKSPACE_AGENT_TOKEN"),
 		"Bearer token for Pull-mode agent API.")
+	flag.BoolVar(&agentEnabled, "agent-enabled", false,
+		"Enable the Pull-mode agent loop (long-poll jobs from Odoo).")
+	flag.DurationVar(&agentPollInterval, "agent-poll-interval", 30*time.Second,
+		"Long-poll wait duration when fetching jobs from Odoo.")
+	flag.StringVar(&agentCredentialsSecret, "agent-credentials-secret", "",
+		"Kubernetes Secret name containing odoo-base-url, cluster-id, and token keys.")
+	flag.StringVar(&agentCredentialsNamespace, "agent-credentials-namespace", os.Getenv("POD_NAMESPACE"),
+		"Namespace of the agent credentials Secret.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -153,17 +170,32 @@ func main() {
 	}
 
 	var agentClient agent.Client
-	if odooBaseURL != "" && agentToken != "" && clusterID != "" {
+	if agentEnabled {
+		creds, err := agent.CredentialsConfig{
+			BaseURL:         odooBaseURL,
+			ClusterID:       clusterID,
+			Token:           agentToken,
+			SecretNamespace: agentCredentialsNamespace,
+			SecretName:      agentCredentialsSecret,
+			K8s:             mgr.GetClient(),
+		}.Load(context.Background())
+		if err != nil {
+			setupLog.Error(err, "unable to load agent credentials")
+			os.Exit(1)
+		}
+		clusterID = creds.ClusterID
 		agentClient, err = agent.NewHTTPClient(agent.Config{
-			BaseURL:   odooBaseURL,
-			ClusterID: clusterID,
-			Token:     agentToken,
+			BaseURL:   creds.BaseURL,
+			ClusterID: creds.ClusterID,
+			Token:     creds.Token,
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to configure agent client")
 			os.Exit(1)
 		}
+		setupLog.Info("pull-mode agent enabled", "cluster_id", creds.ClusterID)
 	}
+
 	if err := (&controller.ClusterReconciler{
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
@@ -182,8 +214,29 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx := ctrl.SetupSignalHandler()
+
+	if agentClient != nil {
+		applier := &agent.Applier{
+			Client:    mgr.GetClient(),
+			Scheme:    mgr.GetScheme(),
+			ClusterID: clusterID,
+		}
+		batcher := agent.NewEventBatcher(agentClient)
+		batcher.Log = setupLog.WithName("agent-events")
+		poller := &agent.AgentPoller{
+			Client:   agentClient,
+			Applier:  applier,
+			Events:   batcher,
+			Log:      ctrl.Log.WithName("agent-poller"),
+			WaitSecs: int(agentPollInterval.Seconds()),
+		}
+		go batcher.Start(ctx)
+		go poller.Run(ctx)
+	}
+
 	setupLog.Info("starting manager", "cluster_id", clusterID)
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

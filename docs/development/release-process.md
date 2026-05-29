@@ -30,7 +30,9 @@ A release produces four artifacts:
 3. **A Helm chart.** Packaged as an OCI artifact and pushed to the project's OCI chart registry. The chart's `Chart.yaml` records the operator image tag the chart deploys; `appVersion` matches the operator's SemVer.
 4. **A GitHub release.** With the auto-generated release notes (sourced from `CHANGELOG.md`), the binary `SHA256SUMS` file, and a link to the container image and Helm chart.
 
-The OCI registry hostnames are placeholders for the public ones the project will ship with at the first public release; today they are internal.
+Container images for development and CI are published to **Docker Hub**: `docker.io/vworkspace/vworkspace-operator` (`:latest` on `main`, `:<git-sha>`, and `:<tag>` for `v*` git tags). Configure repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` for the `docker` job in `.github/workflows/ci.yml`. See [../install/container-images.md](../install/container-images.md).
+
+Helm chart OCI registry hostnames remain placeholders until the chart packaging pipeline is wired.
 
 ## Signing
 

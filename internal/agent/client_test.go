@@ -60,7 +60,7 @@ func TestHTTPClientReportResult(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode result: %v", err)
 		}
-		if payload.Outcome != "succeeded" {
+		if payload.Outcome != OutcomeSucceeded {
 			t.Fatalf("unexpected outcome: %s", payload.Outcome)
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -72,7 +72,7 @@ func TestHTTPClientReportResult(t *testing.T) {
 		t.Fatalf("NewHTTPClient: %v", err)
 	}
 	if err := client.ReportResult(context.Background(), "j-2", JobResult{
-		Outcome:   "succeeded",
+		Outcome:   OutcomeSucceeded,
 		Timestamp: time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
