@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Operation validating webhook unit tests scaffold (`internal/webhook/operation_webhook_test.go`).
+
+### Added (Phase 1c)
+
 - Cluster registration flow: `spec.registrationToken` on `Cluster`, `POST /api/agent/register` client, credential persistence to `Secret/vworkspace-agent-credentials`, and `manager register` CLI subcommand.
 - Persistent Pull-mode idempotency via ConfigMap `vworkspace-applied-jobs` (`internal/agent/idempotency.go`).
 - Agent runtime with credential reload from Secret after registration (`internal/agent/runtime.go`).
