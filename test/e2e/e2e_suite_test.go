@@ -34,8 +34,14 @@ import (
 var (
 	// managerImage is the manager image to be built and loaded for testing.
 	managerImage = "example.com/vworkspace-operator:v0.0.1"
+	// mockOdooImage is the in-cluster mock Odoo image for Pull-mode e2e.
+	mockOdooImage = "example.com/mock-odoo:v0.0.1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
+	// shouldCleanupFluxCRDs tracks whether Flux CRDs were installed by this suite.
+	shouldCleanupFluxCRDs = false
+	// shouldCleanupVeleroCRDs tracks whether Velero CRDs were installed by this suite.
+	shouldCleanupVeleroCRDs = false
 )
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
@@ -56,17 +62,30 @@ var _ = BeforeSuite(func() {
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
 
+	By("building the mock Odoo image")
+	cmd = exec.Command("make", "docker-build-mockodoo", fmt.Sprintf("MOCK_ODOO_IMAGE=%s", mockOdooImage))
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the mock Odoo image")
+
 	// TODO(user): If you want to change the e2e test vendor from Kind,
 	// ensure the image is built and available, then remove the following block.
 	By("loading the manager image on Kind")
 	err = utils.LoadImageToKindClusterWithName(managerImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
 
+	By("loading the mock Odoo image on Kind")
+	err = utils.LoadImageToKindClusterWithName(mockOdooImage)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the mock Odoo image into Kind")
+
 	configureKubectlKubeRC()
 	setupCertManager()
+	setupFluxCRDs()
+	setupVeleroCRDs()
 })
 
 var _ = AfterSuite(func() {
+	teardownVeleroCRDs()
+	teardownFluxCRDs()
 	teardownCertManager()
 })
 
@@ -116,4 +135,50 @@ func teardownCertManager() {
 
 	By("uninstalling CertManager")
 	utils.UninstallCertManager()
+}
+
+func setupFluxCRDs() {
+	if os.Getenv("FLUX_CRDS_INSTALL_SKIP") == "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping Flux CRD installation (FLUX_CRDS_INSTALL_SKIP=true)\n")
+		return
+	}
+	if utils.IsFluxCRDsInstalled() {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Flux CRDs already installed. Skipping installation.\n")
+		return
+	}
+	shouldCleanupFluxCRDs = true
+	By("installing Flux HelmRelease CRDs")
+	ExpectWithOffset(1, utils.InstallFluxCRDs()).To(Succeed(), "Failed to install Flux CRDs")
+}
+
+func teardownFluxCRDs() {
+	if !shouldCleanupFluxCRDs {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping Flux CRD cleanup (not installed by this suite)\n")
+		return
+	}
+	By("uninstalling Flux CRDs")
+	utils.UninstallFluxCRDs()
+}
+
+func setupVeleroCRDs() {
+	if os.Getenv("E2E_INSTALL_VELERO") != "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping Velero CRD installation (set E2E_INSTALL_VELERO=true to enable backup e2e)\n")
+		return
+	}
+	if utils.IsVeleroCRDsInstalled() {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Velero CRDs already installed. Skipping installation.\n")
+		return
+	}
+	shouldCleanupVeleroCRDs = true
+	By("installing Velero Backup CRD")
+	ExpectWithOffset(1, utils.InstallVeleroCRDs()).To(Succeed(), "Failed to install Velero CRDs")
+}
+
+func teardownVeleroCRDs() {
+	if !shouldCleanupVeleroCRDs {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping Velero CRD cleanup (not installed by this suite)\n")
+		return
+	}
+	By("uninstalling Velero CRD")
+	utils.UninstallVeleroCRDs()
 }

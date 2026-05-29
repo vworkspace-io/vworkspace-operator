@@ -176,6 +176,35 @@ func TestMockOdooPollerIntegration(t *testing.T) {
 	t.Fatal("poller did not ack and report success within timeout")
 }
 
+func TestMockOdooAdminEnqueue(t *testing.T) {
+	srv := mockodoo.NewServer()
+	srv.SetBootstrapToken("cluster-1", "token-1")
+	srv.AdminToken = "admin-1"
+	server := httptest.NewServer(srv.Handler())
+	defer server.Close()
+
+	admin := mockodoo.NewAdminClient(server.URL, "admin-1", server.Client())
+	if err := admin.EnqueueJob("cluster-1", agent.Job{
+		ID:   "job-admin-1",
+		Kind: "apply",
+	}); err != nil {
+		t.Fatalf("EnqueueJob: %v", err)
+	}
+	if srv.PendingJobCount("cluster-1") != 1 {
+		t.Fatalf("expected one pending job, got %d", srv.PendingJobCount("cluster-1"))
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/admin/enqueue", nil)
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do without admin token: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without admin token, got %d", resp.StatusCode)
+	}
+}
+
 func TestMockOdooRejectsWrongCluster(t *testing.T) {
 	srv := mockodoo.NewServer()
 	srv.SetBootstrapToken("cluster-1", "token-1")
