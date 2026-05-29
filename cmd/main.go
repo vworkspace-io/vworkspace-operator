@@ -1,6 +1,3 @@
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
-
 /*
 Copyright 2026 vWorkspace Contributors.
 
@@ -24,14 +21,17 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
+	"github.com/vworkspace-io/vworkspace-operator/internal/cli"
 	"github.com/vworkspace-io/vworkspace-operator/internal/controller"
 	"github.com/vworkspace-io/vworkspace-operator/internal/engines"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
+	"github.com/vworkspace-io/vworkspace-operator/internal/webhook"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,7 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	webhookserver "sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 var (
@@ -56,6 +56,14 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "register" {
+		if err := cli.RunRegister(os.Args[2:]); err != nil {
+			_, _ = os.Stderr.WriteString(err.Error() + "\n")
+			os.Exit(1)
+		}
+		return
+	}
+
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -70,6 +78,7 @@ func main() {
 	var agentPollInterval time.Duration
 	var agentCredentialsSecret string
 	var agentCredentialsNamespace string
+	var enableWebhooks bool
 	var tlsOpts []func(*tls.Config)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to.")
@@ -93,10 +102,11 @@ func main() {
 		"Enable the Pull-mode agent loop (long-poll jobs from Odoo).")
 	flag.DurationVar(&agentPollInterval, "agent-poll-interval", 30*time.Second,
 		"Long-poll wait duration when fetching jobs from Odoo.")
-	flag.StringVar(&agentCredentialsSecret, "agent-credentials-secret", "",
+	flag.StringVar(&agentCredentialsSecret, "agent-credentials-secret", agent.DefaultCredentialsSecret,
 		"Kubernetes Secret name containing odoo-base-url, cluster-id, and token keys.")
 	flag.StringVar(&agentCredentialsNamespace, "agent-credentials-namespace", os.Getenv("POD_NAMESPACE"),
 		"Namespace of the agent credentials Secret.")
+	flag.BoolVar(&enableWebhooks, "webhooks-enabled", false, "Enable validating admission webhooks.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -112,7 +122,7 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	webhookServer := webhook.NewServer(webhook.Options{
+	webhookServer := webhookserver.NewServer(webhookserver.Options{
 		TLSOpts:  tlsOpts,
 		CertDir:  webhookCertPath,
 		CertName: webhookCertName,
@@ -169,13 +179,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	credNamespace := strings.TrimSpace(agentCredentialsNamespace)
+	if credNamespace == "" {
+		credNamespace = "vworkspace-system"
+	}
+
 	var agentClient agent.Client
 	if agentEnabled {
 		creds, err := agent.CredentialsConfig{
 			BaseURL:         odooBaseURL,
 			ClusterID:       clusterID,
 			Token:           agentToken,
-			SecretNamespace: agentCredentialsNamespace,
+			SecretNamespace: credNamespace,
 			SecretName:      agentCredentialsSecret,
 			K8s:             mgr.GetClient(),
 		}.Load(context.Background())
@@ -197,12 +212,26 @@ func main() {
 	}
 
 	if err := (&controller.ClusterReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		AgentClient: agentClient,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		AgentClient:       agentClient,
+		CredentialsSecret: agentCredentialsSecret,
+		OperatorNamespace: credNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
 		os.Exit(1)
+	}
+
+	if enableWebhooks {
+		opWebhook, err := webhook.NewOperationWebhook(mgr.GetScheme())
+		if err != nil {
+			setupLog.Error(err, "unable to create operation webhook")
+			os.Exit(1)
+		}
+		if err := opWebhook.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to register operation webhook")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -216,23 +245,24 @@ func main() {
 
 	ctx := ctrl.SetupSignalHandler()
 
-	if agentClient != nil {
-		applier := &agent.Applier{
-			Client:    mgr.GetClient(),
-			Scheme:    mgr.GetScheme(),
-			ClusterID: clusterID,
-		}
-		batcher := agent.NewEventBatcher(agentClient)
-		batcher.Log = setupLog.WithName("agent-events")
-		poller := &agent.AgentPoller{
-			Client:   agentClient,
-			Applier:  applier,
-			Events:   batcher,
-			Log:      ctrl.Log.WithName("agent-poller"),
-			WaitSecs: int(agentPollInterval.Seconds()),
-		}
-		go batcher.Start(ctx)
-		go poller.Run(ctx)
+	idempotencyStore := &agent.IdempotencyStore{
+		Client:    mgr.GetClient(),
+		Namespace: credNamespace,
+		Name:      agent.DefaultIdempotencyConfigMap,
+	}
+
+	if agentEnabled {
+		agentRuntime := agent.NewRuntime(agent.RuntimeConfig{
+			K8s:              mgr.GetClient(),
+			Scheme:           mgr.GetScheme(),
+			SecretNamespace:  credNamespace,
+			SecretName:       agentCredentialsSecret,
+			PollInterval:     agentPollInterval,
+			Idempotency:      idempotencyStore,
+			Log:              ctrl.Log.WithName("agent-runtime"),
+			InitialClusterID: clusterID,
+		})
+		go agentRuntime.Start(ctx)
 	}
 
 	setupLog.Info("starting manager", "cluster_id", clusterID)
