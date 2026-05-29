@@ -32,7 +32,8 @@ jobs:
           persist-credentials: false
 
       - name: Ensure build tools
-        uses: ./.github/actions/ensure-build-tools
+        working-directory: verify
+        run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -59,7 +60,8 @@ jobs:
           persist-credentials: false
 
       - name: Ensure build tools
-        uses: ./.github/actions/ensure-build-tools
+        working-directory: test
+        run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -88,7 +90,8 @@ jobs:
           persist-credentials: false
 
       - name: Ensure build tools
-        uses: ./.github/actions/ensure-build-tools
+        working-directory: lint
+        run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -117,7 +120,8 @@ jobs:
           persist-credentials: false
 
       - name: Ensure build tools
-        uses: ./.github/actions/ensure-build-tools
+        working-directory: e2e
+        run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
