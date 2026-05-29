@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
@@ -35,7 +34,7 @@ type Applier struct {
 	Scheme    *runtime.Scheme
 	ClusterID string
 
-	applied sync.Map // idempotencyKey -> struct{}
+	Idempotency *IdempotencyStore
 }
 
 // ApplyJob applies a single job after ack. Caller posts the returned JobResult.
@@ -50,51 +49,74 @@ func (a *Applier) ApplyJob(ctx context.Context, job Job) (ApplyOutcome, error) {
 	}
 
 	if job.IdempotencyKey != "" {
-		if _, loaded := a.applied.LoadOrStore(job.IdempotencyKey, struct{}{}); loaded {
-			return ApplyOutcome{
-				Result: JobResult{
-					Outcome:   OutcomeNoop,
-					Timestamp: now,
-				},
-				Idempotent: true,
-			}, nil
+		if a.Idempotency != nil {
+			seen, err := a.Idempotency.Contains(ctx, job.IdempotencyKey)
+			if err != nil {
+				return ApplyOutcome{}, fmt.Errorf("check idempotency key: %w", err)
+			}
+			if seen {
+				return ApplyOutcome{
+					Result: JobResult{
+						Outcome:   OutcomeNoop,
+						Timestamp: now,
+					},
+					Idempotent: true,
+				}, nil
+			}
 		}
 	}
+
+	var result ApplyOutcome
+	var applyErr error
 
 	switch job.Kind {
 	case "apply":
 		ref, err := a.applyManifest(ctx, job.Payload)
 		if err != nil {
-			return ApplyOutcome{}, err
+			applyErr = err
+		} else {
+			result = ApplyOutcome{Result: JobResult{
+				Outcome:    OutcomeSucceeded,
+				AppliedRef: ref,
+				Timestamp:  now,
+			}}
 		}
-		return ApplyOutcome{Result: JobResult{
-			Outcome:    OutcomeSucceeded,
-			AppliedRef: ref,
-			Timestamp:  now,
-		}}, nil
 	case "delete":
 		ref, err := a.deleteObject(ctx, job.Payload)
 		if err != nil {
-			return ApplyOutcome{}, err
+			applyErr = err
+		} else {
+			result = ApplyOutcome{Result: JobResult{
+				Outcome:    OutcomeSucceeded,
+				AppliedRef: ref,
+				Timestamp:  now,
+			}}
 		}
-		return ApplyOutcome{Result: JobResult{
-			Outcome:    OutcomeSucceeded,
-			AppliedRef: ref,
-			Timestamp:  now,
-		}}, nil
 	case "intent":
 		ref, err := a.applyIntent(ctx, job.Payload)
 		if err != nil {
-			return ApplyOutcome{}, err
+			applyErr = err
+		} else {
+			result = ApplyOutcome{Result: JobResult{
+				Outcome:    OutcomeSucceeded,
+				AppliedRef: ref,
+				Timestamp:  now,
+			}}
 		}
-		return ApplyOutcome{Result: JobResult{
-			Outcome:    OutcomeSucceeded,
-			AppliedRef: ref,
-			Timestamp:  now,
-		}}, nil
 	default:
 		return ApplyOutcome{}, fmt.Errorf("unsupported job kind %q", job.Kind)
 	}
+
+	if applyErr != nil {
+		return ApplyOutcome{}, applyErr
+	}
+
+	if job.IdempotencyKey != "" && a.Idempotency != nil && result.Result.Outcome == OutcomeSucceeded {
+		if err := a.Idempotency.Record(ctx, job.IdempotencyKey); err != nil {
+			return ApplyOutcome{}, fmt.Errorf("record idempotency key: %w", err)
+		}
+	}
+	return result, nil
 }
 
 func (a *Applier) applyManifest(ctx context.Context, payload json.RawMessage) (*AppliedRef, error) {

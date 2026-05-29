@@ -43,9 +43,11 @@ func (p *AgentPoller) Run(ctx context.Context) {
 			if p.Log.GetSink() != nil {
 				p.Log.Error(err, "fetch jobs failed")
 			}
+			SetConnectivityState("pull", 0)
 			p.backoff(ctx, 2*time.Second)
 			continue
 		}
+		TrackJobLag(jobs)
 
 		for _, job := range jobs {
 			if err := p.processJob(ctx, job); err != nil && p.Log.GetSink() != nil {
@@ -79,6 +81,10 @@ func (p *AgentPoller) processJob(ctx context.Context, job Job) error {
 
 	if reportErr := p.Client.ReportResult(ctx, job.ID, outcome.Result); reportErr != nil {
 		return fmt.Errorf("report result: %w", reportErr)
+	}
+	if outcome.Result.Outcome == OutcomeSucceeded {
+		IncAppliedJobs()
+		SetPullJobLagSeconds(0)
 	}
 	if outcome.Idempotent && p.Log.GetSink() != nil {
 		p.Log.Info("job idempotent replay", "jobID", job.ID, "key", job.IdempotencyKey)
