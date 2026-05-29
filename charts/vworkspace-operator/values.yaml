@@ -1,11 +1,11 @@
 # Default values for vworkspace-operator.
-# See docs/install/quickstart.md for install examples.
+# See docs/install/helm.md and docs/install/quickstart.md for install examples.
 
 nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: docker.io/vworkspace/vworkspace-operator
+  repository: vworkspace/vworkspace-operator
   tag: ""  # defaults to Chart.appVersion
   pullPolicy: IfNotPresent
 
@@ -24,9 +24,13 @@ crds:
 
 agent:
   enabled: false
-  odooBaseURL: "https://odoo.example.org"
+  odooBaseUrl: "https://odoo.example.org"
   pollIntervalSeconds: 30
   credentialsSecret: vworkspace-agent-credentials
+
+webhooks:
+  enabled: false
+  certPath: /tmp/k8s-webhook-server/serving-certs
 
 manager:
   leaderElect: true

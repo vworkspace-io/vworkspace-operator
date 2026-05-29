@@ -10,6 +10,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-apps-vworkspace-io-v1alpha1-applicationinstance
+  failurePolicy: Fail
+  name: vapplicationinstance.kb.io
+  rules:
+  - apiGroups:
+    - apps.vworkspace.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applicationinstances
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-ops-vworkspace-io-v1alpha1-operation
   failurePolicy: Fail
   name: voperation.kb.io

@@ -23,10 +23,13 @@ import (
 )
 
 const (
-	fluxVersion  = "v2.4.0"
-	fluxCRDURL   = "https://github.com/fluxcd/flux2/releases/download/" + fluxVersion + "/crds/core.yaml"
-	veleroCRDURL = "https://raw.githubusercontent.com/vmware-tanzu/velero/v1.15.0/config/crd/v1/bases/velero.io_backups.yaml"
+	fluxVersion   = "v2.4.0"
+	fluxCRDURL    = "https://github.com/fluxcd/flux2/releases/download/" + fluxVersion + "/crds/core.yaml"
+	veleroVersion = "v1.15.0"
 )
+
+var veleroCRDURL = "https://raw.githubusercontent.com/vmware-tanzu/velero/" + veleroVersion +
+	"/config/crd/v1/bases/velero.io_backups.yaml"
 
 // InstallFluxCRDs installs minimal Flux CRDs required for HelmRelease materialization.
 func InstallFluxCRDs() error {
@@ -34,7 +37,8 @@ func InstallFluxCRDs() error {
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
-	cmd = exec.Command("kubectl", "wait", "--for=condition=Established", "crd/helmreleases.helm.toolkit.fluxcd.io", "--timeout=120s")
+	cmd = exec.Command("kubectl", "wait",
+		"--for=condition=Established", "crd/helmreleases.helm.toolkit.fluxcd.io", "--timeout=120s")
 	_, err := Run(cmd)
 	return err
 }
@@ -86,7 +90,7 @@ func KubectlApplyYAML(manifest string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	cmd := exec.Command("kubectl", "apply", "-f", path)
 	_, err = Run(cmd)
 	if err != nil {
@@ -102,7 +106,7 @@ func KubectlDeleteYAML(manifest string) {
 		warnError(err)
 		return
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	cmd := exec.Command("kubectl", "delete", "-f", path, "--ignore-not-found", "--wait=false")
 	if _, err := Run(cmd); err != nil {
 		warnError(err)

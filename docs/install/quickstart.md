@@ -11,14 +11,15 @@ The version number `0.0.0` below is a placeholder for the chart version you actu
 
 ## Step 1: install the operator bundle
 
-### Option A — Helm chart (in-repo, Phase 1d-b)
+### Option A — Helm chart (in-repo)
 
-From a clone of this repository:
+From a clone of this repository (tested on kind — see [helm.md](helm.md)):
 
 ```
 helm install vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system \
   --create-namespace \
+  --set image.repository=vworkspace/vworkspace-operator \
   --set image.tag=latest
 ```
 
@@ -29,7 +30,7 @@ helm upgrade vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system \
   --reuse-values \
   --set agent.enabled=true \
-  --set agent.odooBaseURL=https://workspace.example.org
+  --set agent.odooBaseUrl=https://workspace.example.org
 ```
 
 Wait until the operator pod reports `Ready`:
@@ -38,7 +39,8 @@ Wait until the operator pod reports `Ready`:
 kubectl -n vworkspace-system rollout status deploy/vworkspace-operator --timeout=180s
 ```
 
-See [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) for values reference.
+Full values reference, upgrade path, and kind validation: [helm.md](helm.md).
+See [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) for chart maintainer notes.
 
 ### Option B — OCI chart (future release)
 
@@ -192,6 +194,25 @@ EOF
 ```
 
 The `org-myteam` namespace must exist and carry the label `app.vworkspace.io/managed-by=vworkspace` so the operator is willing to manage it; create it (`kubectl create ns org-myteam && kubectl label ns org-myteam app.vworkspace.io/managed-by=vworkspace`) if it doesn't.
+
+## Enabling admission webhooks
+
+Validating webhooks are optional and off by default. Enable them when you need namespace operation allow-lists, concurrent-operation guards, and inline-secret rejection on `ApplicationInstance` values.
+
+**Helm:**
+
+```
+helm upgrade vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --reuse-values \
+  --set webhooks.enabled=true
+```
+
+**Kustomize:** uncomment the `[WEBHOOK]` sections in `config/default/kustomization.yaml` and `config/crd/kustomization.yaml`, apply cert-manager (or mount a TLS Secret at `/tmp/k8s-webhook-server/serving-certs`), and run the manager with `--webhooks-enabled=true`.
+
+**TLS:** the webhook server listens on port `9443` and expects `tls.crt` and `tls.key` in `--webhook-cert-path` (default `/tmp/k8s-webhook-server/serving-certs`). For development, cert-manager's `Certificate` resource under `config/certmanager/` is the supported path; self-signed certs work on kind if the `ValidatingWebhookConfiguration` CA bundle matches.
+
+**Namespace policy:** annotate a namespace to restrict operation types, for example `ops.vworkspace.io/allowed-types: Backup,Restore,Upgrade`.
 
 ## Troubleshooting
 

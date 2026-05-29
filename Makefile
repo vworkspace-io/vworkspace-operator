@@ -96,6 +96,11 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+.PHONY: validate-helm-kind
+validate-helm-kind: ## Validate Helm chart install on kind (see hack/validate-helm-kind.sh)
+	chmod +x hack/validate-helm-kind.sh
+	./hack/validate-helm-kind.sh
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run

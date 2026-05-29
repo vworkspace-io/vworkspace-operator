@@ -223,13 +223,22 @@ func main() {
 	}
 
 	if enableWebhooks {
-		opWebhook, err := webhook.NewOperationWebhook(mgr.GetScheme())
+		opWebhook, err := webhook.NewOperationWebhook(mgr.GetScheme(), mgr.GetClient())
 		if err != nil {
 			setupLog.Error(err, "unable to create operation webhook")
 			os.Exit(1)
 		}
 		if err := opWebhook.SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to register operation webhook")
+			os.Exit(1)
+		}
+		appWebhook, err := webhook.NewApplicationInstanceWebhook(mgr.GetScheme())
+		if err != nil {
+			setupLog.Error(err, "unable to create applicationinstance webhook")
+			os.Exit(1)
+		}
+		if err := appWebhook.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to register applicationinstance webhook")
 			os.Exit(1)
 		}
 	}

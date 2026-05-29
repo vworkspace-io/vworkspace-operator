@@ -18,12 +18,12 @@ package webhook
 
 import (
 	"context"
-	"fmt"
 
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/controller"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -32,11 +32,12 @@ import (
 // OperationWebhook validates Operation resources at admission time.
 type OperationWebhook struct {
 	decoder admission.Decoder
+	client  client.Client
 }
 
-func NewOperationWebhook(scheme *runtime.Scheme) (*OperationWebhook, error) {
+func NewOperationWebhook(scheme *runtime.Scheme, cl client.Client) (*OperationWebhook, error) {
 	decoder := admission.NewDecoder(scheme)
-	return &OperationWebhook{decoder: decoder}, nil
+	return &OperationWebhook{decoder: decoder, client: cl}, nil
 }
 
 func (w *OperationWebhook) SetupWithManager(mgr ctrl.Manager) error {
@@ -45,36 +46,30 @@ func (w *OperationWebhook) SetupWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-func (w *OperationWebhook) ValidateCreate(_ context.Context, op *opsv1alpha1.Operation) (admission.Warnings, error) {
-	if err := controller.ValidateOperationSpec(op); err != nil {
-		return nil, err
-	}
-	return nil, validateOperationType(op)
+func (w *OperationWebhook) ValidateCreate(ctx context.Context, op *opsv1alpha1.Operation) (admission.Warnings, error) {
+	return nil, w.validateOperation(ctx, op)
 }
 
-func (w *OperationWebhook) ValidateUpdate(_ context.Context, _, op *opsv1alpha1.Operation) (admission.Warnings, error) {
-	if err := controller.ValidateOperationSpec(op); err != nil {
-		return nil, err
-	}
-	return nil, validateOperationType(op)
+func (w *OperationWebhook) ValidateUpdate(ctx context.Context, _, op *opsv1alpha1.Operation) (admission.Warnings, error) {
+	return nil, w.validateOperation(ctx, op)
 }
 
 func (w *OperationWebhook) ValidateDelete(_ context.Context, _ *opsv1alpha1.Operation) (admission.Warnings, error) {
 	return nil, nil
 }
 
-func validateOperationType(op *opsv1alpha1.Operation) error {
-	switch op.Spec.Type {
-	case opsv1alpha1.OperationTypeBackup,
-		opsv1alpha1.OperationTypeRestore,
-		opsv1alpha1.OperationTypeUpgrade,
-		opsv1alpha1.OperationTypeMigration,
-		opsv1alpha1.OperationTypeRunCommand,
-		opsv1alpha1.OperationTypeRunbook:
-		return nil
-	default:
-		return fmt.Errorf("unsupported operation type %q", op.Spec.Type)
+func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha1.Operation) error {
+	if err := controller.ValidateOperationSpec(op); err != nil {
+		return err
 	}
+	if err := validateKnownOperationType(op); err != nil {
+		return err
+	}
+	if err := validateNamespaceAllowedTypes(ctx, w.client, op); err != nil {
+		return err
+	}
+	if err := validateOperationTargetExists(ctx, w.client, op); err != nil {
+		return err
+	}
+	return validateOperationConcurrency(ctx, w.client, op)
 }
-
-// TODO(user): add engine/type compatibility matrix once engine registry is exposed to webhooks.

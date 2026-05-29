@@ -61,7 +61,7 @@ func (c *AdminClient) EnqueueJob(clusterID string, job agent.Job) error {
 	if err != nil {
 		return fmt.Errorf("enqueue job: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNoContent {
 		msg, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("enqueue job: status %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
@@ -83,13 +83,14 @@ func (c *AdminClient) JobResult(jobID string) (agent.JobResult, bool, error) {
 	if err != nil {
 		return agent.JobResult{}, false, fmt.Errorf("get job result: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return agent.JobResult{}, false, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(resp.Body)
-		return agent.JobResult{}, false, fmt.Errorf("get job result: status %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		return agent.JobResult{}, false, fmt.Errorf(
+			"get job result: status %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
 	}
 	var result agent.JobResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

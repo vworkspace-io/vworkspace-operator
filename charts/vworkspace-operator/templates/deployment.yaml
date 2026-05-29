@@ -33,8 +33,12 @@ spec:
             - --agent-enabled={{ .Values.agent.enabled }}
             - --agent-poll-interval={{ .Values.agent.pollIntervalSeconds }}s
             {{- if .Values.agent.enabled }}
-            - --odoo-base-url={{ .Values.agent.odooBaseURL | quote }}
+            - --odoo-base-url={{ .Values.agent.odooBaseUrl | quote }}
             - --agent-credentials-secret={{ .Values.agent.credentialsSecret }}
+            {{- end }}
+            {{- if .Values.webhooks.enabled }}
+            - --webhooks-enabled=true
+            - --webhook-cert-path={{ .Values.webhooks.certPath }}
             {{- end }}
           env:
             - name: POD_NAMESPACE
@@ -45,6 +49,11 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+            {{- if .Values.webhooks.enabled }}
+            - name: webhook-server
+              containerPort: 9443
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
