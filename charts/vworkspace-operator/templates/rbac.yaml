@@ -1,0 +1,48 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "vworkspace-operator.fullname" . }}-manager
+  labels:
+    {{- include "vworkspace-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["create", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["apps.vworkspace.io"]
+    resources: ["applicationinstances"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["apps.vworkspace.io"]
+    resources: ["applicationinstances/finalizers", "applicationinstances/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["ops.vworkspace.io"]
+    resources: ["clusters", "operations"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["ops.vworkspace.io"]
+    resources: ["clusters/finalizers", "clusters/status", "operations/finalizers", "operations/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["helmcharts", "helmrepositories"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["velero.io"]
+    resources: ["backups", "restores"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "vworkspace-operator.fullname" . }}-manager
+  labels:
+    {{- include "vworkspace-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "vworkspace-operator.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vworkspace-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
