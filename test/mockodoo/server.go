@@ -394,10 +394,3 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		"message": message,
 	})
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
