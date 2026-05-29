@@ -64,9 +64,7 @@ func mockOdooServiceURL() string {
 
 func deployMockOdoo() {
 	By("creating mock Odoo namespace")
-	cmd := exec.Command("kubectl", "create", "ns", mockOdooNamespace)
-	_, err := utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred(), "Failed to create mock Odoo namespace")
+	Expect(utils.EnsureNamespace(mockOdooNamespace)).To(Succeed(), "Failed to create mock Odoo namespace")
 
 	manifest := fmt.Sprintf(`apiVersion: apps/v1
 kind: Deployment
@@ -187,20 +185,15 @@ func stopMockOdooPortForward() {
 
 func createPullLoopNamespaces() {
 	By("creating vworkspace-system namespace")
-	cmd := exec.Command("kubectl", "create", "ns", vworkspaceSystemNS)
-	_, err := utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(utils.EnsureNamespace(vworkspaceSystemNS)).To(Succeed())
 
 	By("creating application namespace")
-	cmd = exec.Command("kubectl", "create", "ns", appTestNamespace)
-	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(utils.EnsureNamespace(appTestNamespace)).To(Succeed())
 }
 
 func teardownPullLoopNamespaces() {
 	for _, ns := range []string{appTestNamespace, vworkspaceSystemNS} {
-		cmd := exec.Command("kubectl", "delete", "ns", ns, "--ignore-not-found", "--wait=false")
-		_, _ = utils.Run(cmd)
+		_ = utils.DeleteNamespace(ns)
 	}
 }
 
@@ -227,9 +220,7 @@ func deployOperatorWithAgent() {
 	Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
 	By("creating operator namespace")
-	cmd = exec.Command("kubectl", "create", "ns", namespace)
-	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(utils.EnsureNamespace(namespace)).To(Succeed())
 
 	seedAgentCredentialsSecret()
 
@@ -281,8 +272,7 @@ func teardownOperatorWithAgent() {
 	_, _ = utils.Run(cmd)
 	cmd = exec.Command("make", "uninstall", "KUBECTL_WAIT=false")
 	_, _ = utils.Run(cmd)
-	cmd = exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found", "--wait=false")
-	_, _ = utils.Run(cmd)
+	_ = utils.DeleteNamespace(namespace)
 }
 
 func applyClusterRegistrationCR() {
