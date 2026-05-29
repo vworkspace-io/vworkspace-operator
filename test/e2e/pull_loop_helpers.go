@@ -253,17 +253,13 @@ func deployOperatorWithAgent() {
 
 	patch := fmt.Sprintf(`[
   {"op": "replace", "path": "/spec/strategy", "value": {"type": "Recreate"}},
-  {"op": "replace", "path": "/spec/template/spec/containers/0/args", "value": [
-    "--leader-elect",
-    "--health-probe-bind-address=:8081",
-    "--agent-enabled=true",
-    "--odoo-base-url=%s",
-    "--cluster-id=%s",
-    "--agent-token=%s",
-    "--agent-poll-interval=5s",
-    "--agent-credentials-secret=%s",
-    "--agent-credentials-namespace=%s"
-  ]}
+  {"op": "replace", "path": "/spec/template/spec/containers/0/args/3", "value": "--agent-enabled=true"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--odoo-base-url=%s"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--cluster-id=%s"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-token=%s"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-poll-interval=5s"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-credentials-secret=%s"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-credentials-namespace=%s"}
 ]`, mockOdooServiceURL(), pullLoopClusterID, pullLoopBootstrapToken, agentCredentialsSecret, namespace)
 
 	cmd = exec.Command("kubectl", "patch", "deployment", "vworkspace-operator-controller-manager",
