@@ -11,6 +11,37 @@ The version number `0.0.0` below is a placeholder for the chart version you actu
 
 ## Step 1: install the operator bundle
 
+### Option A — Helm chart (in-repo, Phase 1d-b)
+
+From a clone of this repository:
+
+```
+helm install vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --create-namespace \
+  --set image.tag=latest
+```
+
+Enable Pull-mode against mock or real Odoo:
+
+```
+helm upgrade vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --reuse-values \
+  --set agent.enabled=true \
+  --set agent.odooBaseURL=https://workspace.example.org
+```
+
+Wait until the operator pod reports `Ready`:
+
+```
+kubectl -n vworkspace-system rollout status deploy/vworkspace-operator --timeout=180s
+```
+
+See [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) for values reference.
+
+### Option B — OCI chart (future release)
+
 ```
 helm install vworkspace-app-operator \
   oci://registry.example.com/charts/vworkspace-app-operator \
@@ -21,9 +52,9 @@ helm install vworkspace-app-operator \
 
 This installs the operator, its CRDs, its RBAC, and the bundled controllers (Flux Helm Controller, Source Controller, cert-manager, external-secrets, Velero). It does not install Argo Workflows or an ingress controller; bring those yourself when you need them ([prerequisites.md](prerequisites.md)).
 
-The Helm release name (`vworkspace-app-operator`) and the namespace (`vworkspace-system`) are conventions. The chart works with any release name; the namespace must match `Cluster.spec.namespace` if you change it.
+The Helm release name (`vworkspace-operator` for the in-repo chart) and the namespace (`vworkspace-system`) are conventions. The chart works with any release name; the namespace must match `Cluster.spec.namespace` if you change it.
 
-Wait until the operator's pod reports `Ready`:
+Wait until the operator's pod reports `Ready` (Option B example):
 
 ```
 kubectl -n vworkspace-system rollout status deploy/vworkspace-app-operator --timeout=180s

@@ -1,0 +1,46 @@
+# Default values for vworkspace-operator.
+# See docs/install/quickstart.md for install examples.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: docker.io/vworkspace/vworkspace-operator
+  tag: ""  # defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: ""
+
+rbac:
+  create: true
+
+crds:
+  # Install CRDs as part of the Helm release (cluster-scoped).
+  install: true
+
+agent:
+  enabled: false
+  odooBaseURL: "https://odoo.example.org"
+  pollIntervalSeconds: 30
+  credentialsSecret: vworkspace-agent-credentials
+
+manager:
+  leaderElect: true
+  healthProbeBindAddress: ":8081"
+  metricsBindAddress: "0"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
