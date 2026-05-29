@@ -39,7 +39,7 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: ./.github/actions/setup-go-if-needed
+        uses: ./verify/.github/actions/setup-go-if-needed
         with:
           working-directory: verify
 
@@ -66,7 +66,7 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: ./.github/actions/setup-go-if-needed
+        uses: ./test/.github/actions/setup-go-if-needed
         with:
           working-directory: test
 
@@ -95,7 +95,7 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: ./.github/actions/setup-go-if-needed
+        uses: ./lint/.github/actions/setup-go-if-needed
         with:
           working-directory: lint
 
@@ -124,7 +124,7 @@ jobs:
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
-        uses: ./.github/actions/setup-go-if-needed
+        uses: ./e2e/.github/actions/setup-go-if-needed
         with:
           working-directory: e2e
 
