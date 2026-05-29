@@ -12,6 +12,9 @@ Real Odoo modules for vWorkspace are not built yet. The in-repo mock server impl
 | `test/mockodoo/server.go` | In-memory HTTP server (`mockodoo.Server`) |
 | `test/mockodoo/cmd/mockodoo/main.go` | Standalone process for local dev |
 | `test/mockodoo/server_test.go` | Unit and poller integration tests |
+| `test/mockodoo/testserver.go` | `NewTestServer()` httptest helper for integration tests |
+| `test/integration/pull_loop_test.go` | Full Pull loop: mock → poller → applier → reconciler |
+| `hack/dev-pull-loop.sh` | Start mock Odoo and print operator env hints |
 
 ## Run locally
 
@@ -57,20 +60,43 @@ Authentication matches the protocol: `Authorization: Bearer <token>` and `Accept
 
 ## Test helpers
 
-In tests, construct a server and enqueue jobs:
+Prefer `NewTestServer()` for integration tests (includes httptest listener and agent client factory):
 
 ```go
-srv := mockodoo.NewServer()
-srv.SetBootstrapToken("cluster-1", "token-1")
-srv.EnqueueJob("cluster-1", agent.Job{ID: "job-1", Kind: "apply", ...})
-httptest.NewServer(srv.Handler())
+ts := mockodoo.NewTestServer()
+defer ts.Close()
+ts.SetBootstrapToken("cluster-1", "token-1")
+ts.EnqueueJob("cluster-1", agent.Job{ID: "job-1", Kind: "apply", ...})
+
+httpClient, _ := ts.NewAgentClient("cluster-1", "token-1")
+poller := &agent.AgentPoller{
+    Client:  httpClient,
+    Applier: &agent.Applier{Client: k8sClient, Scheme: scheme, ClusterID: "cluster-1"},
+}
+_ = poller.PollOnce(ctx)
+
+if !ts.WasAcked("job-1") { /* ... */ }
+res, _ := ts.JobResult("job-1")
 ```
 
-Run mock Odoo tests:
+Inspect mock state: `WasAcked`, `JobResult`, `JobStatuses`, `Events(clusterID)`, `PendingJobCount`.
+
+Run tests:
 
 ```bash
 go test ./test/mockodoo/...
+go test ./test/integration/... -count=1
 ```
+
+## Pull loop example (local)
+
+```bash
+./hack/dev-pull-loop.sh
+# In another terminal, after register:
+make run -- --agent-enabled=true --odoo-base-url=http://127.0.0.1:8080
+```
+
+Full loop without a cluster is covered by `test/integration/pull_loop_test.go` under `make test`.
 
 ## Limitations (intentional)
 

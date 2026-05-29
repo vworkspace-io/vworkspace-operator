@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Phase 1e Pull-mode integration tests (`test/integration/pull_loop_test.go`): mock Odoo enqueue, poller `PollOnce`, applier SSA, `ApplicationInstance` reconciler with Flux engine on fake client, idempotent replay `noop`.
+- Mock Odoo test helper `test/mockodoo/testserver.go` (`NewTestServer`, job result/status inspection).
+- `hack/dev-pull-loop.sh` for local mock Odoo + operator agent workflow.
+- E2E skip placeholder for kind + mock Odoo (`test/e2e/pull_loop_test.go`, deferred to Phase 1f).
 - Operation validating webhook unit tests scaffold (`internal/webhook/operation_webhook_test.go`).
 - Helm chart scaffold at `charts/vworkspace-operator/` (Deployment, RBAC, CRDs, agent values).
 - Quickstart Option A documents in-repo `helm install` path.
