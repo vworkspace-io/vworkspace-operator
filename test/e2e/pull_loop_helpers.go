@@ -231,6 +231,8 @@ func deployOperatorWithAgent() {
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 
+	seedAgentCredentialsSecret()
+
 	By("labeling operator namespace with restricted pod security")
 	cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
 		"pod-security.kubernetes.io/enforce=restricted")

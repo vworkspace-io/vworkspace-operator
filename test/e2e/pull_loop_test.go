@@ -39,7 +39,6 @@ var _ = Describe("Pull-mode job loop", Ordered, func() {
 		skipUnlessKindAvailable()
 		deployMockOdoo()
 		createPullLoopNamespaces()
-		seedAgentCredentialsSecret()
 		deployOperatorWithAgent()
 		startMockOdooPortForward()
 	})
