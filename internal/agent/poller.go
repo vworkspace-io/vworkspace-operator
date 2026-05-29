@@ -19,6 +19,31 @@ type AgentPoller struct {
 	WaitSecs int
 }
 
+// PollOnce fetches jobs with no long-poll wait and processes each until the batch is done.
+// Intended for integration tests; production code should use Run.
+func (p *AgentPoller) PollOnce(ctx context.Context) error {
+	if p.Client == nil || p.Applier == nil {
+		return fmt.Errorf("poller client and applier are required")
+	}
+	jobs, err := p.Client.FetchJobs(ctx, 0)
+	if err != nil {
+		return fmt.Errorf("fetch jobs: %w", err)
+	}
+	TrackJobLag(jobs)
+	var firstErr error
+	for _, job := range jobs {
+		if err := p.processJob(ctx, job); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			if p.Log.GetSink() != nil {
+				p.Log.Error(err, "process job failed", "jobID", job.ID, "kind", job.Kind)
+			}
+		}
+	}
+	return firstErr
+}
+
 // Run blocks until ctx is cancelled.
 func (p *AgentPoller) Run(ctx context.Context) {
 	if p.Client == nil || p.Applier == nil {

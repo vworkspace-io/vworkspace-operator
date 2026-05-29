@@ -117,13 +117,37 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 
 **Acceptance criteria**
 
-- [ ] `POST /api/agent/register` returns bootstrap token for a configured registration token.
-- [ ] `GET /api/agent/jobs` long-polls and returns enqueued jobs for the authenticated cluster.
-- [ ] `POST .../ack`, `.../status`, `.../result`, and `POST /api/agent/events` behave per [job-protocol.md](../connectivity/job-protocol.md).
-- [ ] Operator `AgentPoller` + `Applier` integration test passes against mock server (httptest).
-- [ ] `go test ./test/mockodoo/...` and `make test` pass.
+- [x] `POST /api/agent/register` returns bootstrap token for a configured registration token.
+- [x] `GET /api/agent/jobs` long-polls and returns enqueued jobs for the authenticated cluster.
+- [x] `POST .../ack`, `.../status`, `.../result`, and `POST /api/agent/events` behave per [job-protocol.md](../connectivity/job-protocol.md).
+- [x] Operator `AgentPoller` + `Applier` integration test passes against mock server (httptest).
+- [x] `go test ./test/mockodoo/...` and `make test` pass.
 
-**Branch:** `feat/mock-odoo-server` (merge first — unblocks Pull-mode e2e against mock).
+**Branch:** `feat/mock-odoo-server` (merged).
+
+### Phase 1e — Pull-mode loop integration (done)
+
+**Goal:** Prove the full Pull loop without real Odoo: mock enqueue → poller → applier → `ApplicationInstance` reconciler → result/ack on mock.
+
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| Mock test server helper | `test/mockodoo/testserver.go` | Done |
+| Pull loop integration tests | `test/integration/pull_loop_test.go` | Done |
+| Poller single-iteration API | `internal/agent/poller.go` (`PollOnce`) | Done |
+| E2E placeholder (kind + mock deferred) | `test/e2e/pull_loop_test.go` | Skipped with reason |
+| Local dev script | `hack/dev-pull-loop.sh` | Done |
+| Documentation | `docs/development/mock-odoo.md`, this guide | Done |
+
+**Acceptance criteria**
+
+- [x] Integration test enqueues `apply` job on mock Odoo, runs `AgentPoller.PollOnce`, verifies `ApplicationInstance` CR exists.
+- [x] Integration test runs `ApplicationInstanceReconciler` with `helmengine.FluxEngine` (fake client) and verifies `HelmRelease` materialized (no real Flux controller).
+- [x] Mock Odoo records ack and terminal `succeeded` result for the job.
+- [x] Second integration test verifies idempotent replay returns `noop` on mock Odoo.
+- [x] `make test`, `make lint`, and `./hack/verify-generated.sh` pass.
+- [ ] E2e on kind with in-cluster mock Odoo sidecar (Phase 1f).
+
+**Branch:** `feat/phase-1e-e2e-pull-loop`.
 
 #### Phase 1d-b — Helm install bundle (`feat/helm-install-bundle`)
 
@@ -187,9 +211,10 @@ flowchart TD
 ### Branch strategy
 
 - `main` — merged Phase 1a–1c; container images published from CI.
-- `feat/mock-odoo-server` — Phase 1d-a mock Odoo API.
-- `feat/helm-install-bundle` — Phase 1d-b Helm chart.
-- `feat/admission-webhooks` — Phase 1d-c validating webhook hardening.
+- `feat/mock-odoo-server` — Phase 1d-a mock Odoo API (merged).
+- `feat/helm-install-bundle` — Phase 1d-b Helm chart (merged).
+- `feat/admission-webhooks` — Phase 1d-c validating webhook hardening (merged).
+- `feat/phase-1e-e2e-pull-loop` — Phase 1e Pull-mode integration tests.
 
 ### Daily startup checklist
 
@@ -236,6 +261,7 @@ Disable Pull-mode by leaving `--agent-enabled=false`; in-cluster reconcilers con
 | ApplicationInstance validation | `internal/controller` | unit |
 | HelmRelease materialization | `internal/helmengine` | fake client |
 | Agent HTTP + applier | `internal/agent` | httptest + fake client |
+| Pull loop (mock Odoo → applier → reconciler) | `test/integration` | fake client + mock Odoo |
 | Reconciler integration | `internal/controller` | envtest |
 
 Run everything: `make test`.
@@ -247,10 +273,9 @@ Run everything: `make test`.
 - [ADR 0004 — Two CRDs](../adr/0004-two-crds-applicationinstance-and-operation.md)
 - [ADR 0005 — One operator per cluster](../adr/0005-one-operator-per-cluster.md)
 
-## Phase 1d next session (suggested)
+## Phase 1f next session (suggested)
 
-1. Merge `feat/mock-odoo-server`; run operator against `go run ./test/mockodoo/cmd/mockodoo` locally.
-2. Merge `feat/helm-install-bundle`; validate `helm install` on kind.
-3. Merge `feat/admission-webhooks`; enable webhooks with cert-manager on dev cluster.
-4. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over).
-5. E2e job loop against mock Odoo (optional follow-up).
+1. Deploy mock Odoo in kind (sidecar or Service) and enable skipped e2e in `test/e2e/pull_loop_test.go`.
+2. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo).
+3. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over).
+4. `make deploy` + sample `ApplicationInstance` with Flux CRDs on kind (manual validation).
