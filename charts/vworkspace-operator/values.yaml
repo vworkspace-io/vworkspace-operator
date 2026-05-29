@@ -28,6 +28,10 @@ agent:
   pollIntervalSeconds: 30
   credentialsSecret: vworkspace-agent-credentials
 
+webhooks:
+  enabled: false
+  certPath: /tmp/k8s-webhook-server/serving-certs
+
 manager:
   leaderElect: true
   healthProbeBindAddress: ":8081"

@@ -1,4 +1,4 @@
 package webhook
 
-// Package webhook holds admission webhook stubs for a later phase.
-// Validation helpers live in internal/controller for now.
+// Package webhook implements validating admission webhooks for ApplicationInstance
+// and Operation resources.

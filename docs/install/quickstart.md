@@ -193,6 +193,25 @@ EOF
 
 The `org-myteam` namespace must exist and carry the label `app.vworkspace.io/managed-by=vworkspace` so the operator is willing to manage it; create it (`kubectl create ns org-myteam && kubectl label ns org-myteam app.vworkspace.io/managed-by=vworkspace`) if it doesn't.
 
+## Enabling admission webhooks
+
+Validating webhooks are optional and off by default. Enable them when you need namespace operation allow-lists, concurrent-operation guards, and inline-secret rejection on `ApplicationInstance` values.
+
+**Helm:**
+
+```
+helm upgrade vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --reuse-values \
+  --set webhooks.enabled=true
+```
+
+**Kustomize:** uncomment the `[WEBHOOK]` sections in `config/default/kustomization.yaml` and `config/crd/kustomization.yaml`, apply cert-manager (or mount a TLS Secret at `/tmp/k8s-webhook-server/serving-certs`), and run the manager with `--webhooks-enabled=true`.
+
+**TLS:** the webhook server listens on port `9443` and expects `tls.crt` and `tls.key` in `--webhook-cert-path` (default `/tmp/k8s-webhook-server/serving-certs`). For development, cert-manager's `Certificate` resource under `config/certmanager/` is the supported path; self-signed certs work on kind if the `ValidatingWebhookConfiguration` CA bundle matches.
+
+**Namespace policy:** annotate a namespace to restrict operation types, for example `ops.vworkspace.io/allowed-types: Backup,Restore,Upgrade`.
+
 ## Troubleshooting
 
 If `Cluster.status.conditions[Connected]` is `False`:
