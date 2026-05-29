@@ -204,6 +204,7 @@ jobs:
       contents: read
     name: Build and push image
     runs-on: self-hosted
+    needs: [verify, test, lint, e2e]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     steps:
       - name: Clone the code
@@ -213,7 +214,7 @@ jobs:
           persist-credentials: false
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@5e3e6e406f7bcf192c896b457d659f62d4aa2b5a # v3.6.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
