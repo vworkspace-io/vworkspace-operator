@@ -276,9 +276,10 @@ func deployOperatorWithAgent() {
 }
 
 func teardownOperatorWithAgent() {
-	cmd := exec.Command("make", "undeploy")
+	// Kind cleanup follows; do not block on CRD removal while test CRs may still exist.
+	cmd := exec.Command("make", "undeploy", "KUBECTL_WAIT=false")
 	_, _ = utils.Run(cmd)
-	cmd = exec.Command("make", "uninstall")
+	cmd = exec.Command("make", "uninstall", "KUBECTL_WAIT=false")
 	_, _ = utils.Run(cmd)
 	cmd = exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found", "--wait=false")
 	_, _ = utils.Run(cmd)

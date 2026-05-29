@@ -45,9 +45,9 @@ var _ = Describe("Pull-mode job loop", Ordered, func() {
 
 	AfterAll(func() {
 		stopMockOdooPortForward()
-		teardownOperatorWithAgent()
 		teardownPullLoopNamespaces()
 		teardownMockOdoo()
+		teardownOperatorWithAgent()
 	})
 
 	SetDefaultEventuallyTimeout(3 * time.Minute)
