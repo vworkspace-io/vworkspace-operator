@@ -50,13 +50,15 @@ spec:
             properties:
               clusterId:
                 description: ClusterID is the stable identity registered with Odoo.
-                minLength: 1
                 type: string
               odooBaseUrl:
                 description: OdooBaseURL is the HTTPS base URL for Pull-mode connectivity.
                 type: string
-            required:
-            - clusterId
+              registrationToken:
+                description: |-
+                  RegistrationToken is a one-time token exchanged for a long-lived credential.
+                  Cleared from the spec after successful registration.
+                type: string
             type: object
           status:
             description: ClusterStatus defines observed cluster connectivity posture.
@@ -120,7 +122,31 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              credentialStatus:
+                description: CredentialStatus reports where bootstrap credentials
+                  are stored.
+                properties:
+                  registeredAt:
+                    description: RegisteredAt is when the one-time registration token
+                      was exchanged.
+                    format: date-time
+                    type: string
+                  registrationTokenConsumed:
+                    description: RegistrationTokenConsumed indicates the one-time
+                      token was exchanged successfully.
+                    type: boolean
+                  secretName:
+                    description: SecretName is the Kubernetes Secret holding odoo-base-url,
+                      cluster-id, and token.
+                    type: string
+                  secretNamespace:
+                    description: SecretNamespace is the namespace of the credentials
+                      Secret.
+                    type: string
+                type: object
               lastHeartbeat:
+                description: LastHeartbeat is updated when a recent round-trip to
+                  Odoo succeeded.
                 format: date-time
                 type: string
             type: object

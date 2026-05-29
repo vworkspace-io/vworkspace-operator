@@ -9,6 +9,7 @@ import (
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/labels"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,6 +20,7 @@ import (
 
 func TestApplierApplyApplicationInstance(t *testing.T) {
 	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
 	_ = appsv1alpha1.AddToScheme(scheme)
 	_ = opsv1alpha1.AddToScheme(scheme)
 
@@ -29,7 +31,12 @@ func TestApplierApplyApplicationInstance(t *testing.T) {
 	}
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
-	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+	store := &IdempotencyStore{
+		Client:    cl,
+		Namespace: "vworkspace-system",
+		Name:      "test-idempotency",
+	}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1", Idempotency: store}
 
 	outcome, err := applier.ApplyJob(context.Background(), Job{
 		ID:             "j-apply-1",
@@ -59,11 +66,17 @@ func TestApplierApplyApplicationInstance(t *testing.T) {
 
 func TestApplierIdempotentReplay(t *testing.T) {
 	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
 	_ = appsv1alpha1.AddToScheme(scheme)
 	app := sampleApplicationInstance()
 	payload, _ := json.Marshal(app)
 	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
-	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+	store := &IdempotencyStore{
+		Client:    cl,
+		Namespace: "vworkspace-system",
+		Name:      "test-idempotency",
+	}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1", Idempotency: store}
 
 	job := Job{
 		ID:             "j-apply-2",
@@ -86,6 +99,7 @@ func TestApplierIdempotentReplay(t *testing.T) {
 
 func TestApplierDeleteJob(t *testing.T) {
 	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
 	_ = appsv1alpha1.AddToScheme(scheme)
 	app := sampleApplicationInstance()
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).Build()
@@ -117,10 +131,16 @@ func TestApplierDeleteJob(t *testing.T) {
 
 func TestApplierEnsureIntent(t *testing.T) {
 	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
 	_ = appsv1alpha1.AddToScheme(scheme)
 	app := sampleApplicationInstance()
 	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
-	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+	store := &IdempotencyStore{
+		Client:    cl,
+		Namespace: "vworkspace-system",
+		Name:      "test-idempotency",
+	}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1", Idempotency: store}
 
 	payload, _ := json.Marshal(intentPayload{
 		Intent:              "ensure-application-instance",

@@ -10,8 +10,11 @@ rules:
   - configmaps
   - secrets
   verbs:
+  - create
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - apps.vworkspace.io

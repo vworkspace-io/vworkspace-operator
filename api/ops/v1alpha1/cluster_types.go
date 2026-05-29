@@ -30,19 +30,41 @@ const (
 // ClusterSpec defines operator cluster identity configuration.
 type ClusterSpec struct {
 	// ClusterID is the stable identity registered with Odoo.
-	// +kubebuilder:validation:MinLength=1
-	ClusterID string `json:"clusterId"`
+	// +optional
+	ClusterID string `json:"clusterId,omitempty"`
 	// OdooBaseURL is the HTTPS base URL for Pull-mode connectivity.
 	// +optional
 	OdooBaseURL string `json:"odooBaseUrl,omitempty"`
+	// RegistrationToken is a one-time token exchanged for a long-lived credential.
+	// Cleared from the spec after successful registration.
+	// +optional
+	RegistrationToken string `json:"registrationToken,omitempty"`
+}
+
+// ClusterCredentialStatus reports bootstrap credential materialization.
+type ClusterCredentialStatus struct {
+	// SecretName is the Kubernetes Secret holding odoo-base-url, cluster-id, and token.
+	SecretName string `json:"secretName,omitempty"`
+	// SecretNamespace is the namespace of the credentials Secret.
+	SecretNamespace string `json:"secretNamespace,omitempty"`
+	// RegisteredAt is when the one-time registration token was exchanged.
+	// +optional
+	RegisteredAt *metav1.Time `json:"registeredAt,omitempty"`
+	// RegistrationTokenConsumed indicates the one-time token was exchanged successfully.
+	RegistrationTokenConsumed bool `json:"registrationTokenConsumed,omitempty"`
 }
 
 // ClusterStatus defines observed cluster connectivity posture.
 type ClusterStatus struct {
 	// +listType=map
 	// +listMapKey=type
-	Conditions    []metav1.Condition `json:"conditions,omitempty"`
-	LastHeartbeat *metav1.Time       `json:"lastHeartbeat,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// LastHeartbeat is updated when a recent round-trip to Odoo succeeded.
+	// +optional
+	LastHeartbeat *metav1.Time `json:"lastHeartbeat,omitempty"`
+	// CredentialStatus reports where bootstrap credentials are stored.
+	// +optional
+	CredentialStatus *ClusterCredentialStatus `json:"credentialStatus,omitempty"`
 }
 
 // +kubebuilder:object:root=true

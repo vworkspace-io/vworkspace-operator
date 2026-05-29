@@ -8,7 +8,17 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
-- Pull-mode agent loop: credential loader (`internal/agent/credentials.go`), job applier with server-side apply (`internal/agent/applier.go`), long-poll poller, and event batcher wired from `cmd/main.go` (`--agent-enabled`, `--agent-poll-interval`, `--agent-credentials-secret`).
+- Cluster registration flow: `spec.registrationToken` on `Cluster`, `POST /api/agent/register` client, credential persistence to `Secret/vworkspace-agent-credentials`, and `manager register` CLI subcommand.
+- Persistent Pull-mode idempotency via ConfigMap `vworkspace-applied-jobs` (`internal/agent/idempotency.go`).
+- Agent runtime with credential reload from Secret after registration (`internal/agent/runtime.go`).
+- Pull-mode Prometheus metrics: `vworkspace_operator_pull_job_lag_seconds`, `vworkspace_operator_connectivity_state`, `vworkspace_operator_applied_jobs_total`.
+- Operation validating admission webhook scaffold (`internal/webhook/operation_webhook.go`, `--webhooks-enabled`).
+- Sample Cluster CR (`config/samples/ops_v1alpha1_cluster.yaml`).
+
+### Changed
+
+- Cluster reconciler performs registration token exchange before connectivity heartbeats; clears one-time token from spec after success.
+- Pull-mode applier uses ConfigMap-backed idempotency store instead of in-memory map.
 - Helm engine support for `values.secretRef` and `values.configMapRef` when materializing Flux `HelmRelease` objects.
 - Docker Hub image publishing on `main` and `v*` tags (`docker.io/vworkspace/vworkspace-operator`).
 - Parallel self-hosted CI jobs with per-job checkout paths; [docs/development/self-hosted-runner.md](docs/development/self-hosted-runner.md).
