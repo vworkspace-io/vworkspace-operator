@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Operation validating webhook unit tests scaffold (`internal/webhook/operation_webhook_test.go`).
 - Helm chart scaffold at `charts/vworkspace-operator/` (Deployment, RBAC, CRDs, agent values).
 - Quickstart Option A documents in-repo `helm install` path.
 - In-repo mock Odoo Pull-mode agent API (`test/mockodoo/`) for development without real Odoo modules.
