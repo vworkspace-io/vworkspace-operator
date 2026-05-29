@@ -9,11 +9,21 @@ This repository's CI workflow (`.github/workflows/ci.yml`) targets runners label
 
 - Install **multiple** runner processes on the same host if you have spare CPU and memory (each registers with label `self-hosted`).
 - Pre-install tools below so CI skips slow `apt` steps.
+- Configure **passwordless sudo** for the runner user if you rely on CI to install missing packages (`sudo apt-get`, `systemctl start docker`). Otherwise pre-install everything in this section.
 - Give each runner its own work directory via the default GitHub Actions layout; do not share a single manual checkout path between runners.
 
 ## Pre-install commands
 
 Run on Ubuntu/Debian as a user that will run the runner service.
+
+### Build tools (make, gcc)
+
+Required for `make test`, `make lint`, `make test-e2e`, and `hack/verify-generated.sh`.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y make build-essential git curl
+```
 
 ### Docker
 

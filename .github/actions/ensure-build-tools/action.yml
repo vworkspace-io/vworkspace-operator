@@ -1,0 +1,32 @@
+name: Ensure build tools
+description: Install make and common build dependencies on fresh self-hosted runners
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        apt_install() {
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+          else
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+          fi
+        }
+        if ! command -v make >/dev/null 2>&1; then
+          apt_install make build-essential
+        fi
+        if ! command -v gcc >/dev/null 2>&1; then
+          apt_install build-essential
+        fi
+        if ! command -v git >/dev/null 2>&1; then
+          apt_install git
+        fi
+        if ! command -v curl >/dev/null 2>&1; then
+          apt_install curl
+        fi
+        command -v make
+        command -v git
+        command -v curl

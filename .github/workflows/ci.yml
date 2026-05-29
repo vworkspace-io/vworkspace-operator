@@ -31,6 +31,9 @@ jobs:
           path: verify
           persist-credentials: false
 
+      - name: Ensure build tools
+        uses: ./.github/actions/ensure-build-tools
+
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
@@ -54,6 +57,9 @@ jobs:
         with:
           path: test
           persist-credentials: false
+
+      - name: Ensure build tools
+        uses: ./.github/actions/ensure-build-tools
 
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -81,6 +87,9 @@ jobs:
           path: lint
           persist-credentials: false
 
+      - name: Ensure build tools
+        uses: ./.github/actions/ensure-build-tools
+
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
@@ -107,6 +116,9 @@ jobs:
           path: e2e
           persist-credentials: false
 
+      - name: Ensure build tools
+        uses: ./.github/actions/ensure-build-tools
+
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
@@ -119,7 +131,11 @@ jobs:
             curl -fsSL https://get.docker.com | sh
             sudo usermod -aG docker "$USER" || true
           fi
-          sudo systemctl start docker 2>/dev/null || sudo service docker start
+          if ! docker info >/dev/null 2>&1; then
+            sudo -n systemctl start docker 2>/dev/null \
+              || sudo -n service docker start 2>/dev/null \
+              || true
+          fi
           docker info
 
       - name: Ensure kind is available
