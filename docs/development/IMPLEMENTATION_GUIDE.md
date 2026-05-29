@@ -161,12 +161,35 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 
 **Acceptance criteria**
 
-- [ ] `helm template` renders Deployment, ServiceAccount, ClusterRole(Binding), CRDs.
-- [ ] Values override image, agent flags, and Odoo base URL.
-- [ ] Chart README or quickstart documents install on kind/k3s.
-- [ ] `make test` unchanged (chart validation optional in CI).
+- [x] `helm template` renders Deployment, ServiceAccount, ClusterRole(Binding), CRDs.
+- [x] Values override image, agent flags, and Odoo base URL.
+- [x] Chart README or quickstart documents install on kind/k3s.
+- [x] `make test` unchanged (chart validation optional in CI).
 
-**Branch:** `feat/helm-install-bundle` (merge after or parallel with 1d-a).
+**Branch:** `feat/helm-install-bundle` (merged).
+
+#### Phase 1f-b — Helm chart kind validation (`feat/helm-kind-validate`)
+
+**Goal:** Validate Helm install path on kind; polish chart from Phase 1d-b.
+
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| Chart values polish | `charts/vworkspace-operator/values.yaml` | Done |
+| Post-install NOTES | `charts/vworkspace-operator/templates/NOTES.txt` | Done |
+| Kind validation script | `hack/validate-helm-kind.sh` | Done |
+| Helm install guide | `docs/install/helm.md` | Done |
+| Quickstart Option A (tested values) | `docs/install/quickstart.md` | Done |
+
+**Acceptance criteria**
+
+- [x] `agent.enabled`, `agent.odooBaseUrl`, `agent.credentialsSecret`, `image.repository`, `image.tag` in values.
+- [x] CRDs installed via chart template (`templates/crds.yaml`) when `crds.install=true`.
+- [x] `./hack/validate-helm-kind.sh` installs chart on kind and waits for Deployment Ready.
+- [x] Optional Flux CRDs via `INSTALL_FLUX_CRDS=true`.
+- [x] `make test` and `make lint` pass.
+- [ ] CI helm-kind job optional (commented; run manually).
+
+**Branch:** `feat/helm-kind-validate`.
 
 #### Phase 1d-c — Admission webhooks (`feat/admission-webhooks`)
 
@@ -213,6 +236,7 @@ flowchart TD
 - `main` — merged Phase 1a–1c; container images published from CI.
 - `feat/mock-odoo-server` — Phase 1d-a mock Odoo API (merged).
 - `feat/helm-install-bundle` — Phase 1d-b Helm chart (merged).
+- `feat/helm-kind-validate` — Phase 1f-b Helm kind validation.
 - `feat/admission-webhooks` — Phase 1d-c validating webhook hardening (merged).
 - `feat/phase-1e-e2e-pull-loop` — Phase 1e Pull-mode integration tests.
 
@@ -278,4 +302,4 @@ Run everything: `make test`.
 1. Deploy mock Odoo in kind (sidecar or Service) and enable skipped e2e in `test/e2e/pull_loop_test.go`.
 2. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo).
 3. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over).
-4. `make deploy` + sample `ApplicationInstance` with Flux CRDs on kind (manual validation).
+4. Sample `ApplicationInstance` with Flux controllers on kind (extend `hack/validate-helm-kind.sh` with `INSTALL_FLUX_CRDS=true`).

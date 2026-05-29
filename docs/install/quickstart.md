@@ -11,14 +11,15 @@ The version number `0.0.0` below is a placeholder for the chart version you actu
 
 ## Step 1: install the operator bundle
 
-### Option A — Helm chart (in-repo, Phase 1d-b)
+### Option A — Helm chart (in-repo)
 
-From a clone of this repository:
+From a clone of this repository (tested on kind — see [helm.md](helm.md)):
 
 ```
 helm install vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system \
   --create-namespace \
+  --set image.repository=vworkspace/vworkspace-operator \
   --set image.tag=latest
 ```
 
@@ -29,7 +30,7 @@ helm upgrade vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system \
   --reuse-values \
   --set agent.enabled=true \
-  --set agent.odooBaseURL=https://workspace.example.org
+  --set agent.odooBaseUrl=https://workspace.example.org
 ```
 
 Wait until the operator pod reports `Ready`:
@@ -38,7 +39,8 @@ Wait until the operator pod reports `Ready`:
 kubectl -n vworkspace-system rollout status deploy/vworkspace-operator --timeout=180s
 ```
 
-See [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) for values reference.
+Full values reference, upgrade path, and kind validation: [helm.md](helm.md).
+See [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) for chart maintainer notes.
 
 ### Option B — OCI chart (future release)
 
