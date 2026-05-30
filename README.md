@@ -1,6 +1,7 @@
 # vworkspace-operator
 
 [![CI](https://github.com/vworkspace-io/vworkspace-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/vworkspace-io/vworkspace-operator/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-operator.docs.vworkspace.io-blue)](https://operator.docs.vworkspace.io/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 > **Status:** Alpha — CRDs are at `v1alpha1` and the API may change before `v1.0.0`. Pin versions in production and read the [CHANGELOG](CHANGELOG.md) before upgrading.
@@ -68,7 +69,7 @@ Full documentation is indexed at [docs/README.md](docs/README.md). Highlights:
 | [Development](docs/development/README.md) | Build, test, mock control plane |
 | [ADRs](docs/adr/README.md) | Architecture decision records |
 
-Published docs (GitHub Pages): see [docs/publication.md](docs/publication.md).
+Published docs: **[operator.docs.vworkspace.io](https://operator.docs.vworkspace.io/)** — setup in [docs/publication.md](docs/publication.md).
 
 ## Project status
 

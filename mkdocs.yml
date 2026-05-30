@@ -1,0 +1,114 @@
+site_name: vworkspace-operator
+site_description: Kubernetes operator for vWorkspace — cluster-side reconciliation driven by vWorkspace Server
+# Subdomain deployment (native GitHub Pages per repo). Path-based
+# https://docs.vworkspace.io/vworkspace-operator/ would need a future vworkspace-docs hub repo.
+site_url: https://operator.docs.vworkspace.io/
+repo_url: https://github.com/vworkspace-io/vworkspace-operator
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - toc:
+      permalink: true
+
+nav:
+  - Home: README.md
+  - Concepts:
+      - concepts/README.md
+      - Overview: concepts/overview.md
+      - Architecture: concepts/architecture.md
+      - CRDs: concepts/crds.md
+      - Reconciliation: concepts/reconciliation-model.md
+      - Helm-first: concepts/helm-first.md
+      - Day-2 operations: concepts/day-2-operations.md
+      - Multi-cluster: concepts/multi-cluster-and-multi-org.md
+      - Glossary: concepts/glossary.md
+  - Connectivity:
+      - connectivity/README.md
+      - Modes overview: connectivity/modes-overview.md
+      - Pull mode: connectivity/pull-mode.md
+      - Push mode: connectivity/push-mode.md
+      - GitOps mode: connectivity/gitops-mode.md
+      - Job protocol: connectivity/job-protocol.md
+  - API:
+      - api/README.md
+      - ApplicationInstance: api/application-instance.md
+      - Operation: api/operation.md
+      - Conditions: api/conditions.md
+      - Labels and annotations: api/labels-and-annotations.md
+  - Operations:
+      - operations/README.md
+      - Templates: operations/operation-templates.md
+      - Backups and restores: operations/backups-and-restores.md
+      - Upgrades and migrations: operations/upgrades-and-migrations.md
+      - Engines:
+          - Velero: operations/engines/velero.md
+          - Argo Workflows: operations/engines/argo-workflows.md
+          - Kubernetes Jobs: operations/engines/kubernetes-jobs.md
+          - Helm hooks: operations/engines/helm-hooks.md
+          - CSI snapshots / VolSync: operations/engines/csi-snapshots-volsync.md
+  - Security:
+      - security/README.md
+      - RBAC: security/rbac.md
+      - Authentication: security/authentication.md
+      - Secrets: security/secrets-handling.md
+      - Least privilege: security/least-privilege.md
+      - Threat model: security/threat-model.md
+  - Install:
+      - install/README.md
+      - Prerequisites: install/prerequisites.md
+      - Quickstart: install/quickstart.md
+      - Helm: install/helm.md
+      - Cluster bootstrap: install/cluster-bootstrap.md
+      - Kubernetes distros: install/kubernetes-distros.md
+      - Container images: install/container-images.md
+      - Air-gapped: install/offline-and-airgapped.md
+      - Uninstall: install/uninstall.md
+  - Operate:
+      - operate/README.md
+      - Observability: operate/observability.md
+      - Upgrades: operate/upgrades.md
+      - Backup runbook: operate/backup-restore-runbook.md
+      - Troubleshooting: operate/troubleshooting.md
+  - Development:
+      - development/README.md
+      - Local setup: development/local-setup.md
+      - Build and test: development/build-and-test.md
+      - Mock control plane: development/mock-control-plane.md
+      - Contributing: development/contributing.md
+      - Release process: development/release-process.md
+      - Implementation guide: development/IMPLEMENTATION_GUIDE.md
+  - ADRs:
+      - adr/README.md
+      - "0001 Record ADRs": adr/0001-record-architecture-decisions.md
+      - "0002 Helm-first via Flux": adr/0002-helm-first-via-flux-helmrelease.md
+      - "0003 Pull mode default": adr/0003-pull-mode-as-default-connectivity.md
+      - "0004 Two CRDs": adr/0004-two-crds-applicationinstance-and-operation.md
+      - "0005 One operator per cluster": adr/0005-one-operator-per-cluster.md
+  - RFCs: rfcs/README.md
+  - Diagrams: diagrams/README.md
+  - Publishing: publication.md
+
+docs_dir: docs
