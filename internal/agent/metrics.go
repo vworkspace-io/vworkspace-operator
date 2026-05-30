@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"sync/atomic"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -22,10 +25,20 @@ var (
 		Name: "vworkspace_operator_event_buffer_occupancy",
 		Help: "Current depth of the outbound Pull-mode event buffer.",
 	})
+	credentialUpdatedAtUnix atomic.Int64
 )
 
 func init() {
-	metrics.Registry.MustRegister(pullJobLagSeconds, connectivityState, appliedJobsTotal, eventBufferOccupancy)
+	metrics.Registry.MustRegister(
+		pullJobLagSeconds,
+		connectivityState,
+		appliedJobsTotal,
+		eventBufferOccupancy,
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "vworkspace_operator_credential_age_seconds",
+			Help: "Seconds since the bootstrap credentials Secret was last updated or rotated.",
+		}, credentialAgeSeconds),
+	)
 }
 
 // SetPullJobLagSeconds updates the oldest unapplied job lag gauge.
@@ -46,4 +59,25 @@ func IncAppliedJobs() {
 // SetEventBufferOccupancy updates the outbound event buffer depth gauge.
 func SetEventBufferOccupancy(count int) {
 	eventBufferOccupancy.Set(float64(count))
+}
+
+// SetCredentialUpdatedAt records when bootstrap credentials were last loaded or persisted.
+func SetCredentialUpdatedAt(t time.Time) {
+	if t.IsZero() {
+		credentialUpdatedAtUnix.Store(0)
+		return
+	}
+	credentialUpdatedAtUnix.Store(t.Unix())
+}
+
+func credentialAgeSeconds() float64 {
+	ts := credentialUpdatedAtUnix.Load()
+	if ts == 0 {
+		return 0
+	}
+	age := time.Since(time.Unix(ts, 0)).Seconds()
+	if age < 0 {
+		return 0
+	}
+	return age
 }

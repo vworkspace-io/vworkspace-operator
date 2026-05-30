@@ -99,6 +99,44 @@ func (c *AdminClient) JobResult(jobID string) (agent.JobResult, bool, error) {
 	return result, true, nil
 }
 
+// ListEvents returns events posted to mock Odoo for a cluster via the admin API.
+func (c *AdminClient) ListEvents(clusterID string, filter EventFilter) ([]agent.Event, error) {
+	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/api/admin/events", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build events request: %w", err)
+	}
+	q := req.URL.Query()
+	q.Set("cluster", strings.TrimSpace(clusterID))
+	if filter.Kind != "" {
+		q.Set("kind", filter.Kind)
+	}
+	if filter.Namespace != "" {
+		q.Set("namespace", filter.Namespace)
+	}
+	if filter.Name != "" {
+		q.Set("name", filter.Name)
+	}
+	req.URL.RawQuery = q.Encode()
+	req.Header.Set("Accept", mediaTypeV1)
+	if c.Token != "" {
+		req.Header.Set(adminTokenHeader, c.Token)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list events: status %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
+	var payload agent.EventsRequest
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode events: %w", err)
+	}
+	return payload.Events, nil
+}
+
 // WaitForJobResult polls the admin API until a terminal result appears or timeout elapses.
 func (c *AdminClient) WaitForJobResult(jobID string, timeout time.Duration) (agent.JobResult, error) {
 	deadline := time.Now().Add(timeout)

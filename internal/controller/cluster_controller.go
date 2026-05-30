@@ -42,6 +42,7 @@ type ClusterReconciler struct {
 	CredentialsSecret  string
 	OperatorNamespace  string
 	Reporter           agent.StatusReporter
+	EventBatcher       *agent.EventBatcher
 }
 
 // +kubebuilder:rbac:groups=ops.vworkspace.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -66,6 +67,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			log.Error(err, "cluster registration failed")
 			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RegistrationFailed", err.Error())
 			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "RegistrationPending", "registration token exchange failed")
+			r.syncBufferOverflowCondition(cluster)
 			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
 				return ctrl.Result{}, fmt.Errorf("update registration failure status: %w", statusErr)
 			}
@@ -82,6 +84,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if err := r.rotateCredentials(ctx, cluster, secretName, namespace); err != nil {
 			log.Error(err, "credential rotation failed")
 			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RotationFailed", err.Error())
+			r.syncBufferOverflowCondition(cluster)
 			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
 				return ctrl.Result{}, fmt.Errorf("update rotation failure status: %w", statusErr)
 			}
@@ -112,6 +115,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		agent.SetConnectivityState("pull", -1)
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "CredentialMissing", "bootstrap credential is not available")
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "CredentialMissing", "bootstrap credential is not available")
+		r.syncBufferOverflowCondition(cluster)
 		if err := r.Status().Update(ctx, cluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update disconnected status: %w", err)
 		}
@@ -134,11 +138,37 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionTrue, "CredentialAccepted", "Bearer token accepted")
 	}
 
+	r.syncBufferOverflowCondition(cluster)
+
 	if err := r.Status().Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update cluster status: %w", err)
 	}
 	r.reportConditions(cluster, prevConditions)
 	return ctrl.Result{RequeueAfter: time.Minute}, nil
+}
+
+func (r *ClusterReconciler) syncBufferOverflowCondition(cluster *opsv1alpha1.Cluster) {
+	if r.EventBatcher == nil {
+		return
+	}
+	active, dropped := r.EventBatcher.OverflowState()
+	if active && dropped > 0 {
+		cluster.Status.Conditions = conditions.Set(
+			cluster.Status.Conditions,
+			opsv1alpha1.ConditionBufferOverflow,
+			metav1.ConditionTrue,
+			"EventBufferFull",
+			agent.BufferOverflowMessage(dropped),
+		)
+		return
+	}
+	cluster.Status.Conditions = conditions.Set(
+		cluster.Status.Conditions,
+		opsv1alpha1.ConditionBufferOverflow,
+		metav1.ConditionFalse,
+		"BufferDrained",
+		"Outbound event buffer has drained successfully",
+	)
 }
 
 func (r *ClusterReconciler) rotateCredentials(ctx context.Context, cluster *opsv1alpha1.Cluster, secretName, namespace string) error {

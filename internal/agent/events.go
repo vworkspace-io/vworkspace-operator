@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -22,11 +23,13 @@ type EventBatcher struct {
 		Error(err error, msg string, keysAndValues ...any)
 	}
 
-	mu        sync.Mutex
-	events    []Event
-	maxBatch  int
-	maxBuffer int
-	flushWait time.Duration
+	mu              sync.Mutex
+	events          []Event
+	maxBatch        int
+	maxBuffer       int
+	flushWait       time.Duration
+	overflowActive  bool
+	overflowDropped int64
 }
 
 // NewEventBatcher returns a batcher with sensible defaults.
@@ -60,9 +63,38 @@ func (b *EventBatcher) Enqueue(event Event) {
 	if len(b.events) >= maxBuffer {
 		drop := len(b.events) - maxBuffer + 1
 		b.events = b.events[drop:]
+		b.recordOverflowLocked(drop)
 	}
 	b.events = append(b.events, event)
 	SetEventBufferOccupancy(len(b.events))
+}
+
+// OverflowState reports whether events were dropped and how many since the buffer last drained.
+func (b *EventBatcher) OverflowState() (active bool, dropped int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.overflowActive, b.overflowDropped
+}
+
+// BufferOverflowMessage formats the Cluster BufferOverflow condition message.
+func BufferOverflowMessage(dropped int64) string {
+	return fmt.Sprintf(
+		"Dropped %d outbound event(s) because the buffer is full; verify Odoo connectivity and that events are being accepted",
+		dropped,
+	)
+}
+
+func (b *EventBatcher) recordOverflowLocked(dropped int) {
+	if dropped <= 0 {
+		return
+	}
+	b.overflowActive = true
+	b.overflowDropped += int64(dropped)
+}
+
+func (b *EventBatcher) clearOverflowLocked() {
+	b.overflowActive = false
+	b.overflowDropped = 0
 }
 
 // Start runs the periodic flush loop until ctx is cancelled.
@@ -115,6 +147,11 @@ func (b *EventBatcher) Flush(ctx context.Context) {
 		}
 		return
 	}
+	b.mu.Lock()
+	if len(b.events) == 0 {
+		b.clearOverflowLocked()
+	}
+	b.mu.Unlock()
 	SetConnectivityState("pull", 1)
 }
 
@@ -129,6 +166,7 @@ func (b *EventBatcher) requeue(batch []Event) {
 	if len(combined) > maxBuffer {
 		drop := len(combined) - maxBuffer
 		combined = combined[drop:]
+		b.recordOverflowLocked(drop)
 	}
 	b.events = combined
 	SetEventBufferOccupancy(len(b.events))

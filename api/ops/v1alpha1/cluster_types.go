@@ -25,6 +25,7 @@ const (
 	ConditionDisconnected       = "Disconnected"
 	ConditionAuthenticated      = "Authenticated"
 	ConditionControllersHealthy = "ControllersHealthy"
+	ConditionBufferOverflow     = "BufferOverflow"
 )
 
 // ClusterSpec defines operator cluster identity configuration.
