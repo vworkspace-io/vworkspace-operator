@@ -70,7 +70,7 @@ The operator needs to know who it is. Generate a one-time registration token in 
 kubectl -n vworkspace-system exec deploy/controller-manager -- \
   /manager register \
     --token=<one-time-token> \
-    --odoo-endpoint=https://workspace.example.org \
+    --control-plane-endpoint=https://workspace.example.org \
     --cluster-name=cluster-prod-1
 ```
 
@@ -85,7 +85,7 @@ metadata:
   namespace: vworkspace-system
 spec:
   clusterId: cluster-prod-1
-  odooBaseUrl: https://workspace.example.org
+  controlPlaneBaseUrl: https://workspace.example.org
   registrationToken: <one-time-token>
 EOF
 ```
@@ -128,7 +128,7 @@ The operator publishes its overall health on the `Cluster` CR's `status.conditio
 
 ```
 kubectl get cluster -n vworkspace-system cluster-prod-1 -o jsonpath='{.status.conditions[?(@.type=="Connected")]}'
-{"type":"Connected","status":"True","reason":"OdooReachable","message":"Last successful round-trip 4s ago"}
+{"type":"Connected","status":"True","reason":"ControlPlaneReachable","message":"Last successful round-trip 4s ago"}
 ```
 
 If `status` is `True`, the operator is online and pulling jobs. Three other useful checks:
@@ -169,7 +169,7 @@ metadata:
   name: nextcloud-myteam
   namespace: org-myteam
   labels:
-    app.vworkspace.io/managed-by: odoo
+    app.vworkspace.io/managed-by: control-plane
     app.vworkspace.io/cluster-id: cluster-prod-1
   annotations:
     ops.vworkspace.io/backup: velero
@@ -218,10 +218,10 @@ helm upgrade vworkspace-operator ./charts/vworkspace-operator \
 
 If `Cluster.status.conditions[Connected]` is `False`:
 
-- `OdooUnreachable`: the operator cannot reach `Cluster.spec.odooBaseUrl`. Check DNS, the egress firewall, and the proxy (`Cluster.spec (egress proxy — see pull-mode docs)`) if you set one.
+- `ControlPlaneUnreachable`: the operator cannot reach `Cluster.spec.controlPlaneBaseUrl`. Check DNS, the egress firewall, and the proxy (`Cluster.spec (egress proxy — see pull-mode docs)`) if you set one.
 - `RegistrationTokenInvalid`: the token is expired, already-used, or does not match Odoo's expected hash. Re-issue and try again.
 - `CredentialMissing`: the operator started but the bootstrap credential Secret has been deleted. Re-run the registration step.
-- `OdooAuthenticationFailed`: the credential is present but control plane rejected it. Likely the credential was revoked from the control-plane side; re-register.
+- `ControlPlaneAuthenticationFailed`: the credential is present but control plane rejected it. Likely the credential was revoked from the control-plane side; re-register.
 
 If `ApplicationInstance` is stuck in `Reconciling=True`:
 

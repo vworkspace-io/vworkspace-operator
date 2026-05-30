@@ -21,9 +21,9 @@ func TestCredentialsLoadFromSecret(t *testing.T) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: "system"},
 		Data: map[string][]byte{
-			SecretKeyOdooBaseURL: []byte("https://odoo.example.org"),
-			SecretKeyClusterID:   []byte("cluster-1"),
-			SecretKeyToken:       []byte("secret-token"),
+			SecretKeyControlPlaneBaseURL: []byte("https://control-plane.example.org"),
+			SecretKeyClusterID:           []byte("cluster-1"),
+			SecretKeyToken:               []byte("secret-token"),
 		},
 	}
 	cl := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(secret).Build()
@@ -36,7 +36,7 @@ func TestCredentialsLoadFromSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if creds.BaseURL != "https://odoo.example.org" || creds.ClusterID != "cluster-1" || creds.Token != "secret-token" {
+	if creds.BaseURL != "https://control-plane.example.org" || creds.ClusterID != "cluster-1" || creds.Token != "secret-token" {
 		t.Fatalf("unexpected creds: %+v", creds)
 	}
 }
@@ -45,9 +45,9 @@ func TestCredentialsFlagsOverrideSecret(t *testing.T) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: "system"},
 		Data: map[string][]byte{
-			SecretKeyOdooBaseURL: []byte("https://from-secret.example.org"),
-			SecretKeyClusterID:   []byte("cluster-secret"),
-			SecretKeyToken:       []byte("secret-token"),
+			SecretKeyControlPlaneBaseURL: []byte("https://from-secret.example.org"),
+			SecretKeyClusterID:           []byte("cluster-secret"),
+			SecretKeyToken:               []byte("secret-token"),
 		},
 	}
 	cl := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(secret).Build()

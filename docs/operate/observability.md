@@ -134,7 +134,7 @@ status:
     - { name: org-myteam, allowedOperationTemplates: ["backup.velero", "restore.velero", "upgrade.helm"] }
   lastHeartbeat: "2026-05-28T10:07:13Z"
   conditions:
-    - { type: Connected,              status: "True",  reason: OdooReachable,        lastTransitionTime: "2026-05-28T08:00:00Z", message: "Last successful round-trip 4s ago" }
+    - { type: Connected,              status: "True",  reason: ControlPlaneReachable,        lastTransitionTime: "2026-05-28T08:00:00Z", message: "Last successful round-trip 4s ago" }
     - { type: Authenticated,          status: "True",  reason: CredentialValid,      lastTransitionTime: "2026-05-28T08:00:00Z" }
     - { type: ControllersHealthy,     status: "True",  reason: AllControllersReady,  lastTransitionTime: "2026-05-28T08:00:00Z" }
     - { type: CRDsRegistered,         status: "True",  reason: SchemaMatches,        lastTransitionTime: "2026-05-28T08:00:00Z" }

@@ -6,7 +6,7 @@ const (
 	ApplicationInstanceKey = "app.vworkspace.io/application-instance"
 	NamespaceGateKey       = "managed-by"
 	NamespaceGateValue     = "vworkspace"
-	ManagedByOdoo          = "odoo"
+	ManagedByControlPlane  = "control-plane"
 	ManagedByOperator      = "vworkspace-operator"
 )
 

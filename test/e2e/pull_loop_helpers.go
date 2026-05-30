@@ -207,10 +207,9 @@ metadata:
 type: Opaque
 stringData:
   control-plane-base-url: %s
-  odoo-base-url: %s
   cluster-id: %s
   token: %s
-`, agentCredentialsSecret, namespace, mockOdooServiceURL(), mockOdooServiceURL(), pullLoopClusterID, pullLoopBootstrapToken)
+`, agentCredentialsSecret, namespace, mockOdooServiceURL(), pullLoopClusterID, pullLoopBootstrapToken)
 	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed())
 }
 
@@ -285,7 +284,7 @@ metadata:
   namespace: %s
 spec:
   clusterId: %s
-  odooBaseUrl: %s
+  controlPlaneBaseUrl: %s
   registrationToken: %s
 `, pullLoopClusterID, vworkspaceSystemNS, pullLoopClusterID, mockOdooServiceURL(), pullLoopRegistrationTok)
 	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed())

@@ -52,9 +52,9 @@ func TestClusterReconcilerRegistration(t *testing.T) {
 			Namespace: "vworkspace-system",
 		},
 		Spec: opsv1alpha1.ClusterSpec{
-			ClusterID:         "cluster-prod-1",
-			OdooBaseURL:       server.URL,
-			RegistrationToken: "one-time-token",
+			ClusterID:           "cluster-prod-1",
+			ControlPlaneBaseURL: server.URL,
+			RegistrationToken:   "one-time-token",
 		},
 	}
 

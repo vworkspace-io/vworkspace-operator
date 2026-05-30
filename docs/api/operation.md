@@ -20,7 +20,7 @@ metadata:
   name: nextcloud-myteam-backup-2026-05-28
   namespace: org-myteam
   labels:
-    app.vworkspace.io/managed-by: odoo
+    app.vworkspace.io/managed-by: control-plane
     app.vworkspace.io/cluster-id: cluster-prod-1
     app.vworkspace.io/application-instance: nextcloud-myteam
 spec:

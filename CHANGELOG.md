@@ -6,13 +6,23 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Removed
+
+- Deprecated Odoo-named compatibility aliases from pre-1.0 API cleanup: `--odoo-base-url` / `ODOO_BASE_URL`, `--odoo-endpoint`, Helm `agent.odooBaseUrl`, and credentials Secret key `odoo-base-url`.
+
+### Changed
+
+- **Breaking (pre-1.0):** `Cluster.spec.odooBaseUrl` renamed to `Cluster.spec.controlPlaneBaseUrl`.
+- **Breaking (pre-1.0):** Condition reason codes `OdooReachable`, `OdooUnreachable`, and `OdooAuthenticationFailed` renamed to `ControlPlaneReachable`, `ControlPlaneUnreachable`, and `ControlPlaneAuthenticationFailed`.
+- **Breaking (pre-1.0):** Label value `app.vworkspace.io/managed-by=odoo` renamed to `app.vworkspace.io/managed-by=control-plane`.
+
 ### Added
 
 - Public-release documentation polish: [docs/publication.md](docs/publication.md) (GitHub Pages / MkDocs guidance), refreshed root [README.md](README.md) and [docs/README.md](docs/README.md) index.
-- `--control-plane-base-url` / `CONTROL_PLANE_BASE_URL` flags and env vars for Pull-mode connectivity (`--odoo-base-url` / `ODOO_BASE_URL` retained as deprecated aliases).
-- `--control-plane-endpoint` alias for `manager register` CLI (`--odoo-endpoint` deprecated).
-- Helm value `agent.controlPlaneBaseUrl` ( `agent.odooBaseUrl` deprecated alias).
-- Credentials Secret key `control-plane-base-url` ( `odoo-base-url` written alongside for compatibility).
+- `--control-plane-base-url` / `CONTROL_PLANE_BASE_URL` flags and env vars for Pull-mode connectivity.
+- `--control-plane-endpoint` for `manager register` CLI.
+- Helm value `agent.controlPlaneBaseUrl`.
+- Credentials Secret key `control-plane-base-url`.
 - Mock control plane package at `test/mockcontrolplane/` (renamed from `test/mockodoo/`).
 
 ### Changed

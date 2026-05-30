@@ -56,8 +56,8 @@ func TestApplierApplyApplicationInstance(t *testing.T) {
 	if err := cl.Get(context.Background(), types.NamespacedName{Namespace: app.Namespace, Name: app.Name}, got); err != nil {
 		t.Fatalf("get applied app: %v", err)
 	}
-	if got.Labels[labels.ManagedByKey] != labels.ManagedByOdoo {
-		t.Fatalf("expected managed-by odoo, got %q", got.Labels[labels.ManagedByKey])
+	if got.Labels[labels.ManagedByKey] != labels.ManagedByControlPlane {
+		t.Fatalf("expected managed-by control-plane, got %q", got.Labels[labels.ManagedByKey])
 	}
 	if got.Labels[labels.ClusterIDKey] != "cluster-1" {
 		t.Fatalf("expected cluster-id label")

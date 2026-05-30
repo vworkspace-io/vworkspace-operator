@@ -23,8 +23,7 @@ import (
 func RunRegister(args []string) error {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	token := fs.String("token", "", "One-time registration token from the control plane (required)")
-	controlPlaneURL := fs.String("control-plane-endpoint", "", "Control plane HTTPS base URL (required unless CONTROL_PLANE_BASE_URL or ODOO_BASE_URL is set)")
-	odooURLEndpoint := fs.String("odoo-endpoint", "", "Deprecated: use --control-plane-endpoint")
+	controlPlaneURL := fs.String("control-plane-endpoint", "", "Control plane HTTPS base URL (required unless CONTROL_PLANE_BASE_URL is set)")
 	clusterName := fs.String("cluster-name", "", "Cluster resource name (defaults to cluster ID from the control plane after registration)")
 	namespace := fs.String("namespace", envOr("POD_NAMESPACE", "vworkspace-system"), "Namespace for the Cluster CR")
 	if err := fs.Parse(args); err != nil {
@@ -35,16 +34,10 @@ func RunRegister(args []string) error {
 		return fmt.Errorf("--token is required")
 	}
 	if strings.TrimSpace(*controlPlaneURL) == "" {
-		*controlPlaneURL = strings.TrimSpace(*odooURLEndpoint)
-	}
-	if strings.TrimSpace(*controlPlaneURL) == "" {
 		*controlPlaneURL = os.Getenv("CONTROL_PLANE_BASE_URL")
 	}
 	if strings.TrimSpace(*controlPlaneURL) == "" {
-		*controlPlaneURL = os.Getenv("ODOO_BASE_URL")
-	}
-	if strings.TrimSpace(*controlPlaneURL) == "" {
-		return fmt.Errorf("--control-plane-endpoint, --odoo-endpoint, CONTROL_PLANE_BASE_URL, or ODOO_BASE_URL is required")
+		return fmt.Errorf("--control-plane-endpoint or CONTROL_PLANE_BASE_URL is required")
 	}
 	if strings.TrimSpace(*clusterName) == "" {
 		*clusterName = "cluster-local"
@@ -68,13 +61,13 @@ func RunRegister(args []string) error {
 			Namespace: *namespace,
 		},
 		Spec: opsv1alpha1.ClusterSpec{
-			ClusterID:         strings.TrimSpace(*clusterName),
-			OdooBaseURL:       strings.TrimSpace(*controlPlaneURL),
-			RegistrationToken: strings.TrimSpace(*token),
+			ClusterID:           strings.TrimSpace(*clusterName),
+			ControlPlaneBaseURL: strings.TrimSpace(*controlPlaneURL),
+			RegistrationToken:   strings.TrimSpace(*token),
 		},
 	}
 
-	fmt.Printf("registering cluster %s with %s ...\n", cluster.Name, cluster.Spec.OdooBaseURL)
+	fmt.Printf("registering cluster %s with %s ...\n", cluster.Name, cluster.Spec.ControlPlaneBaseURL)
 	if err := k8s.Patch(context.Background(), cluster, client.Apply, client.FieldOwner("vworkspace-cli"), client.ForceOwnership); err != nil { //nolint:staticcheck // SSA via Patch is the supported path until ApplyConfiguration is generated.
 		return fmt.Errorf("apply Cluster CR: %w", err)
 	}

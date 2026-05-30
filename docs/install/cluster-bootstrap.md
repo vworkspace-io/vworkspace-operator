@@ -80,7 +80,7 @@ You have two equivalent paths.
 kubectl -n vworkspace-system exec deploy/controller-manager -- \
   /manager register \
     --token=<one-time-token> \
-    --odoo-endpoint=https://workspace.example.org \
+    --control-plane-endpoint=https://workspace.example.org \
     --cluster-name=cluster-prod-1
 ```
 
@@ -90,7 +90,7 @@ The CLI helper applies a `Cluster` CR for you and waits up to two minutes for th
 registering cluster cluster-prod-1 with https://workspace.example.org ...
 exchanged registration token for bootstrap credential
 credential persisted to Secret vworkspace-system/vworkspace-agent-credentials
-Cluster cluster-prod-1 condition Connected=True (OdooReachable)
+Cluster cluster-prod-1 condition Connected=True (ControlPlaneReachable)
 ```
 
 ### Path B: apply a `Cluster` CR directly
@@ -104,7 +104,7 @@ metadata:
   namespace: vworkspace-system
 spec:
   clusterId: cluster-prod-1
-  odooBaseUrl: https://workspace.example.org
+  controlPlaneBaseUrl: https://workspace.example.org
   registrationToken: <one-time-token>
 EOF
 ```
@@ -117,13 +117,13 @@ Watch the exchange:
 kubectl get cluster -n vworkspace-system cluster-prod-1 -o yaml | grep -A5 conditions:
 ```
 
-You expect to see `Connected: True` with reason `OdooReachable` within a minute.
+You expect to see `Connected: True` with reason `ControlPlaneReachable` within a minute.
 
 ## Step 5: verify the cluster's health
 
 Both Odoo and the operator know the cluster now. The verification:
 
-- **From the cluster:** `Cluster.status.conditions[Connected]=True/OdooReachable`. `Cluster.status.lastHeartbeat` updates regularly (default every 30 seconds).
+- **From the cluster:** `Cluster.status.conditions[Connected]=True/ControlPlaneReachable`. `Cluster.status.lastHeartbeat` updates regularly (default every 30 seconds).
 - **From Odoo:** the Cluster Registry view shows the cluster as `Connected`, with `operatorVersion`, `fluxVersion`, `veleroVersion`, and `lastHeartbeat` populated. If the AI assistant in Discuss is enabled, it confirms the connection in the cluster's channel.
 
 If any bundled controller is missing or unhealthy, `Cluster.status.conditions` carries one of: `ControllerMissing`, `ControllerDegraded`. The condition message names the controller and a remediation. The AI assistant in Odoo Discuss can also be asked to install any missing prerequisite by emitting an `Operation`.

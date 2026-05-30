@@ -9,9 +9,9 @@ For each symptom the structure is: the condition you see, what it means, the inv
 
 ## `Cluster` symptoms
 
-### `Cluster.status.conditions[Connected]=False`, reason `OdooUnreachable`
+### `Cluster.status.conditions[Connected]=False`, reason `ControlPlaneUnreachable`
 
-**Meaning.** The operator cannot reach `Cluster.spec.odooBaseUrl`. Pull-mode jobs are not being fetched; outbound audit events are buffering locally.
+**Meaning.** The operator cannot reach `Cluster.spec.controlPlaneBaseUrl`. Pull-mode jobs are not being fetched; outbound audit events are buffering locally.
 
 **Investigate.**
 
@@ -71,7 +71,7 @@ kubectl describe deploy -n velero velero
 
 **Meaning.** Connectivity has been failing for the configured grace period (default 5 minutes). The operator is not pulling new jobs; the cluster continues to reconcile the last known desired state.
 
-**Investigate and resolve.** Same as `Connected=False/OdooUnreachable` above. The `Disconnected` condition is sticky to make the failure visible in dashboards; it clears once `Connected=True` has held for the recovery threshold (default 1 minute).
+**Investigate and resolve.** Same as `Connected=False/ControlPlaneUnreachable` above. The `Disconnected` condition is sticky to make the failure visible in dashboards; it clears once `Connected=True` has held for the recovery threshold (default 1 minute).
 
 ## `ApplicationInstance` symptoms
 

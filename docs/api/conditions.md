@@ -153,7 +153,8 @@ The operator maintains a `Cluster` resource that reports its own posture: how it
 | `status` | Reasons | Meaning |
 |----------|---------|---------|
 | True     | `RoundTripOK` | Recent round-trip to the control plane succeeded. |
-| False    | `OdooUnreachable` | Outbound HTTPS to the control plane is failing. `message` carries the underlying network error. |
+| True     | `ControlPlaneReachable` | Initial registration exchange with the control plane succeeded. |
+| False    | `ControlPlaneUnreachable` | Outbound HTTPS to the control plane is failing. `message` carries the underlying network error. |
 
 ### `Disconnected`
 
@@ -171,7 +172,8 @@ The operator maintains a `Cluster` resource that reports its own posture: how it
 | `status` | Reasons | Meaning |
 |----------|---------|---------|
 | True     | `CredentialAccepted` | The bearer token (and optional client certificate) is accepted by Odoo. |
-| False    | `CredentialRejected` | Odoo returned `401`/`403`. Requires admin intervention; the operator stops polling and surfaces this condition. |
+| False    | `CredentialRejected` | The control plane returned `401`/`403`. Requires admin intervention; the operator stops polling and surfaces this condition. |
+| False    | `ControlPlaneAuthenticationFailed` | Outbound authentication to the control plane failed during heartbeat. `message` carries the underlying error. |
 | False    | `CredentialExpired` | The token's expiry has been reached and rotation failed. |
 
 ### `ControllersHealthy`

@@ -85,8 +85,8 @@ func TestPullLoopApplyReconcileAndReport(t *testing.T) {
 	if err := cl.Get(context.Background(), key, got); err != nil {
 		t.Fatalf("get applied ApplicationInstance: %v", err)
 	}
-	if got.Labels[labels.ManagedByKey] != labels.ManagedByOdoo {
-		t.Fatalf("expected managed-by odoo, got %q", got.Labels[labels.ManagedByKey])
+	if got.Labels[labels.ManagedByKey] != labels.ManagedByControlPlane {
+		t.Fatalf("expected managed-by control-plane, got %q", got.Labels[labels.ManagedByKey])
 	}
 
 	engine := helmengine.NewFluxEngine(cl)

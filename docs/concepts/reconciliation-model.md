@@ -53,7 +53,7 @@ Every reconcile is required to be safe to repeat. Three rules enforce this.
 
 Every resource the operator creates carries a small, consistent set of labels and is written under the operator's field manager. The well-known labels are documented in [../api/labels-and-annotations.md](../api/labels-and-annotations.md); the most important for the reconciliation model are:
 
-- `app.vworkspace.io/managed-by=odoo` — declares that Odoo is the upstream source of intent for this resource. Tooling can filter on it to distinguish operator-owned objects from anything else in the namespace.
+- `app.vworkspace.io/managed-by=control-plane` — declares that Odoo is the upstream source of intent for this resource. Tooling can filter on it to distinguish operator-owned objects from anything else in the namespace.
 - `app.vworkspace.io/cluster-id=<id>` — the cluster identity the operator was registered under. Useful for fleet-wide reporting from a central log or metrics store.
 - `app.vworkspace.io/application-instance=<name>` — on resources downstream of an `ApplicationInstance`, names the source. Lets `kubectl get all -l app.vworkspace.io/application-instance=nextcloud-myteam` produce a coherent picture across `HelmRelease`, `Backup`, and other resources tied to the same instance.
 

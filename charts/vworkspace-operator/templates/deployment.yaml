@@ -33,11 +33,7 @@ spec:
             - --agent-enabled={{ .Values.agent.enabled }}
             - --agent-poll-interval={{ .Values.agent.pollIntervalSeconds }}s
             {{- if .Values.agent.enabled }}
-            {{- $controlPlaneURL := .Values.agent.controlPlaneBaseUrl }}
-            {{- if not $controlPlaneURL }}
-            {{- $controlPlaneURL = .Values.agent.odooBaseUrl }}
-            {{- end }}
-            - --control-plane-base-url={{ $controlPlaneURL | quote }}
+            - --control-plane-base-url={{ .Values.agent.controlPlaneBaseUrl | quote }}
             - --agent-credentials-secret={{ .Values.agent.credentialsSecret }}
             {{- end }}
             {{- if .Values.webhooks.enabled }}

@@ -52,10 +52,9 @@ spec:
                 description: ClusterID is the stable identity registered with the
                   control plane.
                 type: string
-              odooBaseUrl:
-                description: |-
-                  OdooBaseURL is the HTTPS base URL for Pull-mode connectivity to vWorkspace Server.
-                  Prefer documenting this field as the control plane base URL; JSON name odooBaseUrl is retained for compatibility.
+              controlPlaneBaseUrl:
+                description: ControlPlaneBaseURL is the HTTPS base URL for Pull-mode
+                  connectivity to vWorkspace Server.
                 type: string
               registrationToken:
                 description: |-
@@ -144,8 +143,8 @@ spec:
                       token was exchanged successfully.
                     type: boolean
                   secretName:
-                    description: SecretName is the Kubernetes Secret holding control-plane-base-url
-                      (or odoo-base-url), cluster-id, and token.
+                    description: SecretName is the Kubernetes Secret holding control-plane-base-url,
+                      cluster-id, and token.
                     type: string
                   secretNamespace:
                     description: SecretNamespace is the namespace of the credentials

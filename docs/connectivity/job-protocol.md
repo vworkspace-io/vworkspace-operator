@@ -46,7 +46,7 @@ Body:
           "name": "nextcloud-myteam",
           "namespace": "org-myteam",
           "labels": {
-            "app.vworkspace.io/managed-by": "odoo",
+            "app.vworkspace.io/managed-by": "control-plane",
             "app.vworkspace.io/cluster-id": "cluster-prod-1"
           }
         },

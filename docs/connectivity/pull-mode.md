@@ -47,7 +47,7 @@ Enable Pull-mode in the operator Deployment:
 | Environment | `CONTROL_PLANE_BASE_URL`, `VWORKSPACE_CLUSTER_ID`, `VWORKSPACE_AGENT_TOKEN` |
 | Secret (`--agent-credentials-secret`, default name `vworkspace-agent-credentials`) | `control-plane-base-url`, `cluster-id`, `token` |
 
-Flag and environment values override Secret data when both are set. The operator uses field manager `vworkspace-agent` and sets labels `app.vworkspace.io/managed-by=odoo` and `app.vworkspace.io/cluster-id=<cluster-id>` on applied objects.
+Flag and environment values override Secret data when both are set. The operator uses field manager `vworkspace-agent` and sets labels `app.vworkspace.io/managed-by=control-plane` and `app.vworkspace.io/cluster-id=<cluster-id>` on applied objects.
 
 Container image: `docker.io/vworkspace/vworkspace-operator` — see [../install/container-images.md](../install/container-images.md).
 - **Cluster identity.** Every cluster has a stable identity record in Odoo: ID, display name, owning organization, public key (if mTLS or signed payloads are enabled), allowed namespaces, allowed app catalog entries, allowed operation engines.
@@ -72,7 +72,7 @@ Each Pull-mode `job` is distinct from a Kubernetes `Job` resource. The vocabular
 
 Each job carries one of two payload shapes:
 
-- **Rendered Kubernetes object (server-side apply).** A full manifest of an `ApplicationInstance`, `Operation`, or — in advanced cases — any other CR the operator is authorized to manage. The operator applies it with server-side apply, the standard ownership labels (`app.vworkspace.io/managed-by=odoo`, `app.vworkspace.io/cluster-id={id}`; see [../api/labels-and-annotations.md](../api/labels-and-annotations.md)), and the operator's stable field manager.
+- **Rendered Kubernetes object (server-side apply).** A full manifest of an `ApplicationInstance`, `Operation`, or — in advanced cases — any other CR the operator is authorized to manage. The operator applies it with server-side apply, the standard ownership labels (`app.vworkspace.io/managed-by=control-plane`, `app.vworkspace.io/cluster-id={id}`; see [../api/labels-and-annotations.md](../api/labels-and-annotations.md)), and the operator's stable field manager.
 - **Intent (higher-level).** A small structured record (`ensure-application-instance`, `request-operation`, `delete-application-instance`, `rotate-operator-credentials`, ...) that the operator translates locally into one or more CRs.
 
 Both shapes converge in the cluster: the operator's reconciler only ever sees its own CRs. Pull mode does not introduce a second reconciliation loop; it introduces a new way to materialize the CRs the operator already reconciles.

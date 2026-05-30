@@ -57,7 +57,7 @@ Two notes:
 
 The operator's Pull-mode default needs outbound HTTPS (port 443) to the vWorkspace Server control plane. No inbound port on the cluster is required for Pull. Concretely:
 
-- The operator pod's outbound HTTP client must reach `https://<odoo-host>` for `/api/agent/*` endpoints. The host and (optional) proxy are configured in `Cluster.spec.odooBaseUrl` and `Cluster.spec (egress proxy — see pull-mode docs)`.
+- The operator pod's outbound HTTP client must reach `https://<control-plane-host>` for `/api/agent/*` endpoints. The host and (optional) proxy are configured in `Cluster.spec.controlPlaneBaseUrl` and `Cluster.spec (egress proxy — see pull-mode docs)`.
 - Velero needs outbound access to the configured `BackupStorageLocation` (S3, GCS, Azure Blob, MinIO, on-prem object store). Configure your egress firewall accordingly.
 - external-secrets needs outbound access to whichever upstream secret store you use (Vault, AWS, GCP, Azure, Akeyless, etc.).
 - cert-manager needs outbound access to your ACME endpoint (typically Let's Encrypt).
