@@ -1,7 +1,7 @@
 # Pull-mode job protocol
 
 **Status:** Alpha — version `application/vnd.vworkspace.agent.v1+json`.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This page is the wire-level HTTP contract between the operator (in Pull mode) and Odoo. It specifies the endpoints, the request and response shapes, the authentication model, the error codes, and the versioning convention. The conceptual treatment is in [pull-mode.md](pull-mode.md); the sequence diagram is in [../diagrams/pull-mode-sequence.txt](../diagrams/pull-mode-sequence.txt).
 

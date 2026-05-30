@@ -3,7 +3,7 @@
 **Group/Version/Kind:** `ops.vworkspace.io/v1alpha1` `Operation`
 **Scope:** Namespaced
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 ## Overview
 

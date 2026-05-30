@@ -4,7 +4,7 @@
 
 ## Context
 
-`vworkspace-operator` is a Kubernetes operator whose job is to deploy and operate applications on a cluster on behalf of an Odoo control plane. The applications in vWorkspace's catalog are complex: Nextcloud has its own pre- and post-upgrade hooks for occ migrations; OnlyOffice integration is encoded in chart values; Mattermost migrations are baked into chart hooks. These applications are not new; they have been deployed by hand and by automation for years, and the upstream charts have absorbed years of operational learning.
+`vworkspace-operator` is a Kubernetes operator whose job is to deploy and operate applications on a cluster on behalf of an vWorkspace Server control plane. The applications in vWorkspace's catalog are complex: Nextcloud has its own pre- and post-upgrade hooks for occ migrations; OnlyOffice integration is encoded in chart values; Mattermost migrations are baked into chart hooks. These applications are not new; they have been deployed by hand and by automation for years, and the upstream charts have absorbed years of operational learning.
 
 The operator must put these applications on clusters and operate them through their lifecycle (install, upgrade, rollback, drift remediation, status reporting). Three options were considered:
 

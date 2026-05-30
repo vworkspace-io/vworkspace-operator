@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/vworkspace-io/vworkspace-operator/test/mockodoo"
+	"github.com/vworkspace-io/vworkspace-operator/test/mockcontrolplane"
 )
 
 func main() {
@@ -17,13 +17,16 @@ func main() {
 	adminToken := flag.String("admin-token", "", "token required for /api/admin/* enqueue helpers")
 	flag.Parse()
 
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.AddRegistrationToken(*regToken, *clusterID)
 	if strings.TrimSpace(*bootstrapToken) != "" {
 		srv.SetBootstrapToken(*clusterID, *bootstrapToken)
 	}
 	srv.AdminToken = strings.TrimSpace(*adminToken)
 
-	log.Printf("mock Odoo agent API listening on %s (cluster=%s registration-token=%s)", *addr, *clusterID, *regToken)
+	log.Printf(
+		"mock control plane agent API listening on %s (cluster=%s registration-token=%s)",
+		*addr, *clusterID, *regToken,
+	)
 	log.Fatal(http.ListenAndServe(*addr, srv.Handler()))
 }

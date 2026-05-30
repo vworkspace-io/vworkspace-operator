@@ -1,7 +1,7 @@
 # Project layout
 
 **Status:** Alpha — Phase 1 foundation implemented; some packages are stubs.
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 This is the directory layout for the operator's Go source tree. It follows Kubebuilder v4 conventions with vWorkspace-specific packages under `internal/agent/`, `internal/engines/`, and `internal/helmengine/`.
 

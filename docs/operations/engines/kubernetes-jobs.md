@@ -1,7 +1,7 @@
 # Engine: Kubernetes Jobs
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 The Kubernetes `Job` engine is the operator's choice for one-shot, portable tasks that do not warrant a workflow DAG. It is the lowest-common-denominator engine: any cluster has a `batch/v1` `Job` controller, no third-party install is required, and the resulting `Pod` is a familiar troubleshooting surface. The operator materializes a `batch/v1` `Job`, watches its status, and reports completion or failure back onto the `Operation`.
 

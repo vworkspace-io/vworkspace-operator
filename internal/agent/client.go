@@ -23,7 +23,7 @@ const (
 	OutcomeConflict  = "conflict"
 )
 
-// Job represents a Pull-mode work item from Odoo.
+// Job represents a Pull-mode work item from the control plane.
 type Job struct {
 	ID             string          `json:"id"`
 	Kind           string          `json:"kind"`
@@ -67,7 +67,7 @@ type JobResult struct {
 
 // Event represents a batched status event.
 type Event struct {
-	// EventKey is a stable idempotency key for Odoo-side deduplication.
+	// EventKey is a stable idempotency key for control-plane-side deduplication.
 	EventKey    string             `json:"eventKey,omitempty"`
 	Kind        string             `json:"kind"`
 	ResourceRef AppliedRef         `json:"resourceRef"`
@@ -94,7 +94,7 @@ type RotateCredentialsResponse struct {
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
-// Client communicates with Odoo using the Pull-mode job protocol.
+// Client communicates with the control plane using the Pull-mode job protocol.
 type Client interface {
 	FetchJobs(ctx context.Context, waitSeconds int) ([]Job, error)
 	AckJob(ctx context.Context, jobID string) error

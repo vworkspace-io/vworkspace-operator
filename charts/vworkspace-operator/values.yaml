@@ -24,7 +24,10 @@ crds:
 
 agent:
   enabled: false
-  odooBaseUrl: "https://odoo.example.org"
+  # Preferred: HTTPS base URL of vWorkspace Server (the control plane).
+  controlPlaneBaseUrl: "https://control-plane.example.org"
+  # Deprecated alias; used when controlPlaneBaseUrl is empty.
+  odooBaseUrl: ""
   pollIntervalSeconds: 30
   credentialsSecret: vworkspace-agent-credentials
 

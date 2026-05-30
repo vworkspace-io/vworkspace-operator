@@ -22,9 +22,10 @@ import (
 // RunRegister applies a Cluster CR carrying a one-time registration token.
 func RunRegister(args []string) error {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
-	token := fs.String("token", "", "One-time registration token from Odoo (required)")
-	odooURL := fs.String("odoo-endpoint", "", "Odoo HTTPS base URL (required unless ODOO_BASE_URL is set)")
-	clusterName := fs.String("cluster-name", "", "Cluster resource name (defaults to cluster ID from Odoo after registration)")
+	token := fs.String("token", "", "One-time registration token from the control plane (required)")
+	controlPlaneURL := fs.String("control-plane-endpoint", "", "Control plane HTTPS base URL (required unless CONTROL_PLANE_BASE_URL or ODOO_BASE_URL is set)")
+	odooURLEndpoint := fs.String("odoo-endpoint", "", "Deprecated: use --control-plane-endpoint")
+	clusterName := fs.String("cluster-name", "", "Cluster resource name (defaults to cluster ID from the control plane after registration)")
 	namespace := fs.String("namespace", envOr("POD_NAMESPACE", "vworkspace-system"), "Namespace for the Cluster CR")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -33,11 +34,17 @@ func RunRegister(args []string) error {
 	if strings.TrimSpace(*token) == "" {
 		return fmt.Errorf("--token is required")
 	}
-	if strings.TrimSpace(*odooURL) == "" {
-		*odooURL = os.Getenv("ODOO_BASE_URL")
+	if strings.TrimSpace(*controlPlaneURL) == "" {
+		*controlPlaneURL = strings.TrimSpace(*odooURLEndpoint)
 	}
-	if strings.TrimSpace(*odooURL) == "" {
-		return fmt.Errorf("--odoo-endpoint or ODOO_BASE_URL is required")
+	if strings.TrimSpace(*controlPlaneURL) == "" {
+		*controlPlaneURL = os.Getenv("CONTROL_PLANE_BASE_URL")
+	}
+	if strings.TrimSpace(*controlPlaneURL) == "" {
+		*controlPlaneURL = os.Getenv("ODOO_BASE_URL")
+	}
+	if strings.TrimSpace(*controlPlaneURL) == "" {
+		return fmt.Errorf("--control-plane-endpoint, --odoo-endpoint, CONTROL_PLANE_BASE_URL, or ODOO_BASE_URL is required")
 	}
 	if strings.TrimSpace(*clusterName) == "" {
 		*clusterName = "cluster-local"
@@ -62,7 +69,7 @@ func RunRegister(args []string) error {
 		},
 		Spec: opsv1alpha1.ClusterSpec{
 			ClusterID:         strings.TrimSpace(*clusterName),
-			OdooBaseURL:       strings.TrimSpace(*odooURL),
+			OdooBaseURL:       strings.TrimSpace(*controlPlaneURL),
 			RegistrationToken: strings.TrimSpace(*token),
 		},
 	}

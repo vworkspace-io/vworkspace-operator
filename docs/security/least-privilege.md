@@ -1,7 +1,7 @@
 # Least privilege and separation of duties
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document explains the separation-of-duties model the operator is built on. The mechanical RBAC reference — every `ClusterRole`, `Role`, and `RoleBinding` — is in [rbac.md](rbac.md); this document is the why behind those rules and the blast-radius reasoning that justifies the extra wiring.
 
@@ -40,7 +40,7 @@ The operator does not impersonate any of these. It writes a CR that the matching
 | Read Pod status and logs in managed namespaces (for `Operation.status.outputs.logsRef`).                 | `exec` into any Pod. Quiesce hooks are run by the workflow runner, not the operator.                                            |
 | Read Namespace metadata cluster-wide.                                                                   | Create or modify Namespaces.                                                                                                    |
 | Read CustomResourceDefinitions (to validate that required CRDs are installed).                            | Modify CRDs. CRD lifecycle is owned by the operator's Helm chart, applied by Flux on the cluster, not by the operator at runtime. |
-| Talk outbound to Odoo (Pull mode) or accept inbound CR writes from Odoo (Push mode).                     | Talk to the cluster API as anyone other than its own ServiceAccount.                                                            |
+| Talk outbound to the control plane (Pull mode) or accept inbound CR writes from the control plane (Push mode).                     | Talk to the cluster API as anyone other than its own ServiceAccount.                                                            |
 
 ## Blast radius if the operator is compromised
 
@@ -51,7 +51,7 @@ The operator's Secret store and ServiceAccount are the credentials an attacker w
 - The attacker can create arbitrary `Workflow` and `Job` resources. The workflows and jobs run under `vworkspace-operation-runner`, which has only the narrow rights described in [rbac.md](rbac.md). Lateral movement out of the operation runner into another principal is bounded by what the runner can read.
 - The attacker cannot directly read Secrets in arbitrary namespaces (no `list secrets`). They can however read Secrets they reference by name from a chart they install — same as any chart author.
 
-The defensive posture against this is twofold: the operator's ServiceAccount token is mounted only inside the operator's pod (no automount on other pods); and the operator's outbound credential to Odoo is in a separate Secret (`vworkspace-operator-credentials`) the operator reads at startup and refreshes via rotation, not on every reconcile.
+The defensive posture against this is twofold: the operator's ServiceAccount token is mounted only inside the operator's pod (no automount on other pods); and the operator's outbound credential to the control plane is in a separate Secret (`vworkspace-operator-credentials`) the operator reads at startup and refreshes via rotation, not on every reconcile.
 
 ## Blast radius if Velero is compromised
 
@@ -85,5 +85,5 @@ If any of these fail, the install has drifted from the bundle. Reconcile to the 
 
 - [rbac.md](rbac.md) — RBAC reference with concrete YAML.
 - [secrets-handling.md](secrets-handling.md) — Why the operator's `get`-by-name on Secrets is enough, and what happens when a chart's values contain credentials.
-- [authentication.md](authentication.md) — Where the operator's outbound credential to Odoo lives and how it rotates.
+- [authentication.md](authentication.md) — Where the operator's outbound credential to the control plane lives and how it rotates.
 - [threat-model.md](threat-model.md) — The adversary model that justifies the separation above.

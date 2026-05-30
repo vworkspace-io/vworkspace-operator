@@ -1,7 +1,7 @@
 # Dev workflow
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document describes the dev workflow for working on `vworkspace-operator` itself. The root `CONTRIBUTING.md` covers the process (filing issues, DCO sign-off, PR review); this expands on what to run locally between writing code and pushing a PR.
 
@@ -137,10 +137,10 @@ If a condition is not transitioning as expected, look at the reconcile loop's ev
 
 ## Running the operator against a real Odoo
 
-For changes that exercise the Pull-mode client, you need an Odoo instance. The smallest path:
+For changes that exercise the Pull-mode client, you need an vWorkspace Server instance. The smallest path:
 
 1. Run an Odoo with the vWorkspace addons enabled (`docker-compose -f develop/docker-compose.yml up` in the parent project's repo).
-2. Issue a registration token from Odoo's Cluster Registry.
+2. Issue a registration token from the control plane's Cluster Registry.
 3. Apply a `Cluster` CR pointing at the local Odoo:
 
    ```yaml

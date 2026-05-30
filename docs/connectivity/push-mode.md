@@ -1,17 +1,17 @@
 # Push mode
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
-In Push mode, Odoo authenticates directly to the cluster's Kubernetes API and writes the operator's CRDs — `ApplicationInstance` (`apps.vworkspace.io/v1alpha1`) and `Operation` (`ops.vworkspace.io/v1alpha1`) — using server-side apply. The operator and the rest of the in-cluster controllers reconcile those resources exactly as in any other mode. Status either flows back via Odoo polling the K8s API, or via the same outbound status channel used by Pull mode.
+In Push mode, the control plane authenticates directly to the cluster's Kubernetes API and writes the operator's CRDs — `ApplicationInstance` (`apps.vworkspace.io/v1alpha1`) and `Operation` (`ops.vworkspace.io/v1alpha1`) — using server-side apply. The operator and the rest of the in-cluster controllers reconcile those resources exactly as in any other mode. Status either flows back via Odoo polling the K8s API, or via the same outbound status channel used by Pull mode.
 
-Push is the simplest mode when Odoo and the cluster share a trusted network. It is the right default in two narrow scenarios: when Odoo is installed *into* the same cluster it manages (the most common in-cluster topology), and when both sides sit behind the same VPN or in the same datacenter. It is not the right default for self-hosted clusters behind NAT, regulated edges, or multi-tenant deployments — those want [Pull mode](pull-mode.md).
+Push is the simplest mode when the control plane and the cluster share a trusted network. It is the right default in two narrow scenarios: when vWorkspace Server is installed *into* the same cluster it manages (the most common in-cluster topology), and when both sides sit behind the same VPN or in the same datacenter. It is not the right default for self-hosted clusters behind NAT, regulated edges, or multi-tenant deployments — those want [Pull mode](pull-mode.md).
 
 ## When Push is the right choice
 
 - **Odoo is co-resident with the cluster it manages.** A vWorkspace install where the Odoo `Deployment` and the `vworkspace-operator` `Deployment` live in the same cluster, talking to the same Kubernetes API. There is no network boundary between them; Odoo already has cluster-internal connectivity, and a service-account token scoped to the operator's CRDs is the natural credential.
-- **Odoo and the cluster share a trusted network.** Two adjacent clusters on the same VPN, the same Tailscale tailnet, the same private VLAN. The cluster API server is reachable from Odoo's network, the operator running it trusts that network, and the credential surface is acceptable.
-- **A small, dedicated fleet.** A platform team running a handful of clusters within their own infrastructure, where holding a kubeconfig per cluster is operationally fine. Push gives them the lowest latency (apply is synchronous from Odoo's perspective) and the simplest mental model.
+- **Odoo and the cluster share a trusted network.** Two adjacent clusters on the same VPN, the same Tailscale tailnet, the same private VLAN. The cluster API server is reachable from the control plane's network, the operator running it trusts that network, and the credential surface is acceptable.
+- **A small, dedicated fleet.** A platform team running a handful of clusters within their own infrastructure, where holding a kubeconfig per cluster is operationally fine. Push gives them the lowest latency (apply is synchronous from the control plane's perspective) and the simplest mental model.
 
 If any of "behind NAT", "behind a customer firewall", "edge cluster", "regulated change control", "multi-organization SaaS", or "Odoo should never hold a kubeconfig" applies, the right answer is Pull (or GitOps), not Push.
 
@@ -50,12 +50,12 @@ In a hybrid fleet (some clusters Push, some Pull), funneling all status through 
 - **Connectivity.** Push requires Odoo to reach the cluster API server. NAT, firewalls, and provider boundaries make this hard outside a flat trusted network. Pull only needs outbound HTTPS from the cluster.
 - **Credentials.** Push gives Odoo a powerful credential (write access to the operator's CRDs in the cluster). Pull gives Odoo an identity record and the cluster holds an outbound token. Pull's credential surface is strictly smaller.
 - **Blast radius of an Odoo compromise.** A compromise of an Odoo holding kubeconfigs is materially worse than a compromise of an Odoo that only signs jobs. In Pull, an attacker who takes over Odoo can still only push intent, which still has to be applied locally by an operator that may verify signed payloads. In Push, an attacker has the cluster's CRD-scoped write API at their fingertips.
-- **Operational independence.** In both modes, an Odoo outage does not stop in-cluster reconciliation; the operator keeps converging to the last applied desired state. Push catches up faster on reconnect (Odoo just resumes its watch). Pull catches up via re-pulling the current job set.
-- **Latency.** Push has lower latency for apply (synchronous from Odoo's perspective). Pull has slightly higher latency (the next long-poll cycle). For human-driven work this is rarely the deciding factor.
+- **Operational independence.** In both modes, an control plane outage does not stop in-cluster reconciliation; the operator keeps converging to the last applied desired state. Push catches up faster on reconnect (Odoo just resumes its watch). Pull catches up via re-pulling the current job set.
+- **Latency.** Push has lower latency for apply (synchronous from the control plane's perspective). Pull has slightly higher latency (the next long-poll cycle). For human-driven work this is rarely the deciding factor.
 - **Complexity.** Push is the simplest mode when network is flat; complexity rises sharply when network is not flat. Pull's complexity is roughly constant across topologies.
 
-Push mode is supported because it is the right answer in a real and common deployment topology (in-cluster Odoo). It is not the default because that topology is not the only one the project is built for.
+Push mode is supported because it is the right answer in a real and common deployment topology (in-cluster vWorkspace Server). It is not the default because that topology is not the only one the project is built for.
 
 ## Migrating between modes
 
-Push and Pull use the same CRDs and the same in-cluster reconciliation loop. Migrating a cluster from one to the other is an Odoo-side change plus a credential rotation: register the cluster in the target mode, revoke the credential it no longer needs, and the operator's behavior does not change. The in-cluster state is preserved across the migration because it is the same CRDs in the same API server before and after.
+Push and Pull use the same CRDs and the same in-cluster reconciliation loop. Migrating a cluster from one to the other is an control-plane-side change plus a credential rotation: register the cluster in the target mode, revoke the credential it no longer needs, and the operator's behavior does not change. The in-cluster state is preserved across the migration because it is the same CRDs in the same API server before and after.

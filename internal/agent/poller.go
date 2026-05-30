@@ -10,7 +10,7 @@ import (
 
 const defaultLongPollWait = 30
 
-// AgentPoller long-polls Odoo for jobs, applies them, and reports results.
+// AgentPoller long-polls the control plane for jobs, applies them, and reports results.
 type AgentPoller struct {
 	Client   Client
 	Applier  *Applier

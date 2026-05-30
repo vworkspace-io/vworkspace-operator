@@ -1,78 +1,87 @@
 # vworkspace-operator
 
-> Status: Alpha — APIs may change. The CRDs are at `v1alpha1` and the project is pre-1.0. Pin versions in production and read the [CHANGELOG](CHANGELOG.md) before upgrading.
+[![CI](https://github.com/vworkspace-io/vworkspace-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/vworkspace-io/vworkspace-operator/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-`vworkspace-operator` is the cluster-side Kubernetes operator that an Odoo-based [vWorkspace](https://github.com/vworkspace-io/vworkspace) control plane drives to install, upgrade, back up, and otherwise operate applications running in a Kubernetes cluster. It is Helm-first: every application is deployed through an upstream Helm chart, reconciled by [Flux Helm Controller](https://fluxcd.io) by default, and described in the cluster by a small pair of custom resources — `ApplicationInstance` and `Operation`. Day-2 work (backups, restores, upgrades, migrations) is modeled as Kubernetes resources reconciled by the operator and proven third-party controllers (Velero, Argo Workflows, CSI snapshot controller, VolSync), never as imperative scripts on the Odoo side.
+> **Status:** Alpha — CRDs are at `v1alpha1` and the API may change before `v1.0.0`. Pin versions in production and read the [CHANGELOG](CHANGELOG.md) before upgrading.
 
-It is intended for the same audience as the rest of the vWorkspace project: self-hosting organizations, schools, clinics, NGOs, small businesses, homelab operators, and the platform engineers tired of stitching together one-off install scripts. The operator is the piece that lives in your cluster, owns its own reconciliation loop, and keeps your applications healthy whether Odoo is reachable today or not.
+**vworkspace-operator** is the cluster-side Kubernetes operator for [vWorkspace](https://github.com/vworkspace-io/vworkspace). It runs in your cluster, reconciles a small set of custom resources, and connects to **[vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server)** — the control plane — so applications can be installed, upgraded, backed up, and operated without giving the control plane a kubeconfig or opening inbound ports on the cluster.
+
+The operator is **Helm-first**: every application is deployed from an upstream Helm chart (via [Flux Helm Controller](https://fluxcd.io) by default). Day-2 work is modeled as Kubernetes resources (`ApplicationInstance`, `Operation`) reconciled by the operator and proven third-party controllers (Velero, Argo Workflows, CSI snapshots, VolSync), not as imperative scripts on the control-plane side.
+
+## Architecture at a glance
+
+```text
+┌─────────────────────┐         Pull / Push / GitOps          ┌──────────────────────┐
+│  vWorkspace Server  │  ◄──────────────────────────────────► │ vworkspace-operator  │
+│  (control plane)    │         narrow HTTP / CRD contract      │  (in your cluster)   │
+└─────────────────────┘                                       └──────────┬───────────┘
+                                                                           │
+                                                                           ▼
+                                                                Flux, Velero, workloads…
+```
+
+| Component | Role |
+|-----------|------|
+| [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) | Control plane (built on Odoo 19). Declares intent, creates Pull-mode jobs, receives status and audit events. Holds cluster identity and credentials — not a kubeconfig. |
+| **vworkspace-operator** | Cluster agent. Reconciles `ApplicationInstance` and `Operation` CRDs, executes Pull-mode jobs, reports health. |
+| **Kubernetes** | Execution environment. One operator deployment per cluster. |
+
+**Pull mode** (default): the operator initiates outbound HTTPS to the control plane (`/api/agent/*`), fetches jobs, applies them locally, and posts status. **Push** and **GitOps** modes use the same CRDs with different transport. See [docs/connectivity/](docs/connectivity/README.md).
 
 ## Who this is for
 
-- Operators running their own Kubernetes cluster (k3s, Talos, Harvester, managed K8s, or a single-node Docker host with embedded k3s) who want a coherent, AGPL-licensed control plane for their workloads.
-- vWorkspace deployments that need to manage one or more clusters from a single Odoo install without exposing the cluster API to the public internet and without Odoo holding a kubeconfig.
-- Platform teams that want a small, predictable CRD surface (`ApplicationInstance`, `Operation`) instead of dozens of bespoke per-app controllers.
+- Platform teams running k3s, Talos, Harvester, managed Kubernetes, or homelab clusters who want a coherent, AGPL-licensed control plane.
+- Organizations managing multiple clusters from one vWorkspace Server without exposing the Kubernetes API to the internet.
+- Teams that prefer two predictable CRDs (`ApplicationInstance`, `Operation`) over dozens of per-app operators.
 
-## How it relates to vWorkspace
+## Quick start
 
-The vWorkspace control plane (an Odoo 19 application) is the place a human or the AI assistant declares intent: "deploy Nextcloud here", "back this up", "upgrade that". `vworkspace-operator` is what makes those declarations real on a specific cluster. The two layers talk over a deliberately narrow contract — described in [docs/connectivity/](docs/connectivity/) — that supports three modes:
-
-- **Pull** (default). The cluster initiates outbound HTTPS to Odoo, fetches jobs, applies them locally, and reports status. No inbound ports, no kubeconfig held by Odoo. The right choice for self-hosted clusters behind NAT or a firewall, regulated edges, and multi-tenant SaaS topologies.
-- **Push**. Odoo writes the operator's CRDs to the cluster API directly via server-side apply. The simplest choice when Odoo and the cluster share a trusted network — most commonly when Odoo is installed *into* the cluster it manages.
-- **GitOps**. Odoo commits the operator's CRDs to a Git repository; Flux or Argo CD on the cluster syncs them. The right choice when change control must flow through Git.
-
-The same CRDs and the same in-cluster reconciliation loop are used in every mode; only the transport changes.
-
-## Feature highlights
-
-- **Helm-first.** Application deployment logic stays in upstream Helm charts. The operator does not re-implement chart internals.
-- **Two CRDs, not twenty.** `ApplicationInstance` describes desired application state; `Operation` describes a day-2 action against an application instance. RBAC enforces what kinds of operations are allowed per namespace.
-- **Pull connectivity by default.** Designed for clusters that should never need to expose the K8s API. Push and GitOps adapters are supported.
-- **Day-2 operations as first-class resources.** Backups (Velero, CSI snapshots, VolSync), upgrades, migrations, and runbooks are reconciled, audited, and reportable.
-- **One operator per cluster.** Blast radius bounded by design. An Odoo outage does not take down running applications; a cluster outage does not affect other clusters.
-- **Cluster-local audit and observability.** Prometheus metrics, structured JSON logs, Kubernetes events on every condition transition, and an audit stream back to Odoo's Discuss channel.
-
-## Quick install
-
-See [docs/install/quickstart.md](docs/install/quickstart.md) for the supported install path. Deploy the operator image from Docker Hub:
+1. Install prerequisites ([docs/install/prerequisites.md](docs/install/prerequisites.md)).
+2. Deploy the operator ([docs/install/quickstart.md](docs/install/quickstart.md)):
 
 ```bash
 make deploy IMG=docker.io/vworkspace/vworkspace-operator:latest
 ```
 
-Enable Pull-mode with `--agent-enabled` and a credentials Secret (see [docs/connectivity/pull-mode.md](docs/connectivity/pull-mode.md)). The bundle installs the operator, Flux Helm Controller, cert-manager, external-secrets, and Velero on a stock Kubernetes cluster.
+3. Register the cluster with vWorkspace Server and enable Pull mode ([docs/connectivity/pull-mode.md](docs/connectivity/pull-mode.md)):
+
+```bash
+./bin/manager register \
+  --control-plane-endpoint https://your-server.example.org \
+  --token <one-time-registration-token>
+```
+
+For local development without a real control plane, use the [mock control plane](docs/development/mock-control-plane.md).
 
 ## Documentation
 
-Detailed documentation lives under [docs/](docs/README.md):
+Full documentation is indexed at [docs/README.md](docs/README.md). Highlights:
 
-- [Concepts](docs/concepts/README.md) — what the operator does and why.
-- [Connectivity](docs/connectivity/README.md) — Push, Pull, GitOps in depth.
-- [API reference](docs/api/README.md) — full spec/status reference for both CRDs.
-- [Operations](docs/operations/README.md) — operation templates and engines.
-- [Security](docs/security/README.md) — RBAC, secrets, authentication, threat model.
-- [Install](docs/install/README.md) — prerequisites, quickstart, cluster bootstrap, air-gapped.
-- [Operate](docs/operate/README.md) — observability, upgrades, troubleshooting, runbooks.
-- [Development](docs/development/README.md) — build, test, release, project layout.
-- [ADRs](docs/adr/README.md) — recorded architecture decisions.
+| Section | Description |
+|---------|-------------|
+| [Concepts](docs/concepts/README.md) | Architecture, reconciliation model, glossary |
+| [Connectivity](docs/connectivity/README.md) | Pull, Push, GitOps modes and job protocol |
+| [API reference](docs/api/README.md) | `ApplicationInstance`, `Operation`, `Cluster` CRDs |
+| [Install](docs/install/README.md) | Helm, bootstrap, air-gapped installs |
+| [Security](docs/security/README.md) | Authentication, RBAC, threat model |
+| [Development](docs/development/README.md) | Build, test, mock control plane |
+| [ADRs](docs/adr/README.md) | Architecture decision records |
+
+Published docs (GitHub Pages): see [docs/publication.md](docs/publication.md).
 
 ## Project status
 
-This is an early-stage open-source project. Phase 1a/1b foundation code is present: Kubebuilder scaffold, `v1alpha1` CRDs, Flux and Velero engine adapters, reconcilers, Pull-mode job applier and poller, and unit/envtest coverage (`make test`). Container images publish to Docker Hub as `docker.io/vworkspace/vworkspace-operator` — see [docs/install/container-images.md](docs/install/container-images.md). Install path hardening remains in Phase 1c — see [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md).
+Phase 1 foundation is in tree: Kubebuilder scaffold, reconcilers, Flux and Velero engines, Pull-mode agent loop, Helm chart, and CI (`make test`, `make lint`, e2e on kind). See [ROADMAP.md](ROADMAP.md) and [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md).
 
-The CRDs are at `v1alpha1`; the API may evolve, but breaking changes will go through a conversion webhook and a deprecation window of at least one minor release (see [docs/operate/upgrades.md](docs/operate/upgrades.md)). The first public release is targeted for Q1 2027 in line with the parent project's [ROADMAP](https://github.com/vworkspace-io/vworkspace/blob/main/docs/ROADMAP.md); see this repository's [ROADMAP.md](ROADMAP.md) for operator-specific milestones.
+Images: `docker.io/vworkspace/vworkspace-operator` — [container image docs](docs/install/container-images.md).
 
 ## License
 
-`vworkspace-operator` is licensed under the GNU Affero General Public License v3.0. The full text is in [LICENSE](LICENSE). The license choice is consistent with the umbrella vWorkspace project and is intended to protect operators and the community from closed-source repackaging.
+Licensed under the [GNU Affero General Public License v3.0](LICENSE), consistent with the vWorkspace project.
 
 ## Community
 
-- [Code of Conduct](CODE_OF_CONDUCT.md) — Contributor Covenant v2.1.
-- [Contributing](CONTRIBUTING.md) — how to file issues, propose changes, and get a PR merged.
-- [Security policy](SECURITY.md) — how to report vulnerabilities privately.
-- [Governance](GOVERNANCE.md) — how decisions are made.
-- [Support](SUPPORT.md) — where to get help.
-
-## Upstream
-
-This repository is a sub-repository of the vWorkspace project. The upstream parent project is at [https://github.com/vworkspace-io/vworkspace](https://github.com/vworkspace-io/vworkspace) (placeholder organization `vworkspace-io`). See the parent project's [PRODUCT_VISION](https://github.com/vworkspace-io/vworkspace/blob/main/docs/PRODUCT_VISION.md) for the broader product framing.
+- [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md)
+- [Governance](GOVERNANCE.md) · [Support](SUPPORT.md)
+- Parent project: [vworkspace-io/vworkspace](https://github.com/vworkspace-io/vworkspace)

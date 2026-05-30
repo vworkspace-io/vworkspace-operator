@@ -34,8 +34,8 @@ import (
 var (
 	// managerImage is the manager image to be built and loaded for testing.
 	managerImage = "example.com/vworkspace-operator:v0.0.1"
-	// mockOdooImage is the in-cluster mock Odoo image for Pull-mode e2e.
-	mockOdooImage = "example.com/mock-odoo:v0.0.1"
+	// mockOdooImage is the in-cluster mock control plane image for Pull-mode e2e.
+	mockOdooImage = "example.com/mock-control-plane:v0.0.1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
 	// shouldCleanupFluxCRDs tracks whether Flux CRDs were installed by this suite.
@@ -62,10 +62,10 @@ var _ = BeforeSuite(func() {
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
 
-	By("building the mock Odoo image")
-	cmd = exec.Command("make", "docker-build-mockodoo", fmt.Sprintf("MOCK_ODOO_IMAGE=%s", mockOdooImage))
+	By("building the mock control plane image")
+	cmd = exec.Command("make", "docker-build-mockcontrolplane", fmt.Sprintf("MOCK_CONTROL_PLANE_IMAGE=%s", mockOdooImage))
 	_, err = utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the mock Odoo image")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the mock control plane image")
 
 	// TODO(user): If you want to change the e2e test vendor from Kind,
 	// ensure the image is built and available, then remove the following block.
@@ -73,9 +73,9 @@ var _ = BeforeSuite(func() {
 	err = utils.LoadImageToKindClusterWithName(managerImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
 
-	By("loading the mock Odoo image on Kind")
+	By("loading the mock control plane image on Kind")
 	err = utils.LoadImageToKindClusterWithName(mockOdooImage)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the mock Odoo image into Kind")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the mock control plane image into Kind")
 
 	configureKubectlKubeRC()
 	setupCertManager()

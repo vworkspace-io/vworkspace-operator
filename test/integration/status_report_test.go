@@ -9,14 +9,14 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/internal/controller"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
-	"github.com/vworkspace-io/vworkspace-operator/test/mockodoo"
+	"github.com/vworkspace-io/vworkspace-operator/test/mockcontrolplane"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-func TestReconcilerPostsConditionEventsToMockOdoo(t *testing.T) {
-	ts := mockodoo.NewTestServer()
+func TestReconcilerPostsConditionEventsToMockControlPlane(t *testing.T) {
+	ts := mockcontrolplane.NewTestServer()
 	defer ts.Close()
 	ts.SetBootstrapToken(testClusterID, testToken)
 
@@ -54,13 +54,13 @@ func TestReconcilerPostsConditionEventsToMockOdoo(t *testing.T) {
 	batcher.Flush(ctx)
 	time.Sleep(50 * time.Millisecond)
 
-	events := ts.EventsFiltered(testClusterID, mockodoo.EventFilter{
+	events := ts.EventsFiltered(testClusterID, mockcontrolplane.EventFilter{
 		Kind:      "ApplicationInstance",
 		Namespace: app.Namespace,
 		Name:      app.Name,
 	})
 	if len(events) == 0 {
-		t.Fatal("expected condition transition events on mock Odoo")
+		t.Fatal("expected condition transition events on mock control plane")
 	}
 
 	foundCondition := false

@@ -1,7 +1,7 @@
 # Operations
 
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This chapter explains how day-2 work — backups, restores, upgrades, migrations, run-commands, and runbooks — is modeled and executed by `vworkspace-operator`. The single shape that carries every day-2 action is the `Operation` custom resource (`ops.vworkspace.io/v1alpha1`); the operator translates each `Operation` into resources owned by a small set of proven third-party controllers, observes their progress, and reports back through a stable condition contract.
 
@@ -25,7 +25,7 @@ A request enters the cluster as an `Operation` CR (`ops.vworkspace.io/v1alpha1`)
 1. Validates the request against the matching operation template (allowed types per namespace, parameter schema, target capabilities declared via `ops.vworkspace.io/*` annotations on the `ApplicationInstance`).
 2. Resolves any preconditions (target `Ready=True`, no conflicting operation in flight, prerequisite secrets present).
 3. Materializes engine-specific child resources owned by the `Operation` (a `velero.io/Backup`, a `workflows.argoproj.io/v1alpha1` `Workflow`, a `batch/v1` `Job`, a `snapshot.storage.k8s.io/VolumeSnapshot`, or a chart-defined hook `Job`).
-4. Watches those child resources, aggregates their status into `Operation.status.conditions` and `Operation.status.outputs`, emits Kubernetes events on every condition transition, and forwards a coalesced event stream back to Odoo over the active connectivity mode.
+4. Watches those child resources, aggregates their status into `Operation.status.conditions` and `Operation.status.outputs`, emits Kubernetes events on every condition transition, and forwards a coalesced event stream back to the control plane over the active connectivity mode.
 
 The cluster is the source of truth for what is actually happening; Odoo is the source of truth for what was asked for. The contract between them is the `Operation` CR, its status, and the event stream described in [../operate/observability.md](../operate/observability.md).
 

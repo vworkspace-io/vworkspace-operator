@@ -1,7 +1,7 @@
 # API reference
 
 **Status:** Alpha — CRDs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 `vworkspace-operator` owns exactly two CRDs. Everything Odoo asks the cluster to do — install an application, upgrade it, back it up, restore it, run a runbook — is expressed as one of these resources. Both CRDs are at `v1alpha1`; breaking changes will go through a conversion webhook and a deprecation window of at least one minor release (see the parent project's [ROADMAP](https://github.com/vworkspace-io/vworkspace/blob/main/docs/ROADMAP.md)).
 

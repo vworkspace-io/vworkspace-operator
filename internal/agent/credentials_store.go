@@ -37,6 +37,7 @@ func PersistCredentials(ctx context.Context, c client.Client, namespace, secretN
 		if secret.Data == nil {
 			secret.Data = map[string][]byte{}
 		}
+		secret.Data[SecretKeyControlPlaneBaseURL] = []byte(strings.TrimSpace(cred.BaseURL))
 		secret.Data[SecretKeyOdooBaseURL] = []byte(strings.TrimSpace(cred.BaseURL))
 		secret.Data[SecretKeyClusterID] = []byte(strings.TrimSpace(cred.ClusterID))
 		secret.Data[SecretKeyToken] = []byte(strings.TrimSpace(cred.Token))
@@ -73,12 +74,12 @@ func CredentialsFromSecret(secret *corev1.Secret) (Credentials, error) {
 		return Credentials{}, fmt.Errorf("secret is nil")
 	}
 	cred := Credentials{
-		BaseURL:   strings.TrimSpace(string(secret.Data[SecretKeyOdooBaseURL])),
+		BaseURL:   baseURLFromSecretData(secret.Data),
 		ClusterID: strings.TrimSpace(string(secret.Data[SecretKeyClusterID])),
 		Token:     strings.TrimSpace(string(secret.Data[SecretKeyToken])),
 	}
 	if cred.BaseURL == "" || cred.ClusterID == "" || cred.Token == "" {
-		return Credentials{}, fmt.Errorf("secret %s/%s is missing odoo-base-url, cluster-id, or token", secret.Namespace, secret.Name)
+		return Credentials{}, fmt.Errorf("secret %s/%s is missing control-plane-base-url (or odoo-base-url), cluster-id, or token", secret.Namespace, secret.Name)
 	}
 	return cred, nil
 }

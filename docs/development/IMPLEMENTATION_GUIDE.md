@@ -1,7 +1,7 @@
 # Implementation guide
 
 **Status:** Alpha — living handoff document for Phase 1 foundation work.
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 **Audience:** Engineers continuing vworkspace-operator development.
 
 This document breaks Phase 1 into continuable sub-phases, defines acceptance criteria, and explains how to resume work on any day. It complements [ROADMAP.md](../../ROADMAP.md) (milestones) and [project-layout.md](project-layout.md) (directory contract).
@@ -101,20 +101,20 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 - [ ] Sample `ApplicationInstance` reconciles when Flux CRDs are present (envtest/e2e gap).
 - [ ] Velero CRD present for backup `Operation` (documented prerequisite).
 
-### Phase 1d — Parallel tracks (mock Odoo, Helm, webhooks)
+### Phase 1d — Parallel tracks (mock control plane, Helm, webhooks)
 
-Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until real Odoo modules exist in the parent vWorkspace repo.
+Phase 1d splits into three **non-blocking** branches. Use **mock control plane** until the vWorkspace Server control plane API exist in the [vworkspace-server](https://github.com/vworkspace-io/vworkspace-server) repo.
 
-#### Phase 1d-a — Mock Odoo server (`feat/mock-odoo-server`)
+#### Phase 1d-a — Mock control plane server (`feat/mock-control-plane-server`)
 
-**Goal:** In-repo HTTP server implementing the Pull-mode agent API for dev and CI without Odoo.
+**Goal:** In-repo HTTP server implementing the Pull-mode agent API for dev and CI without vWorkspace Server.
 
 | Deliverable | Path |
 |-------------|------|
-| Mock server library | `test/mockodoo/server.go` |
-| Runnable binary | `test/mockodoo/cmd/mockodoo` (`go run ./test/mockodoo/cmd/mockodoo`) |
-| Poller integration tests | `test/mockodoo/server_test.go` |
-| Documentation | `docs/development/mock-odoo.md` |
+| Mock server library | `test/mockcontrolplane/server.go` |
+| Runnable binary | `test/mockcontrolplane/cmd/mockcontrolplane` (`go run ./test/mockcontrolplane/cmd/mockcontrolplane`) |
+| Poller integration tests | `test/mockcontrolplane/server_test.go` |
+| Documentation | `docs/development/mock-control-plane.md` |
 
 **Acceptance criteria**
 
@@ -122,9 +122,9 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 - [x] `GET /api/agent/jobs` long-polls and returns enqueued jobs for the authenticated cluster.
 - [x] `POST .../ack`, `.../status`, `.../result`, and `POST /api/agent/events` behave per [job-protocol.md](../connectivity/job-protocol.md).
 - [x] Operator `AgentPoller` + `Applier` integration test passes against mock server (httptest).
-- [x] `go test ./test/mockodoo/...` and `make test` pass.
+- [x] `go test ./test/mockcontrolplane/...` and `make test` pass.
 
-**Branch:** `feat/mock-odoo-server` (merged).
+**Branch:** `feat/mock-control-plane-server` (merged).
 
 ### Phase 1e — Pull-mode loop integration (done)
 
@@ -132,45 +132,45 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 
 | Deliverable | Path | Status |
 |-------------|------|--------|
-| Mock test server helper | `test/mockodoo/testserver.go` | Done |
+| Mock test server helper | `test/mockcontrolplane/testserver.go` | Done |
 | Pull loop integration tests | `test/integration/pull_loop_test.go` | Done |
 | Poller single-iteration API | `internal/agent/poller.go` (`PollOnce`) | Done |
 | E2E placeholder (kind + mock deferred) | `test/e2e/pull_loop_test.go` | Done (Phase 1f-c) |
 | Local dev script | `hack/dev-pull-loop.sh` | Done |
-| Documentation | `docs/development/mock-odoo.md`, this guide | Done |
+| Documentation | `docs/development/mock-control-plane.md`, this guide | Done |
 
 **Acceptance criteria**
 
-- [x] Integration test enqueues `apply` job on mock Odoo, runs `AgentPoller.PollOnce`, verifies `ApplicationInstance` CR exists.
+- [x] Integration test enqueues `apply` job on mock control plane, runs `AgentPoller.PollOnce`, verifies `ApplicationInstance` CR exists.
 - [x] Integration test runs `ApplicationInstanceReconciler` with `helmengine.FluxEngine` (fake client) and verifies `HelmRelease` materialized (no real Flux controller).
-- [x] Mock Odoo records ack and terminal `succeeded` result for the job.
-- [x] Second integration test verifies idempotent replay returns `noop` on mock Odoo.
+- [x] Mock control plane records ack and terminal `succeeded` result for the job.
+- [x] Second integration test verifies idempotent replay returns `noop` on mock control plane.
 - [x] `make test`, `make lint`, and `./hack/verify-generated.sh` pass.
 
-### Phase 1f-c — E2E Pull loop with mock Odoo (done)
+### Phase 1f-c — E2E Pull loop with mock control plane (done)
 
-**Goal:** Ginkgo e2e on kind: in-cluster mock Odoo, operator agent enabled, registration, job enqueue, ApplicationInstance + HelmRelease, mock result.
+**Goal:** Ginkgo e2e on kind: in-cluster mock control plane, operator agent enabled, registration, job enqueue, ApplicationInstance + HelmRelease, mock result.
 
 | Deliverable | Path | Status |
 |-------------|------|--------|
-| Mock Odoo container image | `Dockerfile.mockodoo`, `make docker-build-mockodoo` | Done |
-| Mock Odoo admin enqueue API | `test/mockodoo/admin.go` | Done |
+| Mock control plane container image | `Dockerfile.mockcontrolplane`, `make docker-build-mockcontrolplane` | Done |
+| Mock control plane admin enqueue API | `test/mockcontrolplane/admin.go` | Done |
 | E2E Pull loop tests | `test/e2e/pull_loop_test.go`, `pull_loop_helpers.go` | Done |
 | Flux CRD install in e2e suite | `test/e2e/e2e_suite_test.go`, `test/utils/flux.go` | Done |
 | Optional Velero backup e2e | `test/e2e/pull_loop_test.go` (skips without CRD) | Done |
-| Documentation | `docs/development/mock-odoo.md`, this guide | Done |
+| Documentation | `docs/development/mock-control-plane.md`, this guide | Done |
 
 **Acceptance criteria**
 
-- [x] Mock Odoo runs in-cluster (Deployment + Service); operator reaches it via cluster DNS.
+- [x] Mock control plane runs in-cluster (Deployment + Service); operator reaches it via cluster DNS.
 - [x] Operator deployed with `--agent-enabled=true` and pre-seeded credentials Secret.
 - [x] Cluster CR registration exchanges token and persists credentials.
 - [x] Admin API enqueues `apply` job; operator poller applies `ApplicationInstance`; reconciler materializes `HelmRelease` when Flux CRDs installed.
-- [x] Mock Odoo records terminal `succeeded` result for the job.
+- [x] Mock control plane records terminal `succeeded` result for the job.
 - [x] Optional backup operation e2e creates Velero `Backup` CR when Velero CRD installed (`E2E_INSTALL_VELERO=true`).
 - [x] `make test-e2e` passes on kind with docker.
 
-**Branch:** `feat/e2e-mock-odoo`.
+**Branch:** `feat/e2e-mock-control-plane`.
 
 #### Phase 1d-b — Helm install bundle (`feat/helm-install-bundle`)
 
@@ -179,13 +179,13 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 | Deliverable | Path |
 |-------------|------|
 | Helm chart | `charts/vworkspace-operator/` |
-| Values | agent enabled flag, Odoo URL placeholder, image `docker.io/vworkspace/vworkspace-operator` |
+| Values | agent enabled flag, control plane URL placeholder, image `docker.io/vworkspace/vworkspace-operator` |
 | Install docs | `docs/install/quickstart.md` — `helm install` section |
 
 **Acceptance criteria**
 
 - [x] `helm template` renders Deployment, ServiceAccount, ClusterRole(Binding), CRDs.
-- [x] Values override image, agent flags, and Odoo base URL.
+- [x] Values override image, agent flags, and control plane base URL.
 - [x] Chart README or quickstart documents install on kind/k3s.
 - [x] `make test` unchanged (chart validation optional in CI).
 
@@ -205,7 +205,7 @@ Phase 1d splits into three **non-blocking** branches. Use **mock Odoo** until re
 
 **Acceptance criteria**
 
-- [x] `agent.enabled`, `agent.odooBaseUrl`, `agent.credentialsSecret`, `image.repository`, `image.tag` in values.
+- [x] `agent.enabled`, `agent.controlPlaneBaseUrl`, `agent.credentialsSecret`, `image.repository`, `image.tag` in values.
 - [x] CRDs installed via chart template (`templates/crds.yaml`) when `crds.install=true`.
 - [x] `./hack/validate-helm-kind.sh` installs chart on kind and waits for Deployment Ready.
 - [x] Optional Flux CRDs via `INSTALL_FLUX_CRDS=true`.
@@ -282,7 +282,7 @@ flowchart TD
 ### Branch strategy
 
 - `main` — merged Phase 1a–1c; container images published from CI.
-- `feat/mock-odoo-server` — Phase 1d-a mock Odoo API (merged).
+- `feat/mock-control-plane-server` — Phase 1d-a mock control plane API (merged).
 - `feat/helm-install-bundle` — Phase 1d-b Helm chart (merged).
 - `feat/helm-kind-validate` — Phase 1f-b Helm kind validation.
 - `feat/admission-webhooks` — Phase 1d-c validating webhook hardening (merged).
@@ -317,12 +317,12 @@ make run            # optional, against kind
 
 | Flag / env | Purpose |
 |------------|---------|
-| `--odoo-base-url` / `ODOO_BASE_URL` | Odoo host for Pull-mode |
+| `--control-plane-base-url` (alias: `--control-plane-base-url`) / `CONTROL_PLANE_BASE_URL` | Odoo host for Pull-mode |
 | `--agent-token` / `VWORKSPACE_AGENT_TOKEN` | Bearer token |
 | `--cluster-id` / `VWORKSPACE_CLUSTER_ID` | Cluster identity |
 | `--agent-enabled` | Start long-poll job loop |
 | `--agent-poll-interval` | Long-poll wait (default 30s) |
-| `--agent-credentials-secret` | Secret with `odoo-base-url`, `cluster-id`, `token` |
+| `--agent-credentials-secret` | Secret with `control-plane-base-url`, `cluster-id`, `token` |
 
 Disable Pull-mode by leaving `--agent-enabled=false`; in-cluster reconcilers continue.
 
@@ -333,9 +333,9 @@ Disable Pull-mode by leaving `--agent-enabled=false`; in-cluster reconcilers con
 | ApplicationInstance validation | `internal/controller` | unit |
 | HelmRelease materialization | `internal/helmengine` | fake client |
 | Agent HTTP + applier | `internal/agent` | httptest + fake client |
-| Pull loop (mock Odoo → applier → reconciler) | `test/integration` | fake client + mock Odoo |
-| Reconciler status events to mock Odoo | `test/integration/status_report_test.go` | fake client + mock Odoo |
-| Pull loop e2e (kind + in-cluster mock Odoo) | `test/e2e` | kind + ginkgo |
+| Pull loop (mock control plane → applier → reconciler) | `test/integration` | fake client + mock control plane |
+| Reconciler status events to mock control plane | `test/integration/status_report_test.go` | fake client + mock control plane |
+| Pull loop e2e (kind + in-cluster mock control plane) | `test/e2e` | kind + ginkgo |
 | Reconciler integration | `internal/controller` | envtest |
 
 Run everything: `make test`.
@@ -374,7 +374,7 @@ Run everything: `make test`.
 
 ## Phase 2 — Status reporting, credential rotation, RBAC (in progress)
 
-**Goal:** Report reconciler condition transitions to Odoo via Pull-mode outbound events; support credential rotation; align RBAC with least-privilege docs.
+**Goal:** Report reconciler condition transitions to the control plane via Pull-mode outbound events; support credential rotation; align RBAC with least-privilege docs.
 
 **Baseline:** v0.0.4 (all Phase 1 PRs merged).
 
@@ -385,18 +385,18 @@ Run everything: `make test`.
 | Reconciler wiring | `internal/controller/*_controller.go` | Done |
 | Credential rotation client | `internal/agent/client.go` (`RotateCredentials`) | Done |
 | Cluster rotation flow | `internal/controller/cluster_controller.go`, `spec.rotateCredentials` | Done |
-| Mock Odoo events + rotate | `test/mockodoo/server.go` | Done |
+| Mock control plane events + rotate | `test/mockcontrolplane/server.go` | Done |
 | Integration test | `test/integration/status_report_test.go` | Done |
 | RBAC alignment | `config/rbac/role.yaml`, `charts/.../rbac.yaml` | Done |
 | Event buffer metric | `internal/agent/metrics.go` | Done |
-| Documentation | this guide, pull-mode, mock-odoo, observability, CHANGELOG | Done |
+| Documentation | this guide, pull-mode, mock-control-plane, observability, CHANGELOG | Done |
 
 **Acceptance criteria**
 
 - [x] ApplicationInstance, Operation, and Cluster condition transitions enqueue batched `POST /api/agent/events`.
-- [x] Events carry stable `eventKey` for Odoo-side deduplication (documented in mock-odoo).
-- [x] EventBatcher requeues on Odoo unreachable; sets connectivity gauge to reconnecting.
-- [x] `POST /api/agent/credentials/rotate` implemented in client and mock Odoo; Cluster reconciler updates Secret.
+- [x] Events carry stable `eventKey` for control-plane-side deduplication (documented in mock-control-plane).
+- [x] EventBatcher requeues on control plane unreachable; sets connectivity gauge to reconnecting.
+- [x] `POST /api/agent/credentials/rotate` implemented in client and mock control plane; Cluster reconciler updates Secret.
 - [x] RBAC includes ConfigMap/Secret for idempotency and credentials, events create/patch, leases.
 - [x] `make test`, `make lint`, and `./hack/verify-generated.sh` pass.
 
@@ -411,7 +411,7 @@ Run everything: `make test`.
 | BufferOverflow Cluster condition | `internal/agent/events.go`, `internal/controller/cluster_controller.go` | Done |
 | Credential age metric | `internal/agent/metrics.go`, `internal/agent/credentials_store.go` | Done |
 | Helm Cluster CRD sync (`rotateCredentials`) | `charts/vworkspace-operator/crds/ops.vworkspace.io_clusters.yaml` | Done |
-| E2E status events on mock Odoo | `test/e2e/pull_loop_test.go`, `test/mockodoo/admin.go` | Done |
+| E2E status events on mock control plane | `test/e2e/pull_loop_test.go`, `test/mockcontrolplane/admin.go` | Done |
 | Unit tests | `internal/agent/events_test.go`, `internal/agent/metrics_test.go` | Done |
 | Documentation | this guide, CHANGELOG, observability, conditions | Done |
 
@@ -420,10 +420,31 @@ Run everything: `make test`.
 - [x] Event buffer overflow sets `Cluster.status.conditions[BufferOverflow=True, reason=EventBufferFull]` with drop count; clears on successful drain.
 - [x] `vworkspace_operator_credential_age_seconds` gauge updates on credential load, persist, and rotation.
 - [x] Helm chart Cluster CRD includes `spec.rotateCredentials`; `helm template` renders.
-- [x] E2e verifies `ConditionTransition` events reach mock Odoo after ApplicationInstance reconcile.
+- [x] E2e verifies `ConditionTransition` events reach mock control plane after ApplicationInstance reconcile.
 - [x] `make test`, `make lint`, and `./hack/verify-generated.sh` pass.
 
 **Branch:** `feat/phase-2b-deferred`.
+
+## Phase 3 — vWorkspace Server integration and public release (planned)
+
+**Goal:** Align operator releases with [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) (the control plane product, built on Odoo 19) and ship the first public operator release.
+
+| Deliverable | Path / repo | Status |
+|-------------|-------------|--------|
+| Control-plane terminology in docs and flags | `docs/`, `cmd/main.go`, Helm chart | Done (pre-release polish) |
+| Real Pull-mode API against vWorkspace Server | upstream `vworkspace-server` | Planned |
+| Argo Workflows / CSI / VolSync engines | `internal/engines/` | Planned |
+| mTLS and signed Pull-mode payloads | `internal/agent/` | Planned |
+| GitHub Pages doc publish | `docs/publication.md`, CI workflow | Planned |
+| Public `v0.2` release | tags, signed images | Planned |
+
+**Acceptance criteria**
+
+- [x] Operator docs and CLI use "control plane" / vWorkspace Server naming; deprecated Odoo-named flags remain as aliases.
+- [ ] End-to-end install: vWorkspace Server registers a cluster; operator deploys an app via Pull mode without the in-repo mock.
+- [ ] Published doc site on GitHub Pages.
+
+See [ROADMAP.md](../../ROADMAP.md) Phase 3 for milestone dates.
 
 ## Phase 1f next session (suggested)
 

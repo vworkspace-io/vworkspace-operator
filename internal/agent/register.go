@@ -37,7 +37,7 @@ func (c *HTTPRegistrationClient) Register(ctx context.Context, baseURL, registra
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	registrationToken = strings.TrimSpace(registrationToken)
 	if baseURL == "" {
-		return RegisterResponse{}, fmt.Errorf("odoo base URL is required")
+		return RegisterResponse{}, fmt.Errorf("control plane base URL is required")
 	}
 	if registrationToken == "" {
 		return RegisterResponse{}, fmt.Errorf("registration token is required")

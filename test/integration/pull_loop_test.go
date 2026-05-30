@@ -11,7 +11,7 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/controller"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
 	"github.com/vworkspace-io/vworkspace-operator/internal/labels"
-	"github.com/vworkspace-io/vworkspace-operator/test/mockodoo"
+	"github.com/vworkspace-io/vworkspace-operator/test/mockcontrolplane"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -30,7 +30,7 @@ const (
 )
 
 func TestPullLoopApplyReconcileAndReport(t *testing.T) {
-	ts := mockodoo.NewTestServer()
+	ts := mockcontrolplane.NewTestServer()
 	defer ts.Close()
 	ts.SetBootstrapToken(testClusterID, testToken)
 
@@ -73,11 +73,11 @@ func TestPullLoopApplyReconcileAndReport(t *testing.T) {
 	}
 
 	if !ts.WasAcked("job-pull-1") {
-		t.Fatal("expected job to be acked on mock Odoo")
+		t.Fatal("expected job to be acked on mock control plane")
 	}
 	res, ok := ts.JobResult("job-pull-1")
 	if !ok || res.Outcome != agent.OutcomeSucceeded {
-		t.Fatalf("expected succeeded result on mock Odoo, got %+v ok=%v", res, ok)
+		t.Fatalf("expected succeeded result on mock control plane, got %+v ok=%v", res, ok)
 	}
 
 	got := &appsv1alpha1.ApplicationInstance{}
@@ -111,7 +111,7 @@ func TestPullLoopApplyReconcileAndReport(t *testing.T) {
 }
 
 func TestPullLoopIdempotentReplayNoop(t *testing.T) {
-	ts := mockodoo.NewTestServer()
+	ts := mockcontrolplane.NewTestServer()
 	defer ts.Close()
 	ts.SetBootstrapToken(testClusterID, testToken)
 
@@ -158,7 +158,7 @@ func TestPullLoopIdempotentReplayNoop(t *testing.T) {
 
 	res, ok := ts.JobResult("job-pull-idem")
 	if !ok {
-		t.Fatal("expected result posted to mock Odoo")
+		t.Fatal("expected result posted to mock control plane")
 	}
 	if res.Outcome != agent.OutcomeNoop {
 		t.Fatalf("expected noop outcome for idempotent replay, got %s", res.Outcome)

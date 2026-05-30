@@ -1,7 +1,7 @@
 # Secrets handling
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 Application charts almost always need credentials: a database password, an S3 access key, an SMTP password, an OIDC client secret. How those credentials reach the chart matters: inline secret material in CRDs is a recurring source of leaks (audit logs, GitOps Git histories, JSON dumps in incident tickets); references to Kubernetes `Secret` objects, populated by `external-secrets` or by a human operator out of band, are safe. This document describes how `vworkspace-operator` handles secret-bearing chart values, what its admission webhook rejects, and how the Pull-mode transport handles payloads that contain secrets.
 
@@ -67,7 +67,7 @@ The webhook does not try to be a perfect secret detector. It rejects on a small,
 
 A value that matches but is empty (`postgresql.auth.password: ""`) is admitted; an empty string is not a secret. A value that matches and is `"<set via externalSecret>"` is also admitted as a recognized placeholder.
 
-The rule set is documented as "placeholder" because we expect to tighten it. The webhook is not the only line of defense; chart authors and Odoo catalog curators are also expected not to define values whose names invite secrets to be inlined. The rule set is the safety net.
+The rule set is documented as "placeholder" because we expect to tighten it. The webhook is not the only line of defense; chart authors and control plane catalog curators are also expected not to define values whose names invite secrets to be inlined. The rule set is the safety net.
 
 ## Recommended pattern: external-secrets
 
@@ -151,7 +151,7 @@ In Pull mode, the operator's job-fetch endpoint may return job payloads that con
 
 The two protections are:
 
-- **Signed payloads.** Each job payload may carry an Odoo-side signature over its canonical form. The operator verifies the signature before applying. Signature verification protects against a tampered relay between the operator and Odoo, and against a compromised message broker if one is in the path. Signing keys belong to Odoo; the cluster holds Odoo's public key.
+- **Signed payloads.** Each job payload may carry an control-plane-side signature over its canonical form. The operator verifies the signature before applying. Signature verification protects against a tampered relay between the operator and Odoo, and against a compromised message broker if one is in the path. Signing keys belong to Odoo; the cluster holds Odoo's public key.
 - **Encrypted payloads.** When the payload contains chart values that include credentials (an admission the operator can detect by the same placeholder rule set as above), the payload may be encrypted to the cluster's public key. Odoo encrypts on send; the operator decrypts on receive. The cluster's private key is in `vworkspace-system/vworkspace-operator-keypair` and is rotated through the same procedure as the Odoo bootstrap credential.
 
 Signing and encryption are independent toggles in the operator's `Cluster` CR (`spec.security.requireSignedPayloads`, `spec.security.requireEncryptedSecretPayloads`). The default in v1alpha1 is "warn but admit"; an organization that ships secrets through Pull-mode payloads is expected to turn both on for production clusters. The full configuration is described in [authentication.md](authentication.md).
@@ -162,7 +162,7 @@ The operator's structured logger redacts any field whose path or key matches the
 
 - Chart values that the operator unmarshals into a Go struct before calling the Helm engine.
 - Condition messages mirrored from `HelmRelease.status.conditions` (in case Flux ever logs a chart value).
-- Audit events sent to Odoo's `POST /api/agent/events`.
+- Audit events sent to the control plane's `POST /api/agent/events`.
 - Kubernetes `Event` messages emitted by the operator.
 
 Two places this does not apply:

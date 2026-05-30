@@ -8,15 +8,29 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Public-release documentation polish: [docs/publication.md](docs/publication.md) (GitHub Pages / MkDocs guidance), refreshed root [README.md](README.md) and [docs/README.md](docs/README.md) index.
+- `--control-plane-base-url` / `CONTROL_PLANE_BASE_URL` flags and env vars for Pull-mode connectivity (`--odoo-base-url` / `ODOO_BASE_URL` retained as deprecated aliases).
+- `--control-plane-endpoint` alias for `manager register` CLI (`--odoo-endpoint` deprecated).
+- Helm value `agent.controlPlaneBaseUrl` ( `agent.odooBaseUrl` deprecated alias).
+- Credentials Secret key `control-plane-base-url` ( `odoo-base-url` written alongside for compatibility).
+- Mock control plane package at `test/mockcontrolplane/` (renamed from `test/mockodoo/`).
+
+### Changed
+
+- **Terminology:** Documentation, comments, and log messages now refer to **vWorkspace Server** / **control plane** instead of Odoo as the primary control-plane name. Odoo is mentioned only where it describes vWorkspace Server's implementation (Odoo 19) or historical ADR context.
+- Renamed dev doc [docs/development/mock-control-plane.md](docs/development/mock-control-plane.md) (was `mock-odoo.md`); `Dockerfile.mockcontrolplane`, `make docker-build-mockcontrolplane` (with deprecated Makefile aliases).
+
+### Added
+
 - Phase 2b polish: `Cluster.status.conditions[BufferOverflow]` when the outbound event buffer drops events (`EventBufferFull` / `BufferDrained`); clears after successful drain.
 - Prometheus gauge `vworkspace_operator_credential_age_seconds` (seconds since bootstrap credentials Secret was last updated or rotated).
-- Mock Odoo admin client `ListEvents` helper; e2e asserts ApplicationInstance condition transitions reach mock Odoo via `GET /api/admin/events`.
+- Mock control plane admin client `ListEvents` helper; e2e asserts ApplicationInstance condition transitions reach mock control plane via `GET /api/admin/events`.
 - Unit tests for event buffer overflow state and credential age metric.
 - Phase 2 status reporting: `StatusReporter` and enhanced `EventBatcher` queue condition transitions from ApplicationInstance, Operation, and Cluster reconcilers to `POST /api/agent/events` with stable `eventKey` deduplication.
 - Credential rotation: `POST /api/agent/credentials/rotate` client, `Cluster.spec.rotateCredentials`, Cluster reconciler Secret update flow.
-- Mock Odoo: `POST /api/agent/credentials/rotate`, `GET /api/admin/events`, event deduplication by `eventKey`, `EventsFiltered` test helper.
+- Mock control plane: `POST /api/agent/credentials/rotate`, `GET /api/admin/events`, event deduplication by `eventKey`, `EventsFiltered` test helper.
 - Prometheus metric `vworkspace_operator_event_buffer_occupancy`.
-- Integration test `test/integration/status_report_test.go` (reconciler condition change → mock Odoo event).
+- Integration test `test/integration/status_report_test.go` (reconciler condition change → mock control plane event).
 - Unit tests for reporter, event batcher requeue, and rotation client.
 
 ### Changed
@@ -27,19 +41,19 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 - ApplicationInstance validating webhook (`internal/webhook/applicationinstance_webhook.go`).
 - Envtest webhook suite (`internal/webhook/webhook_envtest_test.go`) and expanded unit tests with fake client coverage.
 - Kustomize webhook bundle (`config/webhook/`, `config/default/manager_webhook_patch.yaml`) and Helm `webhooks.enabled` templates (`charts/vworkspace-operator/templates/webhook.yaml`).
-- Phase 1f-b Helm kind validation: `hack/validate-helm-kind.sh`, [docs/install/helm.md](docs/install/helm.md), chart `NOTES.txt`, values polish (`agent.odooBaseUrl`, `image.repository` default `vworkspace/vworkspace-operator`).
-- Phase 1e Pull-mode integration tests (`test/integration/pull_loop_test.go`): mock Odoo enqueue, poller `PollOnce`, applier SSA, `ApplicationInstance` reconciler with Flux engine on fake client, idempotent replay `noop`.
-- Mock Odoo test helper `test/mockodoo/testserver.go` (`NewTestServer`, job result/status inspection).
-- `hack/dev-pull-loop.sh` for local mock Odoo + operator agent workflow.
-- E2E Pull-mode loop on kind with in-cluster mock Odoo (`test/e2e/pull_loop_test.go`): deploy mock Service, operator agent, Cluster registration, job enqueue via admin API, `ApplicationInstance` + `HelmRelease`, mock `succeeded` result.
-- Mock Odoo admin enqueue API (`test/mockodoo/admin.go`) and container image (`Dockerfile.mockodoo`, `make docker-build-mockodoo`).
+- Phase 1f-b Helm kind validation: `hack/validate-helm-kind.sh`, [docs/install/helm.md](docs/install/helm.md), chart `NOTES.txt`, values polish (`agent.controlPlaneBaseUrl`, `image.repository` default `vworkspace/vworkspace-operator`).
+- Phase 1e Pull-mode integration tests (`test/integration/pull_loop_test.go`): mock control plane enqueue, poller `PollOnce`, applier SSA, `ApplicationInstance` reconciler with Flux engine on fake client, idempotent replay `noop`.
+- Mock control plane test helper `test/mockcontrolplane/testserver.go` (`NewTestServer`, job result/status inspection).
+- `hack/dev-pull-loop.sh` for local mock control plane + operator agent workflow.
+- E2E Pull-mode loop on kind with in-cluster mock control plane (`test/e2e/pull_loop_test.go`): deploy mock Service, operator agent, Cluster registration, job enqueue via admin API, `ApplicationInstance` + `HelmRelease`, mock `succeeded` result.
+- Mock control plane admin enqueue API (`test/mockcontrolplane/admin.go`) and container image (`Dockerfile.mockodoo`, `make docker-build-mockodoo`).
 - Flux HelmRelease CRD install in e2e `BeforeSuite` (`test/utils/flux.go`); optional Velero Backup CRD when `E2E_INSTALL_VELERO=true`.
 - Operation validating webhook tests (`internal/webhook/operation_webhook_test.go`, `webhook_envtest_test.go`).
 - Helm chart scaffold at `charts/vworkspace-operator/` (Deployment, RBAC, CRDs, agent values).
 - Quickstart Option A documents in-repo `helm install` path.
-- In-repo mock Odoo Pull-mode agent API (`test/mockodoo/`) for development without real Odoo modules.
+- In-repo mock control plane Pull-mode agent API (`test/mockcontrolplane/`) for development without the vWorkspace Server control plane API.
 - [docs/development/local-setup.md](docs/development/local-setup.md) — Go install and local `make test` workflow.
-- [docs/development/mock-odoo.md](docs/development/mock-odoo.md) — mock server usage and endpoints.
+- [docs/development/mock-control-plane.md](docs/development/mock-control-plane.md) — mock server usage and endpoints.
 
 ### Added (Phase 1c)
 

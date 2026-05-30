@@ -1,9 +1,9 @@
 # Operate
 
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
-This chapter is the day-to-day operation reference for `vworkspace-operator` once it is installed and connected to an Odoo control plane. It covers what the operator emits (metrics, structured logs, Kubernetes events, audit events to Odoo, the `Cluster` CR's status surface), how the operator itself is upgraded, how to troubleshoot common failure modes, and a worked runbook for the most-requested day-2 task: backup and restore.
+This chapter is the day-to-day operation reference for `vworkspace-operator` once it is installed and connected to an vWorkspace Server control plane. It covers what the operator emits (metrics, structured logs, Kubernetes events, audit events to Odoo, the `Cluster` CR's status surface), how the operator itself is upgraded, how to troubleshoot common failure modes, and a worked runbook for the most-requested day-2 task: backup and restore.
 
 The chapter is meant to be readable in any order. A new operator usually reads observability first (to know what their dashboards should be showing), then troubleshooting (so they recognize the signals), then upgrades (when their first chart bump arrives), then the runbook (the first time someone says "we need a restore").
 

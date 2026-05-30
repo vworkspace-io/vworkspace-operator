@@ -133,7 +133,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		now := metav1.Now()
 		cluster.Status.LastHeartbeat = &now
 		agent.SetConnectivityState("pull", 1)
-		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "RoundTripOK", "Recent round-trip to Odoo succeeded")
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "RoundTripOK", "Recent round-trip to the control plane succeeded")
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionDisconnected, metav1.ConditionFalse, "Connected", "Connection is alive")
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionTrue, "CredentialAccepted", "Bearer token accepted")
 	}
@@ -226,7 +226,7 @@ func (r *ClusterReconciler) reportConditions(cluster *opsv1alpha1.Cluster, prev 
 func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1alpha1.Cluster, token, secretName, namespace string) error {
 	baseURL := strings.TrimSpace(cluster.Spec.OdooBaseURL)
 	if baseURL == "" {
-		return fmt.Errorf("spec.odooBaseUrl is required for registration")
+		return fmt.Errorf("spec.odooBaseUrl (control plane base URL) is required for registration")
 	}
 
 	regClient := r.RegistrationClient

@@ -1,7 +1,7 @@
 # Uninstall
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document is the order of operations for cleanly removing `vworkspace-operator` from a cluster. The defining property of the procedure is that the operator's removal must not silently lose data the operator was responsible for protecting: PVs, Velero backups, application records in Odoo. The procedure pauses reconciliation, optionally triggers a final backup, deletes the `Cluster` CR (which lets Odoo revoke the credential), and only then `helm uninstall`s the bundle.
 
@@ -152,4 +152,4 @@ The fastest path to a working operator on a cluster that previously had one:
 
 - [quickstart.md](quickstart.md) — Reinstall path.
 - [../operate/troubleshooting.md](../operate/troubleshooting.md) — What to do when something is stuck.
-- [../security/authentication.md](../security/authentication.md) — Credential revocation semantics on the Odoo side.
+- [../security/authentication.md](../security/authentication.md) — Credential revocation semantics on the control-plane side.

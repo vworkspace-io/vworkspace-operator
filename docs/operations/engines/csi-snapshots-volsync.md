@@ -1,7 +1,7 @@
 # Engine: CSI snapshots and VolSync
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 For storage-centric work — PV-level snapshots and PV-level replication — the operator integrates with the CSI snapshot controller (snapshots) and VolSync (replication). The two engines share this chapter because they are storage-level primitives: neither captures Kubernetes objects, both rely on the underlying StorageClass and a CSI driver, and the choice between them is primarily a function of the required RPO/RTO targets.
 
@@ -202,7 +202,7 @@ RPO and RTO are properties of the storage layer and the cadence, not the operato
 | Recurring VolSync to remote repo                    | `ReplicationSource` with `schedule`                                              | Minutes (lower bound is the CSI snapshot rate) | Time to restore a snapshot from the remote repo |
 | Continuous VolSync RsyncTLS to a warm-standby PVC   | `ReplicationSource` + `ReplicationDestination`                                   | Seconds–single-digit minutes | Time to point a fresh application at the destination PVC |
 
-The operator does not promise an RPO or RTO; the choice of engine and parameters does. The Odoo catalog publishes recommended defaults per application (Nextcloud: hourly Velero + nightly VolSync; OnlyOffice: nightly VolSync only; WordPress: hourly VolSync). Organizations can override the defaults per `ApplicationInstance`.
+The operator does not promise an RPO or RTO; the choice of engine and parameters does. The control plane catalog publishes recommended defaults per application (Nextcloud: hourly Velero + nightly VolSync; OnlyOffice: nightly VolSync only; WordPress: hourly VolSync). Organizations can override the defaults per `ApplicationInstance`.
 
 ## Practical notes
 

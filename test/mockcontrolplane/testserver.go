@@ -1,4 +1,4 @@
-package mockodoo
+package mockcontrolplane
 
 import (
 	"net/http"
@@ -7,14 +7,14 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 )
 
-// TestServer wraps a mock Odoo Server with an httptest listener for integration tests.
+// TestServer wraps a mock control plane Server with an httptest listener for integration tests.
 type TestServer struct {
 	*Server
 	HTTPServer *httptest.Server
 	URL        string
 }
 
-// NewTestServer starts an in-memory mock Odoo API on a local httptest server.
+// NewTestServer starts an in-memory mock control plane API on a local httptest server.
 // Call Close when the test finishes.
 func NewTestServer() *TestServer {
 	srv := NewServer()

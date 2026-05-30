@@ -34,16 +34,16 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
-	"github.com/vworkspace-io/vworkspace-operator/test/mockodoo"
+	"github.com/vworkspace-io/vworkspace-operator/test/mockcontrolplane"
 	"github.com/vworkspace-io/vworkspace-operator/test/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
-	mockOdooNamespace       = "mock-odoo"
-	mockOdooServiceName     = "mock-odoo"
-	mockOdooAdminToken      = "e2e-mock-odoo-admin"
+	mockOdooNamespace       = "mock-control-plane"
+	mockOdooServiceName     = "mock-control-plane"
+	mockOdooAdminToken      = "e2e-mock-control-plane-admin"
 	pullLoopClusterID       = "cluster-e2e-1"
 	pullLoopBootstrapToken  = "e2e-bootstrap-token"
 	pullLoopRegistrationTok = "e2e-registration-token"
@@ -55,40 +55,40 @@ const (
 var (
 	mockOdooBaseURL     string
 	mockOdooPortForward *exec.Cmd
-	mockOdooAdminClient *mockodoo.AdminClient
+	mockOdooAdminClient *mockcontrolplane.AdminClient
 )
 
 func mockOdooServiceURL() string {
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", mockOdooServiceName, mockOdooNamespace)
 }
 
-func deployMockOdoo() {
-	By("creating mock Odoo namespace")
-	Expect(utils.EnsureNamespace(mockOdooNamespace)).To(Succeed(), "Failed to create mock Odoo namespace")
+func deployMockControlPlane() {
+	By("creating mock control plane namespace")
+	Expect(utils.EnsureNamespace(mockOdooNamespace)).To(Succeed(), "Failed to create mock control plane namespace")
 
 	manifest := fmt.Sprintf(`apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mock-odoo
+  name: mock-control-plane
   namespace: %s
   labels:
-    app: mock-odoo
+    app: mock-control-plane
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mock-odoo
+      app: mock-control-plane
   template:
     metadata:
       labels:
-        app: mock-odoo
+        app: mock-control-plane
     spec:
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: mock-odoo
+      - name: mock-control-plane
         image: %s
         imagePullPolicy: IfNotPresent
         args:
@@ -125,10 +125,10 @@ metadata:
   name: %s
   namespace: %s
   labels:
-    app: mock-odoo
+    app: mock-control-plane
 spec:
   selector:
-    app: mock-odoo
+    app: mock-control-plane
   ports:
   - name: http
     port: 8080
@@ -137,19 +137,19 @@ spec:
 `, mockOdooNamespace, mockOdooImage, pullLoopClusterID, pullLoopRegistrationTok,
 		pullLoopBootstrapToken, mockOdooAdminToken, mockOdooServiceName, mockOdooNamespace)
 
-	By("deploying in-cluster mock Odoo")
-	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed(), "Failed to deploy mock Odoo")
+	By("deploying in-cluster mock control plane")
+	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed(), "Failed to deploy mock control plane")
 
-	By("waiting for mock Odoo deployment")
+	By("waiting for mock control plane deployment")
 	Eventually(func(g Gomega) {
-		cmd := exec.Command("kubectl", "rollout", "status", "deployment/mock-odoo", "-n", mockOdooNamespace, "--timeout=5s")
+		cmd := exec.Command("kubectl", "rollout", "status", "deployment/mock-control-plane", "-n", mockOdooNamespace, "--timeout=5s")
 		_, err := utils.Run(cmd)
 		g.Expect(err).NotTo(HaveOccurred())
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 }
 
-func teardownMockOdoo() {
-	stopMockOdooPortForward()
+func teardownMockControlPlane() {
+	stopMockControlPlanePortForward()
 	utils.KubectlDeleteYAML(fmt.Sprintf(`apiVersion: v1
 kind: Namespace
 metadata:
@@ -157,18 +157,18 @@ metadata:
 `, mockOdooNamespace))
 }
 
-func startMockOdooPortForward() {
-	By("port-forwarding mock Odoo admin API")
+func startMockControlPlanePortForward() {
+	By("port-forwarding mock control plane admin API")
 	mockOdooPortForward = exec.Command("kubectl", "port-forward", "-n", mockOdooNamespace,
 		fmt.Sprintf("svc/%s", mockOdooServiceName), "18080:8080")
-	Expect(mockOdooPortForward.Start()).To(Succeed(), "Failed to start mock Odoo port-forward")
+	Expect(mockOdooPortForward.Start()).To(Succeed(), "Failed to start mock control plane port-forward")
 	mockOdooBaseURL = "http://127.0.0.1:18080"
-	mockOdooAdminClient = mockodoo.NewAdminClient(mockOdooBaseURL, mockOdooAdminToken, http.DefaultClient)
+	mockOdooAdminClient = mockcontrolplane.NewAdminClient(mockOdooBaseURL, mockOdooAdminToken, http.DefaultClient)
 
 	Eventually(func(g Gomega) {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, mockOdooBaseURL+"/api/admin/jobs/health-check/result", nil)
 		g.Expect(err).NotTo(HaveOccurred())
-		req.Header.Set("X-Mock-Odoo-Admin-Token", mockOdooAdminToken)
+		req.Header.Set("X-Mock-Control-Plane-Admin-Token", mockOdooAdminToken)
 		resp, err := http.DefaultClient.Do(req)
 		g.Expect(err).NotTo(HaveOccurred())
 		_ = resp.Body.Close()
@@ -176,7 +176,7 @@ func startMockOdooPortForward() {
 	}, 30*time.Second, time.Second).Should(Succeed())
 }
 
-func stopMockOdooPortForward() {
+func stopMockControlPlanePortForward() {
 	if mockOdooPortForward != nil && mockOdooPortForward.Process != nil {
 		_ = mockOdooPortForward.Process.Kill()
 		mockOdooPortForward = nil
@@ -206,10 +206,11 @@ metadata:
   namespace: %s
 type: Opaque
 stringData:
+  control-plane-base-url: %s
   odoo-base-url: %s
   cluster-id: %s
   token: %s
-`, agentCredentialsSecret, namespace, mockOdooServiceURL(), pullLoopClusterID, pullLoopBootstrapToken)
+`, agentCredentialsSecret, namespace, mockOdooServiceURL(), mockOdooServiceURL(), pullLoopClusterID, pullLoopBootstrapToken)
 	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed())
 }
 
@@ -245,7 +246,7 @@ func deployOperatorWithAgent() {
 	patch := fmt.Sprintf(`[
   {"op": "replace", "path": "/spec/strategy", "value": {"type": "Recreate"}},
   {"op": "replace", "path": "/spec/template/spec/containers/0/args/3", "value": "--agent-enabled=true"},
-  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--odoo-base-url=%s"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--control-plane-base-url=%s"},
   {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--cluster-id=%s"},
   {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-token=%s"},
   {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-poll-interval=5s"},
@@ -329,7 +330,7 @@ func enqueueApplyJob(jobID, idempotencyKey string, app *appsv1alpha1.Application
 	payload, err := json.Marshal(app)
 	Expect(err).NotTo(HaveOccurred(), "marshal ApplicationInstance payload")
 
-	By("enqueueing apply job on mock Odoo")
+	By("enqueueing apply job on mock control plane")
 	Expect(mockOdooAdminClient.EnqueueJob(pullLoopClusterID, agent.Job{
 		ID:             jobID,
 		Kind:           "apply",
@@ -371,12 +372,12 @@ func waitForMockJobSucceeded(jobID string) agent.JobResult {
 
 func waitForConditionTransitionEvents(appName string) {
 	Eventually(func(g Gomega) {
-		events, err := mockOdooAdminClient.ListEvents(pullLoopClusterID, mockodoo.EventFilter{
+		events, err := mockOdooAdminClient.ListEvents(pullLoopClusterID, mockcontrolplane.EventFilter{
 			Kind:      "ApplicationInstance",
 			Namespace: appTestNamespace,
 			Name:      appName,
 		})
-		g.Expect(err).NotTo(HaveOccurred(), "mock Odoo admin events API should respond")
+		g.Expect(err).NotTo(HaveOccurred(), "mock control plane admin events API should respond")
 
 		found := false
 		for _, ev := range events {
@@ -393,7 +394,7 @@ func waitForConditionTransitionEvents(appName string) {
 				}
 			}
 		}
-		g.Expect(found).To(BeTrue(), "expected ApplicationInstance condition transition events on mock Odoo")
+		g.Expect(found).To(BeTrue(), "expected ApplicationInstance condition transition events on mock control plane")
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 }
 

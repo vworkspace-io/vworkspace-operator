@@ -1,7 +1,7 @@
 # Threat model
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document is the project's threat model for `vworkspace-operator`. It is deliberately concise: a list of assets, a list of adversaries, the trust boundaries we recognize, and the mitigations mapped onto the controls described elsewhere in this chapter. It also lists the open issues we know about and have not yet mitigated.
 
@@ -16,7 +16,7 @@ The assets the operator protects, in roughly descending order of impact if compr
 | The cluster Kubernetes API                   | A compromise here is total: every workload, every Secret, every PV. The cluster API is the highest-value target on the machine.            |
 | Persistent data in managed namespaces (PVs)  | The actual customer data: Nextcloud files, Mattermost message history, Vaultwarden vault, Postgres tables.                                |
 | Chart values that contain credentials         | A leaked SMTP password or a leaked OIDC client secret is a credible blast radius — see [secrets-handling.md](secrets-handling.md).         |
-| The operator's outbound credential to Odoo    | A token that lets an attacker fetch jobs as the cluster, post status as the cluster, and (in some signing configurations) push payloads.  |
+| The operator's outbound credential to the control plane    | A token that lets an attacker fetch jobs as the cluster, post status as the cluster, and (in some signing configurations) push payloads.  |
 | The audit-event stream                        | The chain of custody for what was asked and what happened. A compromised audit stream undermines incident response.                       |
 | The cluster's own private signing key (Pull) | The decryption key for any encrypted payloads the cluster has consumed; also the cluster's identity in signed-payload deployments.       |
 | The operator's container image                 | An attacker who controls what binary runs as the operator owns everything the operator owns.                                              |
@@ -44,7 +44,7 @@ An attacker who has gained code execution in some workload Pod on the cluster �
 
 ### A3: Compromised Odoo
 
-The Odoo control plane is compromised — the database is altered, the application is malicious, or an attacker has obtained Odoo admin credentials. They can attempt to:
+The vWorkspace Server control plane is compromised — the database is altered, the application is malicious, or an attacker has obtained Odoo admin credentials. They can attempt to:
 
 - Issue destructive `Operation` requests on every cluster Odoo manages (delete an `ApplicationInstance`, restore an old backup, run an arbitrary `RunCommand`).
 - Modify the `ApplicationInstance` to inject chart values that exfiltrate data or install a back door.
@@ -85,7 +85,7 @@ Mitigations are listed against the assets they protect and the adversaries they 
 
 | Mitigation                                                                                            | Protects asset(s)                                            | Bounds adversary(ies)                                            |
 |--------------------------------------------------------------------------------------------------------|--------------------------------------------------------------|------------------------------------------------------------------|
-| Outbound-only HTTPS to Odoo (Pull mode default).                                                       | Cluster API.                                                  | A1 (no inbound port to exploit).                                  |
+| Outbound-only HTTPS to the control plane (Pull mode default).                                                       | Cluster API.                                                  | A1 (no inbound port to exploit).                                  |
 | Operator does not hold `cluster-admin`; cluster-scoped rights limited to its own CRDs.                 | Cluster API; PVs.                                             | A2 (a compromised operator pod cannot read every Secret).         |
 | Namespace-scoped `Role`s only in namespaces labeled `app.vworkspace.io/managed-by=vworkspace`.         | PVs in unrelated namespaces.                                  | A2 (lateral movement bounded by label).                           |
 | `get`-by-name on Secrets, never `list`/`watch`.                                                        | Chart-values credentials.                                     | A2.                                                               |
@@ -116,7 +116,7 @@ We assume:
 
 - The cluster's node OS is patched, the container runtime is current, and CVE management is the operator's responsibility outside the scope of this operator. We do not own kernel-level mitigations.
 - The chart catalog Odoo distributes is curated. We do not provide chart provenance verification today (see Open issues below); a compromised catalog can ship a malicious chart, which the operator will install.
-- Odoo's database is backed up and its access is audited at the Odoo layer. The operator's audit-event stream does not substitute for Odoo-side audit.
+- Odoo's database is backed up and its access is audited at the Odoo layer. The operator's audit-event stream does not substitute for control-plane-side audit.
 - Time is roughly synchronized (NTP). The TTL on registration tokens and the signature timestamps in signed payloads rely on this.
 - The Kubernetes API server is itself trustworthy. An attacker who compromises the API server has the cluster regardless of what the operator does.
 

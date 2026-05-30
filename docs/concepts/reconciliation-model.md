@@ -1,7 +1,7 @@
 # Reconciliation model
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This page describes how the operator turns its two CRDs into actual work. The full spec/status reference for each CRD is in [../api/application-instance.md](../api/application-instance.md) and [../api/operation.md](../api/operation.md). The picture this page is filling in is "what happens after Odoo's intent has materialized in the cluster's API server", regardless of which connectivity mode brought it there.
 

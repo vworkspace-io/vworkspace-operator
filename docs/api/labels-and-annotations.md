@@ -1,7 +1,7 @@
 # Labels and annotations
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 `vworkspace-operator` reads and writes a small set of well-known labels and annotations to express ownership, cluster identity, and per-application day-2 capabilities. This page documents what each one means, where the operator reads it from, and what it writes back.
 

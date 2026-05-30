@@ -1,11 +1,11 @@
 # Cluster bootstrap
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
-This is the full bootstrap procedure for connecting a new Kubernetes cluster to an Odoo vWorkspace control plane in the default Pull-mode connectivity. It expands the six steps that appear in the source-of-truth design note into a complete procedure with the actual commands and the actual Odoo-side actions. Push-mode and GitOps-mode equivalents are noted at the end.
+This is the full bootstrap procedure for connecting a new Kubernetes cluster to an Odoo vWorkspace control plane in the default Pull-mode connectivity. It expands the six steps that appear in the source-of-truth design note into a complete procedure with the actual commands and the actual control-plane-side actions. Push-mode and GitOps-mode equivalents are noted at the end.
 
-If you have already read [quickstart.md](quickstart.md), this document is the same flow seen from both sides — the cluster side and the Odoo side — and with the validation steps in their natural place rather than at the end.
+If you have already read [quickstart.md](quickstart.md), this document is the same flow seen from both sides — the cluster side and the control-plane side — and with the validation steps in their natural place rather than at the end.
 
 The reader is assumed to be the cluster admin and, separately or as the same person, an Odoo organization admin. The two roles can be the same human; the procedure separates them only to make the credential-flow direction unambiguous.
 
@@ -167,7 +167,7 @@ The first deploy is usually the slowest because chart images are not in the clus
 In Push mode, steps 3 and 4 are replaced by:
 
 3. Odoo's administrator generates a ServiceAccount kubeconfig scoped to `apps.vworkspace.io` and `ops.vworkspace.io` resources (and optional read on `helm.toolkit.fluxcd.io` for status). Apply the ServiceAccount, its `ClusterRoleBinding`s, and the kubeconfig generation procedure documented in [../security/authentication.md](../security/authentication.md).
-4. Paste the kubeconfig into Odoo's Cluster Registry as the cluster's credential. Odoo connects to the cluster API, validates it can list `applicationinstances`, and marks the cluster `Connected`.
+4. Paste the kubeconfig into the control plane's Cluster Registry as the cluster's credential. Odoo connects to the cluster API, validates it can list `applicationinstances`, and marks the cluster `Connected`.
 
 Steps 1, 2, 5, and 6 are unchanged. The cluster's `Cluster` CR exists but has `spec.connectivityMode: push`; the operator still maintains `Cluster.status` from the cluster side, and Odoo's `watch` on the cluster API reads it.
 
@@ -176,9 +176,9 @@ Steps 1, 2, 5, and 6 are unchanged. The cluster's `Cluster` CR exists but has `s
 In GitOps mode, steps 3 and 4 are replaced by:
 
 3. The admin sets up a Git repository the cluster's Flux instance is configured to follow (a `GitRepository` resource in `flux-system`). Odoo is configured with a Git write credential to push manifests there.
-4. Odoo writes the cluster's initial `Cluster` CR plus any pre-existing `ApplicationInstance` resources into the repo. Flux on the cluster pulls and applies them.
+4. the control plane writes the cluster's initial `Cluster` CR plus any pre-existing `ApplicationInstance` resources into the repo. Flux on the cluster pulls and applies them.
 
-The operator's `Cluster` CR still drives status posts back to Odoo (over the same `POST /api/agent/events` endpoint), so Odoo's UI still reflects cluster health. Steps 1, 2, 5, and 6 are unchanged.
+The operator's `Cluster` CR still drives status posts back to the control plane (over the same `POST /api/agent/events` endpoint), so Odoo's UI still reflects cluster health. Steps 1, 2, 5, and 6 are unchanged.
 
 ## Related material
 

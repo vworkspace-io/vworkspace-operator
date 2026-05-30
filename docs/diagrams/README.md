@@ -1,6 +1,6 @@
 # Diagrams
 
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This directory holds the diagrams used in the rest of the documentation. They are kept as ASCII text rather than as SVG or PNG for two reasons: text diagrams are portable across rendering environments (a Markdown viewer, a terminal, a code review tool) and they live in `git` as diffable source. Generated SVG renders may be added later as a build artifact, but the source-of-truth diagrams remain the text files in this directory.
 
@@ -10,7 +10,7 @@ If a diagram needs to be updated, edit the `.txt` file. The Markdown documents t
 
 ### [architecture.txt](architecture.txt)
 
-The high-level architecture. Shows the Odoo control plane on top, the three connectivity modes (Push, Pull, GitOps) as the arrows between control plane and clusters, and a representative cluster with the `vworkspace-operator`, Flux Helm Controller, and the ops controllers (Velero, CSI snapshots, Argo Workflows, cert-manager, external-secrets, ingress controller). A second cluster appears alongside the first to make the "one operator per cluster, isolated blast radius" property explicit. Referenced from [../concepts/architecture.md](../concepts/architecture.md).
+The high-level architecture. Shows the vWorkspace Server control plane on top, the three connectivity modes (Push, Pull, GitOps) as the arrows between control plane and clusters, and a representative cluster with the `vworkspace-operator`, Flux Helm Controller, and the ops controllers (Velero, CSI snapshots, Argo Workflows, cert-manager, external-secrets, ingress controller). A second cluster appears alongside the first to make the "one operator per cluster, isolated blast radius" property explicit. Referenced from [../concepts/architecture.md](../concepts/architecture.md).
 
 ### [pull-mode-sequence.txt](pull-mode-sequence.txt)
 

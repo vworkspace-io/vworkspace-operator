@@ -1,11 +1,11 @@
 # Quickstart
 
 **Status:** Alpha
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 This is the supported install path. Two commands install the operator, three more verify it, and the rest of this document describes what to check if something goes wrong. The complete bootstrap procedure (including issuing the registration token in Odoo) is in [cluster-bootstrap.md](cluster-bootstrap.md).
 
-Before you start, work through [prerequisites.md](prerequisites.md). The quickstart assumes you have a running Kubernetes cluster, `cluster-admin` access via `kubectl`, an Odoo URL you can reach, and the ability to issue a one-time registration token in Odoo.
+Before you start, work through [prerequisites.md](prerequisites.md). The quickstart assumes you have a running Kubernetes cluster, `cluster-admin` access via `kubectl`, an control plane URL you can reach, and the ability to issue a one-time registration token in Odoo.
 
 The version number `0.0.0` below is a placeholder for the chart version you actually install; substitute the real one from the project's releases page when the operator has its first tagged release.
 
@@ -30,7 +30,7 @@ helm upgrade vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system \
   --reuse-values \
   --set agent.enabled=true \
-  --set agent.odooBaseUrl=https://workspace.example.org
+  --set agent.controlPlaneBaseUrl=https://workspace.example.org
 ```
 
 Wait until the operator pod reports `Ready`:
@@ -159,7 +159,7 @@ kubectl get applicationinstance -A -w
 
 Within a few minutes (depending on chart size and image pull time), the application's URL appears in the Workspace Hub. The `ApplicationInstance` reports `Ready=True`, the underlying `HelmRelease` reports `Ready=True`, and you can visit the URL.
 
-If you prefer to apply a CR directly without Odoo (useful for the first sanity check), the following works once the cluster is registered:
+If you prefer to apply a CR directly without vWorkspace Server (useful for the first sanity check), the following works once the cluster is registered:
 
 ```
 cat <<'EOF' | kubectl apply -f -
@@ -218,10 +218,10 @@ helm upgrade vworkspace-operator ./charts/vworkspace-operator \
 
 If `Cluster.status.conditions[Connected]` is `False`:
 
-- `OdooUnreachable`: the operator cannot reach `Cluster.spec.odoo.endpoint`. Check DNS, the egress firewall, and the proxy (`Cluster.spec.odoo.proxy`) if you set one.
+- `OdooUnreachable`: the operator cannot reach `Cluster.spec.odooBaseUrl`. Check DNS, the egress firewall, and the proxy (`Cluster.spec (egress proxy — see pull-mode docs)`) if you set one.
 - `RegistrationTokenInvalid`: the token is expired, already-used, or does not match Odoo's expected hash. Re-issue and try again.
 - `CredentialMissing`: the operator started but the bootstrap credential Secret has been deleted. Re-run the registration step.
-- `OdooAuthenticationFailed`: the credential is present but Odoo rejected it. Likely the credential was revoked from the Odoo side; re-register.
+- `OdooAuthenticationFailed`: the credential is present but control plane rejected it. Likely the credential was revoked from the control-plane side; re-register.
 
 If `ApplicationInstance` is stuck in `Reconciling=True`:
 

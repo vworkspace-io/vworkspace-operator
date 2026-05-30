@@ -1,7 +1,7 @@
 # Release process
 
 **Status:** Alpha — APIs are at `v1alpha1` and the project is pre-1.0.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document describes how `vworkspace-operator` releases are produced, signed, and published. The project is pre-1.0 (`v0.x.y`); the release cadence and process are deliberately conservative. CRD evolution requires a conversion webhook and a deprecation window of at least one minor release; that constraint shapes the rest of the process.
 

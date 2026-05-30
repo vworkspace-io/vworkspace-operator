@@ -1,9 +1,9 @@
 # Architecture
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
-This page describes how the major components of `vworkspace-operator` fit together, why the project commits to "one operator per cluster", and how intent flows from Odoo into a cluster and back. For the protocol-level detail of how intent reaches the cluster in each connectivity mode, see [../connectivity/README.md](../connectivity/README.md). For the spec and status fields of the CRDs the operator owns, see [../api/README.md](../api/README.md).
+This page describes how the major components of `vworkspace-operator` fit together, why the project commits to "one operator per cluster", and how intent flows from the control plane into a cluster and back. For the protocol-level detail of how intent reaches the cluster in each connectivity mode, see [../connectivity/README.md](../connectivity/README.md). For the spec and status fields of the CRDs the operator owns, see [../api/README.md](../api/README.md).
 
 ## High-level picture
 
@@ -54,7 +54,7 @@ A single Kubernetes operator installed once per cluster. It owns two CRD groups:
 - `apps.vworkspace.io/v1alpha1` — currently `ApplicationInstance`.
 - `ops.vworkspace.io/v1alpha1` — currently `Operation`.
 
-It reconciles those CRDs by creating downstream resources (`HelmRelease`, `Backup`, `Workflow`, `Job`, `VolumeSnapshot`, ...) that third-party controllers act on. It also owns the connectivity loop back to Odoo — Pull, Push, or GitOps — and the cluster-level `Cluster` status object that reports connectivity, controller presence, and the last successful round-trip to Odoo.
+It reconciles those CRDs by creating downstream resources (`HelmRelease`, `Backup`, `Workflow`, `Job`, `VolumeSnapshot`, ...) that third-party controllers act on. It also owns the connectivity loop back to the control plane — Pull, Push, or GitOps — and the cluster-level `Cluster` status object that reports connectivity, controller presence, and the last successful round-trip to the control plane.
 
 The operator is multi-tenant inside the cluster: it serves all namespaces labeled `managed-by=vworkspace`. It is not multi-tenant across clusters; each cluster has its own operator instance with its own RBAC and its own identity. That property is the heart of the next section.
 
@@ -80,7 +80,7 @@ The operator does not run any of this work itself. It writes the appropriate inp
 A single operator instance per cluster is a deliberate design constraint, not an implementation accident. It buys four properties that matter for the kind of organizations vWorkspace is built for.
 
 - **Bounded blast radius.** A bug, a compromise, or an upgrade gone wrong on cluster A cannot reach cluster B, because the operator on cluster B is a different process with different RBAC and a different identity. The cluster boundary is the trust boundary.
-- **Independence from Odoo availability.** Once an `ApplicationInstance` is in the cluster's API server, the operator and Flux reconcile it without consulting Odoo. If Odoo is down for an hour, a day, or a week, applications keep running and recovering from disruptions. The cluster is offline-capable.
+- **Independence from the control plane availability.** Once an `ApplicationInstance` is in the cluster's API server, the operator and Flux reconcile it without consulting Odoo. If Odoo is down for an hour, a day, or a week, applications keep running and recovering from disruptions. The cluster is offline-capable.
 - **Local RBAC and namespace policy.** Each cluster owns its own RBAC. The operator's permissions are scoped to namespaces labeled `managed-by=vworkspace`. There is no central place that can grant a cluster more permissions than it has locally agreed to. The cluster admin keeps the keys.
 - **A clear ownership story for upgrades.** The operator is itself a workload reconciled by Flux. Upgrading the operator on cluster A is just bumping its `HelmRelease`. Different clusters can be on different operator versions without coordination, within the documented version-skew window.
 
@@ -93,7 +93,7 @@ The dataflow is intentionally one-directional in shape:
 1. **Intent enters the cluster.** Odoo emits intent — either by Pull-mode jobs, by Push-mode server-side apply, or by writing manifests to a Git repository that Flux on the cluster syncs. Whatever the transport, the result inside the cluster is identical: an `ApplicationInstance` or `Operation` resource appears in the API server, owned by the operator's field manager and labeled with `app.vworkspace.io/managed-by=odoo` and `app.vworkspace.io/cluster-id=<id>`.
 2. **The operator reconciles.** For an `ApplicationInstance`, the operator materializes the matching `HelmRelease` (and, where needed, the upstream `HelmRepository` or `OCIRepository`). For an `Operation`, the operator picks the right engine (`velero`, `workflow`, `job`, `helm`, `volsync`, `helmHookJob`) from the request and creates the matching CR. Both are server-side applies under the operator's own field manager.
 3. **Third-party controllers do the work.** Flux upgrades the release. Velero takes the backup. Argo Workflows runs the DAG. The operator does not poll their state; it watches their CRDs and reacts when their conditions change.
-4. **Status propagates up.** As downstream conditions change, the operator updates the `ApplicationInstance.status.conditions` or `Operation.status.conditions` accordingly, emits a Kubernetes `Event` on the source resource, and queues a batched event for the Pull-mode status endpoint (or pushes back to Odoo in Push mode, or annotates the Git commit in GitOps mode).
+4. **Status propagates up.** As downstream conditions change, the operator updates the `ApplicationInstance.status.conditions` or `Operation.status.conditions` accordingly, emits a Kubernetes `Event` on the source resource, and queues a batched event for the Pull-mode status endpoint (or pushes back to the control plane in Push mode, or annotates the Git commit in GitOps mode).
 5. **Odoo learns about the outcome.** The audit channel in Odoo Discuss receives the event; the cluster registry view shows the updated conditions; the AI assistant can summarize what happened.
 
 The key invariant is that **the in-cluster reconciliation loop is the same across all three connectivity modes**. Only step 1 — how intent arrives — differs. Steps 2 through 5 are the same code paths on the same controllers, regardless of whether the cluster is sitting behind NAT in a clinic basement or installed alongside Odoo on the same Kubernetes cluster.

@@ -1,11 +1,11 @@
 # Install
 
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This chapter is the installation reference for `vworkspace-operator`. It covers prerequisites, the supported quickstart path, distro-specific notes, the full cluster bootstrap procedure, offline and air-gapped installs, and clean uninstall.
 
-The intended reader is a platform engineer or homelab operator who already runs a Kubernetes cluster (or is about to) and wants to put a working operator on it, register it with an Odoo control plane, and watch the first `ApplicationInstance` come up. The exact opinions ("Pull mode by default", "Flux Helm Controller as the Helm engine", "Velero for backups", "one operator per cluster") are the same ones described in the [concepts chapter](../concepts/README.md) and recorded as ADRs.
+The intended reader is a platform engineer or homelab operator who already runs a Kubernetes cluster (or is about to) and wants to put a working operator on it, register it with a vWorkspace Server control plane, and watch the first `ApplicationInstance` come up. The exact opinions ("Pull mode by default", "Flux Helm Controller as the Helm engine", "Velero for backups", "one operator per cluster") are the same ones described in the [concepts chapter](../concepts/README.md) and recorded as ADRs.
 
 ## Read in order
 

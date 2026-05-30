@@ -43,9 +43,9 @@ Enable Pull-mode in the operator Deployment:
 
 | Source | Keys / flags |
 |--------|----------------|
-| Flags | `--agent-enabled=true`, `--odoo-base-url`, `--cluster-id`, `--agent-token`, `--agent-poll-interval` (default `30s`) |
-| Environment | `ODOO_BASE_URL`, `VWORKSPACE_CLUSTER_ID`, `VWORKSPACE_AGENT_TOKEN` |
-| Secret (`--agent-credentials-secret`, default name `vworkspace-agent-credentials`) | `odoo-base-url`, `cluster-id`, `token` |
+| Flags | `--agent-enabled=true`, `--control-plane-base-url` (alias: `--control-plane-base-url`), `--cluster-id`, `--agent-token`, `--agent-poll-interval` (default `30s`) |
+| Environment | `CONTROL_PLANE_BASE_URL`, `VWORKSPACE_CLUSTER_ID`, `VWORKSPACE_AGENT_TOKEN` |
+| Secret (`--agent-credentials-secret`, default name `vworkspace-agent-credentials`) | `control-plane-base-url`, `cluster-id`, `token` |
 
 Flag and environment values override Secret data when both are set. The operator uses field manager `vworkspace-agent` and sets labels `app.vworkspace.io/managed-by=odoo` and `app.vworkspace.io/cluster-id=<cluster-id>` on applied objects.
 
@@ -77,7 +77,7 @@ Each job carries one of two payload shapes:
 
 Both shapes converge in the cluster: the operator's reconciler only ever sees its own CRs. Pull mode does not introduce a second reconciliation loop; it introduces a new way to materialize the CRs the operator already reconciles.
 
-The choice between rendered-object and intent payloads is an Odoo-side optimization. The operator handles both. Rendered-object payloads are easier to debug (the manifest in the job is the manifest in the cluster); intent payloads are smaller and let Odoo evolve the CR's `spec` without coordinating with the operator.
+The choice between rendered-object and intent payloads is an control-plane-side optimization. The operator handles both. Rendered-object payloads are easier to debug (the manifest in the job is the manifest in the cluster); intent payloads are smaller and let Odoo evolve the CR's `spec` without coordinating with the operator.
 
 ## Reconciliation interaction
 
@@ -91,9 +91,9 @@ This is the property that makes Pull non-invasive: the in-cluster behavior is un
 
 ## Status reporting
 
-The operator streams status back to Odoo over the same outbound channel. Three rules:
+The operator streams status back to the control plane over the same outbound channel. Three rules:
 
-- **Idempotent.** Each event carries a stable `eventKey` built from resource identity (`apiVersion`, `kind`, namespace, name, UID), condition type/status, and object generation. Replay is safe; Odoo (and mock Odoo) de-duplicates on `eventKey`.
+- **Idempotent.** Each event carries a stable `eventKey` built from resource identity (`apiVersion`, `kind`, namespace, name, UID), condition type/status, and object generation. Replay is safe; Odoo (and mock control plane) de-duplicates on `eventKey`.
 - **Batched.** Events are coalesced by `internal/agent/EventBatcher` (default: flush every second or when the batch reaches 100 events). Reconcilers call `internal/agent/StatusReporter` after each successful status write; changed conditions are enqueued automatically.
 - **Tolerant of disconnects.** Failed `POST /api/agent/events` calls re-queue the batch and set `vworkspace_operator_connectivity_state{mode="pull"}` to `0` (reconnecting). The buffer is bounded (default 1000 events); overflow drops oldest entries.
 
@@ -103,7 +103,7 @@ When `--agent-enabled=true`, `cmd/main.go` starts a shared `EventBatcher` gorout
 
 1. The reconciler compares previous and new `status.conditions`.
 2. For each changed condition, `StatusReporter` enqueues a `ConditionTransition` event with `resourceRef`, condition type/reason/message, timestamp, and `eventKey`.
-3. The batcher flushes to `POST /api/agent/events` on the configured Odoo base URL.
+3. The batcher flushes to `POST /api/agent/events` on the configured control plane base URL.
 
 Cluster credential rotation (`spec.rotateCredentials: true`) calls `POST /api/agent/credentials/rotate`, updates `Secret/vworkspace-agent-credentials`, clears the spec flag, and posts a `CredentialRotated` audit event.
 
@@ -113,14 +113,14 @@ The interim `POST /api/agent/jobs/{jobId}/status` endpoint is for per-job progre
 
 ## Offline and disconnected behavior
 
-If the link to Odoo is broken:
+If the link to the control plane is broken:
 
 - The cluster continues reconciling the last known desired state. Applications stay up. Scheduled `Operation` CRs continue to run.
 - The operator queues outbound events in a bounded buffer.
 - Inbound intent is paused; the operator clearly reports `Disconnected` as a top-level condition on its own `Cluster` status object so the AI assistant in Odoo can surface it when the connection returns.
 - Re-establishing the connection re-syncs status first (so Odoo's view of the cluster is current), then resumes pulling new jobs.
 
-This is a deliberate property of Pull mode: an Odoo outage does not take down a running tenant cluster. Buffer overflow during a long outage is recoverable — the operator re-emits the current condition snapshot for every owned resource on reconnect — but it does mean fine-grained transition history during the outage may be lost. That trade-off is documented; the alternative (unbounded queueing) is worse in every meaningful sense.
+This is a deliberate property of Pull mode: an control plane outage does not take down a running tenant cluster. Buffer overflow during a long outage is recoverable — the operator re-emits the current condition snapshot for every owned resource on reconnect — but it does mean fine-grained transition history during the outage may be lost. That trade-off is documented; the alternative (unbounded queueing) is worse in every meaningful sense.
 
 ## Drift, conflicts, and deduplication
 
@@ -131,18 +131,18 @@ This is a deliberate property of Pull mode: an Odoo outage does not take down a 
 
 ## Security
 
-- **Outbound-only firewall.** Cluster network admins only need to allow HTTPS egress to Odoo's hostname. No inbound rules. No NAT traversal. No reverse proxies.
+- **Outbound-only firewall.** Cluster network admins only need to allow HTTPS egress to the control plane's hostname. No inbound rules. No NAT traversal. No reverse proxies.
 - **Scoped tokens per cluster.** Server-side authorization rejects cross-cluster reads. A token issued for `cluster-prod-1` cannot fetch jobs for `cluster-prod-2`.
 - **Signed payloads (optional).** Job payloads can be signed by Odoo; the operator verifies before applying. This protects against a compromised relay, message broker, or man-in-the-middle.
 - **Encrypted payloads (optional).** For payloads containing chart values that include secret material, payloads can be encrypted to the cluster's public key. The operator decrypts at apply time and never logs decrypted material.
-- **Audit on both sides.** Odoo audits intent ("admin X asked for backup Y on cluster Z at time T"); the cluster audits actuation ("operator created Velero Backup `v-…` at time T+ε"). Both flow into Odoo's Discuss audit channel for the organization.
+- **Audit on both sides.** Odoo audits intent ("admin X asked for backup Y on cluster Z at time T"); the cluster audits actuation ("operator created Velero Backup `v-…` at time T+ε"). Both flow into the control plane audit log for the organization.
 
 ## Multi-tenant isolation
 
-In a single-tenant vWorkspace install — the default — all clusters belong to the one organization. In an opt-in hosted offering, one Odoo install may serve many customer organizations and many clusters. Pull mode handles this cleanly:
+In a single-tenant vWorkspace install — the default — all clusters belong to the one organization. In an opt-in hosted offering, one vWorkspace Server install may serve many customer organizations and many clusters. Pull mode handles this cleanly:
 
 - Each cluster only ever sees jobs targeted at its own cluster identity.
 - Odoo enforces this server-side on every request, not on a hopeful "the operator wouldn't ask" basis.
 - Cluster identities are scoped to a single organization. Cross-organization reads are not possible by construction.
 
-A compromise of one cluster's outbound token grants the attacker exactly that cluster's job stream — nothing else, on any other cluster, in any other organization. This is the property that lets one Odoo install (hypothetically) serve many customer clusters without holding their kubeconfigs and without one customer's incident becoming another customer's incident.
+A compromise of one cluster's outbound token grants the attacker exactly that cluster's job stream — nothing else, on any other cluster, in any other organization. This is the property that lets one vWorkspace Server install (hypothetically) serve many customer clusters without holding their kubeconfigs and without one customer's incident becoming another customer's incident.

@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This directory contains the Architecture Decision Records (ADRs) for `vworkspace-operator`. An ADR records a decision the project has made about its architecture, why the decision was made, and what its consequences are. ADRs are not specifications and not RFCs (see [../rfcs/README.md](../rfcs/README.md) for that distinction); they are the project's institutional memory.
 

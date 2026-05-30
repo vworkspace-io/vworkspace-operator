@@ -1,7 +1,7 @@
 # Build and test
 
 **Status:** Alpha — Makefile targets match the Phase 1 scaffold.
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 This document is the cookbook for building, testing, and running the operator during development. The Makefile is the canonical interface; if a command does something other than what this document says, the Makefile is right and this document is stale. Open an issue (or a PR) when that happens.
 
