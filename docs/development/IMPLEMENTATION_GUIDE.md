@@ -425,22 +425,30 @@ Run everything: `make test`.
 
 **Branch:** `feat/phase-2b-deferred`.
 
-## Phase 3 — vWorkspace Server integration and public release (planned)
+## Phase 3 — vWorkspace Server integration and public release (in progress)
 
 **Goal:** Align operator releases with [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) (the control plane product, built on Odoo 19) and ship the first public operator release.
+
+**Depends on:** Server branch `fix/align-with-operator-pr16` merged (agent API aligned with operator PR #16).
 
 | Deliverable | Path / repo | Status |
 |-------------|-------------|--------|
 | Control-plane terminology in docs and flags | `docs/`, `cmd/main.go`, Helm chart | Done (pre-release polish) |
-| Real Pull-mode API against vWorkspace Server | upstream `vworkspace-server` | Planned |
+| Real control plane dev script | `hack/dev-real-control-plane.sh` | Done |
+| Live server integration test (`-tags=integration`) | `test/integration/real_control_plane_test.go` | Done (manual / optional CI) |
+| Real control plane dev docs | `docs/development/real-control-plane.md` | Done |
+| Quickstart + pull-mode server registration docs | `docs/install/quickstart.md`, `docs/connectivity/pull-mode.md` | Done |
+| Golden path: server job → ApplicationInstance + HelmRelease | kind + server docker-compose | In progress (Platform coordination) |
+| Real Pull-mode job enqueue from server UI | upstream `vworkspace-server` | Planned (server-owned) |
 | Argo Workflows / CSI / VolSync engines | `internal/engines/` | Planned |
 | mTLS and signed Pull-mode payloads | `internal/agent/` | Planned |
-| GitHub Pages doc publish | `docs/publication.md`, CI workflow | Planned |
+| GitHub Pages doc publish | `docs/publication.md`, CI workflow | In progress (see publication.md checklist) |
 | Public `v0.2` release | tags, signed images | Planned |
 
 **Acceptance criteria**
 
 - [x] Operator docs and CLI use "control plane" / vWorkspace Server naming; Odoo-named compatibility aliases removed pre-1.0.
+- [x] Documented path from vWorkspace Server registration to operator agent flags without mock control plane.
 - [ ] End-to-end install: vWorkspace Server registers a cluster; operator deploys an app via Pull mode without the in-repo mock.
 - [ ] Published doc site on GitHub Pages.
 

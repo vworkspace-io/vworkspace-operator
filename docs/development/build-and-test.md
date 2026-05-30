@@ -76,6 +76,18 @@ KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.30 -p path)" \
 
 The `-count=1` flag disables Go's test caching so a re-run actually re-runs.
 
+## Integration test against live vWorkspace Server
+
+Optional smoke test against a running [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) docker-compose stack. Not part of `make test` or default CI.
+
+```bash
+export CONTROL_PLANE_BASE_URL=http://127.0.0.1:8069
+export VWORKSPACE_REGISTRATION_TOKEN=vwksp-reg-...   # fresh one-time token
+go test -tags=integration ./test/integration/... -run TestRealControlPlane -count=1 -v
+```
+
+See [real-control-plane.md](real-control-plane.md) and `./hack/dev-real-control-plane.sh`.
+
 ## Running e2e tests against kind
 
 ```

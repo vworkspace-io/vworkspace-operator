@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Phase 3 operator-side real control plane path: `hack/dev-real-control-plane.sh`, [docs/development/real-control-plane.md](docs/development/real-control-plane.md), optional `go test -tags=integration` live server smoke test (`test/integration/real_control_plane_test.go`, `make test-integration-real`).
 - Public-release documentation polish: [docs/publication.md](docs/publication.md) (GitHub Pages / MkDocs guidance), refreshed root [README.md](README.md) and [docs/README.md](docs/README.md) index.
 - `--control-plane-base-url` / `CONTROL_PLANE_BASE_URL` flags and env vars for Pull-mode connectivity.
 - `--control-plane-endpoint` for `manager register` CLI.

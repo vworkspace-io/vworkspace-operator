@@ -56,6 +56,23 @@ Container image: `docker.io/vworkspace/vworkspace-operator` — see [../install/
 
 For the request shapes that carry these credentials, see [job-protocol.md](job-protocol.md#authentication-and-versioning).
 
+### Registration with vWorkspace Server
+
+Against a live [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) instance (not the in-repo mock):
+
+1. Create a cluster identity and **Issue registration token** in Cluster Registry (server UI).
+2. Exchange the token with `POST /api/agent/register` — via the operator CLI or `Cluster` CR with `spec.registrationToken` ([../install/cluster-bootstrap.md](../install/cluster-bootstrap.md)).
+3. Enable `--agent-enabled=true` and set `--control-plane-base-url` to the URL **reachable from the operator process** (on kind/Linux this is often the docker bridge gateway, not `127.0.0.1` inside the pod).
+
+```bash
+go run ./cmd/main.go register \
+  --control-plane-endpoint https://workspace.example.org \
+  --token vwksp-reg-... \
+  --cluster-name cluster-prod-1
+```
+
+Local server dev: [../development/real-control-plane.md](../development/real-control-plane.md). Wire contract: [vWorkspace Server agent API](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/connectivity/agent-api.md).
+
 ## Job model
 
 Odoo exposes a small, stable HTTP surface for the operator. The endpoints are namespaced under `/api/agent/`. The complete wire contract — request bodies, response codes, JSON shapes — is in [job-protocol.md](job-protocol.md). The summary:

@@ -5,6 +5,8 @@
 
 The [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) control plane may not be available in every dev environment. The in-repo mock server implements the Pull-mode [job protocol](../connectivity/job-protocol.md) so the operator agent can be developed and tested without a full control plane deployment.
 
+When the server docker-compose stack is running, use [real-control-plane.md](real-control-plane.md) and `./hack/dev-real-control-plane.sh` instead.
+
 ## Package and binary
 
 | Path | Purpose |

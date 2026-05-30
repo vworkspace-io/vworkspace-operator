@@ -97,6 +97,7 @@ nav:
       - Local setup: development/local-setup.md
       - Build and test: development/build-and-test.md
       - Mock control plane: development/mock-control-plane.md
+      - Real control plane: development/real-control-plane.md
       - Contributing: development/contributing.md
       - Release process: development/release-process.md
       - Implementation guide: development/IMPLEMENTATION_GUIDE.md
