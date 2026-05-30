@@ -88,7 +88,7 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 | Operation validating webhook (stub) | `internal/webhook/operation_webhook.go` | Done |
 | Sample Cluster CR | `config/samples/ops_v1alpha1_cluster.yaml` | Done |
 | Quickstart / bootstrap docs | `docs/install/quickstart.md`, `docs/install/cluster-bootstrap.md` | Done |
-| RBAC review | `config/rbac/role.yaml` vs `docs/security/rbac.md` | Remaining |
+| RBAC review | `config/rbac/role.yaml` vs `docs/security/rbac.md` | Done (Phase 2) |
 
 **Acceptance criteria**
 
@@ -96,6 +96,7 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 - [x] Applied Pull-mode `idempotencyKey` values persist in ConfigMap across operator restarts.
 - [x] Agent poller reloads credentials from Secret after registration.
 - [x] Prometheus metrics: `vworkspace_operator_pull_job_lag_seconds`, `vworkspace_operator_connectivity_state`, `vworkspace_operator_applied_jobs_total`.
+- [x] RBAC review against `docs/security/rbac.md` (Phase 2).
 - [ ] `make deploy IMG=...` installs operator + CRDs on kind (manual validation).
 - [ ] Sample `ApplicationInstance` reconciles when Flux CRDs are present (envtest/e2e gap).
 - [ ] Velero CRD present for backup `Operation` (documented prerequisite).
@@ -333,6 +334,7 @@ Disable Pull-mode by leaving `--agent-enabled=false`; in-cluster reconcilers con
 | HelmRelease materialization | `internal/helmengine` | fake client |
 | Agent HTTP + applier | `internal/agent` | httptest + fake client |
 | Pull loop (mock Odoo → applier → reconciler) | `test/integration` | fake client + mock Odoo |
+| Reconciler status events to mock Odoo | `test/integration/status_report_test.go` | fake client + mock Odoo |
 | Pull loop e2e (kind + in-cluster mock Odoo) | `test/e2e` | kind + ginkgo |
 | Reconciler integration | `internal/controller` | envtest |
 
@@ -370,9 +372,39 @@ Run everything: `make test`.
 
 **Branch:** `feat/webhook-hardening`.
 
+## Phase 2 — Status reporting, credential rotation, RBAC (in progress)
+
+**Goal:** Report reconciler condition transitions to Odoo via Pull-mode outbound events; support credential rotation; align RBAC with least-privilege docs.
+
+**Baseline:** v0.0.4 (all Phase 1 PRs merged).
+
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| Status reporter | `internal/agent/reporter.go` | Done |
+| Event batcher flush + requeue | `internal/agent/events.go` | Done |
+| Reconciler wiring | `internal/controller/*_controller.go` | Done |
+| Credential rotation client | `internal/agent/client.go` (`RotateCredentials`) | Done |
+| Cluster rotation flow | `internal/controller/cluster_controller.go`, `spec.rotateCredentials` | Done |
+| Mock Odoo events + rotate | `test/mockodoo/server.go` | Done |
+| Integration test | `test/integration/status_report_test.go` | Done |
+| RBAC alignment | `config/rbac/role.yaml`, `charts/.../rbac.yaml` | Done |
+| Event buffer metric | `internal/agent/metrics.go` | Done |
+| Documentation | this guide, pull-mode, mock-odoo, observability, CHANGELOG | Done |
+
+**Acceptance criteria**
+
+- [x] ApplicationInstance, Operation, and Cluster condition transitions enqueue batched `POST /api/agent/events`.
+- [x] Events carry stable `eventKey` for Odoo-side deduplication (documented in mock-odoo).
+- [x] EventBatcher requeues on Odoo unreachable; sets connectivity gauge to reconnecting.
+- [x] `POST /api/agent/credentials/rotate` implemented in client and mock Odoo; Cluster reconciler updates Secret.
+- [x] RBAC includes ConfigMap/Secret for idempotency and credentials, events create/patch, leases.
+- [x] `make test`, `make lint`, and `./hack/verify-generated.sh` pass.
+
+**Branch:** `feat/phase-2-status-and-polish`.
+
 ## Phase 1f next session (suggested)
 
-1. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo).
-2. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over).
+1. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo). **Done in Phase 2.**
+2. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over). **Done in Phase 2.**
 3. Enable Velero backup e2e in CI (`E2E_INSTALL_VELERO=true`) once Velero CRD install is stable on runners.
 4. Sample `ApplicationInstance` with Flux controllers on kind (extend `hack/validate-helm-kind.sh` with `INSTALL_FLUX_CRDS=true`).

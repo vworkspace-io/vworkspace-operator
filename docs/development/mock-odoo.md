@@ -1,7 +1,7 @@
 # Mock Odoo agent API
 
 **Status:** Alpha — development and test substitute for real Odoo modules.
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 Real Odoo modules for vWorkspace are not built yet. The in-repo mock server implements the Pull-mode [job protocol](../connectivity/job-protocol.md) so the operator agent can be developed and tested without an Odoo deployment.
 
@@ -58,8 +58,10 @@ go run ./cmd/main.go register \
 | `POST` | `/api/agent/jobs/{id}/ack` | Marks job acknowledged (`204` or `409` if already closed). |
 | `POST` | `/api/agent/jobs/{id}/status` | Stores interim status updates. |
 | `POST` | `/api/agent/jobs/{id}/result` | Records terminal result (`409` on duplicate). |
-| `POST` | `/api/agent/events` | Appends batched events. |
+| `POST` | `/api/agent/events` | Appends batched events (deduplicates on `eventKey`). |
+| `POST` | `/api/agent/credentials/rotate` | Issues a new bootstrap token for the authenticated cluster. |
 | `POST` | `/api/admin/enqueue` | Enqueues a job for a cluster (test/e2e helper; optional `X-Mock-Odoo-Admin-Token`). |
+| `GET` | `/api/admin/events` | Lists stored events (`cluster`, optional `kind`, `namespace`, `name` filters). |
 | `GET` | `/api/admin/jobs/{id}/result` | Returns terminal result for assertions (same auth as enqueue). |
 
 Authentication matches the protocol: `Authorization: Bearer <token>` and `Accept: application/vnd.vworkspace.agent.v1+json`.
@@ -93,7 +95,21 @@ kind load docker-image example.com/mock-odoo:v0.0.1
 make test-e2e
 ```
 
-Inspect mock state: `WasAcked`, `JobResult`, `JobStatuses`, `Events(clusterID)`, `PendingJobCount`.
+Inspect mock state: `WasAcked`, `JobResult`, `JobStatuses`, `Events(clusterID)`, `EventsFiltered(clusterID, filter)`, `PendingJobCount`.
+
+### Event idempotency keys
+
+Each `POST /api/agent/events` payload may include `eventKey` on each event. Mock Odoo stores the first occurrence of each key per cluster and ignores duplicates (returns `204` either way). The operator builds keys as:
+
+```
+condition/<apiVersion>/<kind>/<namespace>/<name>/<uid>/<conditionType>/<status>@<generation>
+```
+
+Use `EventsFiltered` or `GET /api/admin/events?cluster=...&kind=...&namespace=...&name=...` to assert reconciler status reporting in tests.
+
+### Credential rotation
+
+`POST /api/agent/credentials/rotate` (authenticated with the current bootstrap token) returns a new token and updates the mock's token index. The old token is invalidated immediately in the mock (no grace period). The Cluster reconciler calls this when `spec.rotateCredentials: true` on the Cluster CR.
 
 Run tests:
 
@@ -119,7 +135,7 @@ In-cluster coverage is in `test/e2e/pull_loop_test.go` under `make test-e2e`.
 ## Limitations (intentional)
 
 - No payload signing or encryption.
-- No rate limiting or credential rotation endpoints.
+- No rate limiting.
 - In-memory only; state is lost when the process exits.
 - Long-poll uses short sleeps rather than efficient blocking (sufficient for dev/test).
 - Admin API is for tests only; do not expose on production networks without token protection.
