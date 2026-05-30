@@ -369,6 +369,34 @@ func waitForMockJobSucceeded(jobID string) agent.JobResult {
 	return result
 }
 
+func waitForConditionTransitionEvents(appName string) {
+	Eventually(func(g Gomega) {
+		events, err := mockOdooAdminClient.ListEvents(pullLoopClusterID, mockodoo.EventFilter{
+			Kind:      "ApplicationInstance",
+			Namespace: appTestNamespace,
+			Name:      appName,
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "mock Odoo admin events API should respond")
+
+		found := false
+		for _, ev := range events {
+			if ev.Kind != "ConditionTransition" {
+				continue
+			}
+			if ev.EventKey == "" {
+				continue
+			}
+			for _, c := range ev.Conditions {
+				if c.Type == "Reconciling" || c.Type == "Ready" || c.Type == "Blocked" {
+					found = true
+					break
+				}
+			}
+		}
+		g.Expect(found).To(BeTrue(), "expected ApplicationInstance condition transition events on mock Odoo")
+	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+}
+
 func skipUnlessKindAvailable() {
 	if os.Getenv("SKIP_E2E") == "true" {
 		Skip("SKIP_E2E=true")

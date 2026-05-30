@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Phase 2b polish: `Cluster.status.conditions[BufferOverflow]` when the outbound event buffer drops events (`EventBufferFull` / `BufferDrained`); clears after successful drain.
+- Prometheus gauge `vworkspace_operator_credential_age_seconds` (seconds since bootstrap credentials Secret was last updated or rotated).
+- Mock Odoo admin client `ListEvents` helper; e2e asserts ApplicationInstance condition transitions reach mock Odoo via `GET /api/admin/events`.
+- Unit tests for event buffer overflow state and credential age metric.
 - Phase 2 status reporting: `StatusReporter` and enhanced `EventBatcher` queue condition transitions from ApplicationInstance, Operation, and Cluster reconcilers to `POST /api/agent/events` with stable `eventKey` deduplication.
 - Credential rotation: `POST /api/agent/credentials/rotate` client, `Cluster.spec.rotateCredentials`, Cluster reconciler Secret update flow.
 - Mock Odoo: `POST /api/agent/credentials/rotate`, `GET /api/admin/events`, event deduplication by `eventKey`, `EventsFiltered` test helper.

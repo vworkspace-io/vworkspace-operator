@@ -80,6 +80,7 @@ func (r *Runtime) ensurePoller(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	UpdateCredentialAgeFromSecret(secret)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()

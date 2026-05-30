@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +33,7 @@ func PersistCredentials(ctx context.Context, c client.Client, namespace, secretN
 			Namespace: namespace,
 		},
 	}
-	op, err := controllerutil.CreateOrUpdate(ctx, c, secret, func() error {
+	_, err := controllerutil.CreateOrUpdate(ctx, c, secret, func() error {
 		if secret.Data == nil {
 			secret.Data = map[string][]byte{}
 		}
@@ -50,10 +51,20 @@ func PersistCredentials(ctx context.Context, c client.Client, namespace, secretN
 	if err != nil {
 		return fmt.Errorf("persist credentials secret %s/%s: %w", namespace, secretName, err)
 	}
-	if op != controllerutil.OperationResultNone {
-		return nil
-	}
+	SetCredentialUpdatedAt(time.Now().UTC())
 	return nil
+}
+
+// UpdateCredentialAgeFromSecret sets the credential age metric from Secret metadata.
+func UpdateCredentialAgeFromSecret(secret *corev1.Secret) {
+	if secret == nil {
+		return
+	}
+	t := secret.CreationTimestamp.Time
+	if t.IsZero() {
+		t = time.Now().UTC()
+	}
+	SetCredentialUpdatedAt(t)
 }
 
 // CredentialsFromSecret reads bootstrap credentials from an existing Secret.
@@ -73,7 +84,7 @@ func CredentialsFromSecret(secret *corev1.Secret) (Credentials, error) {
 }
 
 // GetCredentialsSecret fetches the credentials Secret if it exists.
-func GetCredentialsSecret(ctx context.Context, c client.Client, namespace, secretName string) (*corev1.Secret, bool, error) {
+func GetCredentialsSecret(ctx context.Context, c client.Reader, namespace, secretName string) (*corev1.Secret, bool, error) {
 	if secretName == "" {
 		secretName = DefaultCredentialsSecret
 	}

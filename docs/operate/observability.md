@@ -23,7 +23,7 @@ The operator exposes metrics on `:8080/metrics` (the controller-runtime default)
 | `vworkspace_operator_applied_jobs_total`                | Counter   | (none)                                                                                          | Pull-mode jobs applied successfully (`internal/agent/metrics.go`).                                                                  |
 | `vworkspace_operator_event_buffer_occupancy`            | Gauge     | (none)                                                                                          | Current depth of the outbound event buffer (Pull mode). Updated by `internal/agent/events.go` on enqueue, flush, and requeue. |
 | `vworkspace_operator_managed_namespaces`                | Gauge     | (none)                                                                                          | Count of namespaces carrying `app.vworkspace.io/managed-by=vworkspace`.                                                            |
-| `vworkspace_operator_credential_age_seconds`            | Gauge     | (none)                                                                                          | Age of the current bootstrap credential. Used to verify rotation is happening.                                                    |
+| `vworkspace_operator_credential_age_seconds`            | Gauge     | (none)                                                                                          | Age of the current bootstrap credential in seconds since the credentials Secret was last updated or rotated (`internal/agent/metrics.go`, updated on load/persist/rotation). |
 
 ### Standard controller-runtime metrics
 

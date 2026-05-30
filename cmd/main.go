@@ -182,6 +182,16 @@ func main() {
 			setupLog.Error(err, "unable to load agent credentials")
 			os.Exit(1)
 		}
+		if secret, found, secretErr := agent.GetCredentialsSecret(
+			context.Background(),
+			mgr.GetAPIReader(),
+			credNamespace,
+			agentCredentialsSecret,
+		); secretErr == nil && found {
+			agent.UpdateCredentialAgeFromSecret(secret)
+		} else {
+			agent.SetCredentialUpdatedAt(time.Now().UTC())
+		}
 		clusterID = creds.ClusterID
 		agentClient, err = agent.NewHTTPClient(agent.Config{
 			BaseURL:   creds.BaseURL,
@@ -229,6 +239,7 @@ func main() {
 		CredentialsSecret: agentCredentialsSecret,
 		OperatorNamespace: credNamespace,
 		Reporter:          statusReporter,
+		EventBatcher:      eventBatcher,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
 		os.Exit(1)

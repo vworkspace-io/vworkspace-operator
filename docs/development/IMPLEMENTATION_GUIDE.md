@@ -402,6 +402,29 @@ Run everything: `make test`.
 
 **Branch:** `feat/phase-2-status-and-polish`.
 
+## Phase 2b — Deferred polish (done)
+
+**Goal:** Close Phase 2 deferred items: buffer overflow visibility, credential age metric, Helm CRD sync, and e2e status-event coverage.
+
+| Deliverable | Path | Status |
+|-------------|------|--------|
+| BufferOverflow Cluster condition | `internal/agent/events.go`, `internal/controller/cluster_controller.go` | Done |
+| Credential age metric | `internal/agent/metrics.go`, `internal/agent/credentials_store.go` | Done |
+| Helm Cluster CRD sync (`rotateCredentials`) | `charts/vworkspace-operator/crds/ops.vworkspace.io_clusters.yaml` | Done |
+| E2E status events on mock Odoo | `test/e2e/pull_loop_test.go`, `test/mockodoo/admin.go` | Done |
+| Unit tests | `internal/agent/events_test.go`, `internal/agent/metrics_test.go` | Done |
+| Documentation | this guide, CHANGELOG, observability, conditions | Done |
+
+**Acceptance criteria**
+
+- [x] Event buffer overflow sets `Cluster.status.conditions[BufferOverflow=True, reason=EventBufferFull]` with drop count; clears on successful drain.
+- [x] `vworkspace_operator_credential_age_seconds` gauge updates on credential load, persist, and rotation.
+- [x] Helm chart Cluster CRD includes `spec.rotateCredentials`; `helm template` renders.
+- [x] E2e verifies `ConditionTransition` events reach mock Odoo after ApplicationInstance reconcile.
+- [x] `make test`, `make lint`, and `./hack/verify-generated.sh` pass.
+
+**Branch:** `feat/phase-2b-deferred`.
+
 ## Phase 1f next session (suggested)
 
 1. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo). **Done in Phase 2.**

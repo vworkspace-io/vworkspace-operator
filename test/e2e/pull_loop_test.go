@@ -75,6 +75,8 @@ var _ = Describe("Pull-mode job loop", Ordered, func() {
 		Expect(result.AppliedRef.Kind).To(Equal("ApplicationInstance"))
 		Expect(result.AppliedRef.Name).To(Equal(appName))
 		Expect(result.AppliedRef.Namespace).To(Equal(appTestNamespace))
+
+		waitForConditionTransitionEvents(appName)
 	})
 
 	It("creates a Velero Backup CR from a backup operation job", func() {

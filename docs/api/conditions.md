@@ -185,3 +185,12 @@ The operator maintains a `Cluster` resource that reports its own posture: how it
 | False    | `ControllerDegraded` | At least one required controller reports unhealthy. `message` lists which and why. |
 
 The operator surfaces missing or degraded controllers loudly: a `Cluster` with `ControllersHealthy=False` is a configuration problem the admin must address, and the AI assistant in Odoo can offer to install the missing pieces via a generated `Operation`.
+
+### `BufferOverflow`
+
+`BufferOverflow=True` means the outbound Pull-mode event buffer dropped events because Odoo was unreachable or not accepting posts and the buffer reached its capacity.
+
+| `status` | Reasons | Meaning |
+|----------|---------|---------|
+| True     | `EventBufferFull` | The operator dropped one or more outbound events. The `message` includes the drop count and suggests verifying Odoo connectivity. |
+| False    | `BufferDrained` | The buffer has drained successfully after a prior overflow. |
