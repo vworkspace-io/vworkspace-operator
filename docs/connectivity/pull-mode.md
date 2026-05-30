@@ -1,7 +1,7 @@
 # Pull mode
 
 **Status:** Alpha — default connectivity mode.
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 Pull mode is the default. The operator initiates an outbound HTTPS connection to Odoo, fetches jobs targeted at its own cluster identity, applies them to its own API server, and reports status back over the same outbound channel. Odoo never opens a socket to the cluster and never holds a kubeconfig. The cluster holds an outbound bearer token (and optionally a client certificate); Odoo holds the cluster's identity record.
 
@@ -93,9 +93,21 @@ This is the property that makes Pull non-invasive: the in-cluster behavior is un
 
 The operator streams status back to Odoo over the same outbound channel. Three rules:
 
-- **Idempotent.** Each event carries a stable key (job ID, resource UID, generation, condition type). Replay is safe; Odoo de-duplicates. The keys used are described in [drift, conflicts, and deduplication](#drift-conflicts-and-deduplication).
-- **Batched.** Events are coalesced into small batches (e.g., every second, or when the batch reaches a size threshold). Per-condition-flip RPCs are avoided. The `POST /api/agent/events` endpoint exists precisely for this batched delivery.
-- **Tolerant of disconnects.** Events that cannot be sent are queued on the cluster in a bounded buffer and flushed on reconnect. Buffer overflow is itself reported as a condition.
+- **Idempotent.** Each event carries a stable `eventKey` built from resource identity (`apiVersion`, `kind`, namespace, name, UID), condition type/status, and object generation. Replay is safe; Odoo (and mock Odoo) de-duplicates on `eventKey`.
+- **Batched.** Events are coalesced by `internal/agent/EventBatcher` (default: flush every second or when the batch reaches 100 events). Reconcilers call `internal/agent/StatusReporter` after each successful status write; changed conditions are enqueued automatically.
+- **Tolerant of disconnects.** Failed `POST /api/agent/events` calls re-queue the batch and set `vworkspace_operator_connectivity_state{mode="pull"}` to `0` (reconnecting). The buffer is bounded (default 1000 events); overflow drops oldest entries.
+
+### Implemented behavior (Phase 2)
+
+When `--agent-enabled=true`, `cmd/main.go` starts a shared `EventBatcher` goroutine and injects `StatusReporter` into the ApplicationInstance, Operation, and Cluster reconcilers. On each condition transition:
+
+1. The reconciler compares previous and new `status.conditions`.
+2. For each changed condition, `StatusReporter` enqueues a `ConditionTransition` event with `resourceRef`, condition type/reason/message, timestamp, and `eventKey`.
+3. The batcher flushes to `POST /api/agent/events` on the configured Odoo base URL.
+
+Cluster credential rotation (`spec.rotateCredentials: true`) calls `POST /api/agent/credentials/rotate`, updates `Secret/vworkspace-agent-credentials`, clears the spec flag, and posts a `CredentialRotated` audit event.
+
+When the agent is disabled (`--agent-enabled=false`), reconcilers use a no-op reporter; in-cluster reconciliation continues unchanged.
 
 The interim `POST /api/agent/jobs/{jobId}/status` endpoint is for per-job progress (e.g., a `HelmRelease` flipped from `Reconciling` to `Ready`). The terminal `POST /api/agent/jobs/{jobId}/result` endpoint is for the final outcome (`succeeded`, `failed`, `noop`, `conflict`). After `result` is acknowledged, the job is closed; further updates on the same `ApplicationInstance` flow through `POST /api/agent/events`.
 

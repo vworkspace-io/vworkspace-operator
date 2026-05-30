@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Phase 2 status reporting: `StatusReporter` and enhanced `EventBatcher` queue condition transitions from ApplicationInstance, Operation, and Cluster reconcilers to `POST /api/agent/events` with stable `eventKey` deduplication.
+- Credential rotation: `POST /api/agent/credentials/rotate` client, `Cluster.spec.rotateCredentials`, Cluster reconciler Secret update flow.
+- Mock Odoo: `POST /api/agent/credentials/rotate`, `GET /api/admin/events`, event deduplication by `eventKey`, `EventsFiltered` test helper.
+- Prometheus metric `vworkspace_operator_event_buffer_occupancy`.
+- Integration test `test/integration/status_report_test.go` (reconciler condition change → mock Odoo event).
+- Unit tests for reporter, event batcher requeue, and rotation client.
+
+### Changed
+
+- RBAC: added `events` create/patch, `leases` for leader election, `ocirepositories` in Helm chart; aligned kustomize and chart with least-privilege operator needs (ConfigMap idempotency, credentials Secret).
+- Pull-mode agent runtime shares a single `EventBatcher` with reconciler status reporting when `--agent-enabled=true`.
 - Phase 1f-a admission webhook hardening: `Operation` validation (namespace allow-list via `ops.vworkspace.io/allowed-types`, target existence, concurrency) and `ApplicationInstance` inline-secret rejection (`internal/webhook/`).
 - ApplicationInstance validating webhook (`internal/webhook/applicationinstance_webhook.go`).
 - Envtest webhook suite (`internal/webhook/webhook_envtest_test.go`) and expanded unit tests with fake client coverage.

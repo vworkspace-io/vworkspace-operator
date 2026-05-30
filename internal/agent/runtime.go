@@ -19,6 +19,7 @@ type RuntimeConfig struct {
 	SecretName       string
 	PollInterval     time.Duration
 	Idempotency      *IdempotencyStore
+	EventBatcher     *EventBatcher
 	Log              logr.Logger
 	InitialClusterID string
 }
@@ -103,9 +104,13 @@ func (r *Runtime) ensurePoller(ctx context.Context) error {
 		ClusterID:   creds.ClusterID,
 		Idempotency: r.cfg.Idempotency,
 	}
-	batcher := NewEventBatcher(httpClient)
-	if r.cfg.Log.GetSink() != nil {
-		batcher.Log = r.cfg.Log.WithName("events")
+	batcher := r.cfg.EventBatcher
+	if batcher == nil {
+		batcher = NewEventBatcher(httpClient)
+		if r.cfg.Log.GetSink() != nil {
+			batcher.Log = r.cfg.Log.WithName("events")
+		}
+		go batcher.Start(pollerCtx)
 	}
 	poller := &AgentPoller{
 		Client:   httpClient,
@@ -115,7 +120,6 @@ func (r *Runtime) ensurePoller(ctx context.Context) error {
 		WaitSecs: int(r.cfg.PollInterval.Seconds()),
 	}
 
-	go batcher.Start(pollerCtx)
 	go poller.Run(pollerCtx)
 
 	r.cancel = cancel

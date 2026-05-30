@@ -67,6 +67,8 @@ type JobResult struct {
 
 // Event represents a batched status event.
 type Event struct {
+	// EventKey is a stable idempotency key for Odoo-side deduplication.
+	EventKey    string             `json:"eventKey,omitempty"`
 	Kind        string             `json:"kind"`
 	ResourceRef AppliedRef         `json:"resourceRef"`
 	Conditions  []metav1.Condition `json:"conditions,omitempty"`
@@ -86,6 +88,12 @@ type Config struct {
 	HTTP      *http.Client
 }
 
+// RotateCredentialsResponse is returned by POST /api/agent/credentials/rotate.
+type RotateCredentialsResponse struct {
+	Token     string     `json:"token"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
 // Client communicates with Odoo using the Pull-mode job protocol.
 type Client interface {
 	FetchJobs(ctx context.Context, waitSeconds int) ([]Job, error)
@@ -94,6 +102,7 @@ type Client interface {
 	ReportResult(ctx context.Context, jobID string, result JobResult) error
 	PostEvents(ctx context.Context, events EventsRequest) error
 	Heartbeat(ctx context.Context) error
+	RotateCredentials(ctx context.Context) (RotateCredentialsResponse, error)
 }
 
 // HTTPClient implements Client over HTTPS.
@@ -210,6 +219,27 @@ func (c *HTTPClient) Heartbeat(ctx context.Context) error {
 			Timestamp: time.Now().UTC(),
 		}},
 	})
+}
+
+func (c *HTTPClient) RotateCredentials(ctx context.Context) (RotateCredentialsResponse, error) {
+	endpoint := fmt.Sprintf("%s/api/agent/credentials/rotate", c.baseURL)
+	resp, err := c.do(ctx, http.MethodPost, endpoint, struct{}{})
+	if err != nil {
+		return RotateCredentialsResponse{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return RotateCredentialsResponse{}, c.decodeError(resp)
+	}
+	var payload RotateCredentialsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return RotateCredentialsResponse{}, fmt.Errorf("decode rotate response: %w", err)
+	}
+	payload.Token = strings.TrimSpace(payload.Token)
+	if payload.Token == "" {
+		return RotateCredentialsResponse{}, fmt.Errorf("rotate response missing token")
+	}
+	return payload, nil
 }
 
 func (c *HTTPClient) do(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {

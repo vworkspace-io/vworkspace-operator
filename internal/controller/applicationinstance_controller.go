@@ -22,6 +22,7 @@ import (
 	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
 	"github.com/vworkspace-io/vworkspace-operator/internal/labels"
@@ -37,8 +38,9 @@ import (
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
 type ApplicationInstanceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Engine helmengine.Engine
+	Scheme   *runtime.Scheme
+	Engine   helmengine.Engine
+	Reporter agent.StatusReporter
 }
 
 // +kubebuilder:rbac:groups=apps.vworkspace.io,resources=applicationinstances,verbs=get;list;watch;create;update;patch;delete
@@ -75,6 +77,8 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 		return r.setBlocked(ctx, app, "ValidationFailed", err.Error())
 	}
 
+	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
+
 	if r.Engine == nil {
 		return r.setBlocked(ctx, app, "MissingDependencies", "helm engine is not configured")
 	}
@@ -91,6 +95,7 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
+		r.reportConditions(app, prevConditions)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -114,6 +119,7 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
 	}
+	r.reportConditions(app, prevConditions)
 
 	if snapshot != nil && !snapshot.Ready {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -123,10 +129,12 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 
 func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Uninstalling", "Removing HelmRelease")
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 	}
+	r.reportConditions(app, prevConditions)
 	if r.Engine != nil {
 		if err := r.Engine.DeleteRelease(ctx, app); err != nil {
 			log.Error(err, "delete helm release failed")
@@ -141,12 +149,19 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 }
 
 func (r *ApplicationInstanceReconciler) setBlocked(ctx context.Context, app *appsv1alpha1.ApplicationInstance, reason, message string) (ctrl.Result, error) {
+	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionTrue, reason, message)
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionFalse, reason, message)
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update blocked status: %w", err)
 	}
+	r.reportConditions(app, prevConditions)
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) reportConditions(app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	r.Reporter.ReportConditionTransitions(ref, prev, app.Status.Conditions)
 }
 
 func (r *ApplicationInstanceReconciler) applyStatusSnapshot(app *appsv1alpha1.ApplicationInstance, snapshot *helmengine.StatusSnapshot) {

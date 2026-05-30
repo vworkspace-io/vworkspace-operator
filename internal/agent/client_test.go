@@ -78,3 +78,27 @@ func TestHTTPClientReportResult(t *testing.T) {
 		t.Fatalf("ReportResult: %v", err)
 	}
 }
+
+func TestHTTPClientRotateCredentials(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/agent/credentials/rotate" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", mediaTypeV1)
+		_ = json.NewEncoder(w).Encode(RotateCredentialsResponse{Token: "new-token-abc"})
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(Config{BaseURL: server.URL, ClusterID: "cluster-1", Token: "old-token"})
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	resp, err := client.RotateCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("RotateCredentials: %v", err)
+	}
+	if resp.Token != "new-token-abc" {
+		t.Fatalf("unexpected token: %q", resp.Token)
+	}
+}

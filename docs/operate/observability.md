@@ -1,7 +1,7 @@
 # Observability
 
 **Status:** Alpha
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 `vworkspace-operator` emits the signals an operator (the person) needs to answer "is this cluster healthy and what happened on it recently". The four surfaces are Prometheus metrics, structured JSON logs, Kubernetes events on every condition transition, and an audit-event stream posted to Odoo's `POST /api/agent/events`. Each is documented below with the concrete metric names, log fields, and endpoints.
 
@@ -21,7 +21,7 @@ The operator exposes metrics on `:8080/metrics` (the controller-runtime default)
 | `vworkspace_operator_pull_job_lag_seconds`              | Gauge     | (none)                                                                                          | Age (seconds) of the oldest job the operator has fetched but not yet applied. A persistent non-zero gauge indicates a stuck loop. |
 | `vworkspace_operator_connectivity_state`                | Gauge     | `mode=<pull|push|gitops>`                                                                       | `1` connected, `0` reconnecting, `-1` disconnected. The same signal feeds `Cluster.status.conditions[Connected]`.                  |
 | `vworkspace_operator_applied_jobs_total`                | Counter   | (none)                                                                                          | Pull-mode jobs applied successfully (`internal/agent/metrics.go`).                                                                  |
-| `vworkspace_operator_event_buffer_occupancy`            | Gauge     | (none)                                                                                          | Current depth of the outbound event buffer (Pull mode). **Planned** — `internal/agent/events.go` batches events; metric export is Phase 2. |
+| `vworkspace_operator_event_buffer_occupancy`            | Gauge     | (none)                                                                                          | Current depth of the outbound event buffer (Pull mode). Updated by `internal/agent/events.go` on enqueue, flush, and requeue. |
 | `vworkspace_operator_managed_namespaces`                | Gauge     | (none)                                                                                          | Count of namespaces carrying `app.vworkspace.io/managed-by=vworkspace`.                                                            |
 | `vworkspace_operator_credential_age_seconds`            | Gauge     | (none)                                                                                          | Age of the current bootstrap credential. Used to verify rotation is happening.                                                    |
 

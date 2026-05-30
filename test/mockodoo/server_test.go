@@ -224,6 +224,65 @@ func TestMockOdooRejectsWrongCluster(t *testing.T) {
 	}
 }
 
+func TestMockOdooEventDedup(t *testing.T) {
+	srv := mockodoo.NewServer()
+	srv.SetBootstrapToken("cluster-1", "token-1")
+	server := httptest.NewServer(srv.Handler())
+	defer server.Close()
+
+	httpClient, err := agent.NewHTTPClient(agent.Config{
+		BaseURL:   server.URL,
+		ClusterID: "cluster-1",
+		Token:     "token-1",
+		HTTP:      server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	event := agent.Event{
+		EventKey: "condition/test-key",
+		Kind:     "ConditionTransition",
+		ResourceRef: agent.AppliedRef{
+			APIVersion: "apps.vworkspace.io/v1alpha1",
+			Kind:       "ApplicationInstance",
+			Namespace:  "ns1",
+			Name:       "app1",
+		},
+		Timestamp: time.Now().UTC(),
+	}
+	req := agent.EventsRequest{Events: []agent.Event{event, event}}
+	if err := httpClient.PostEvents(context.Background(), req); err != nil {
+		t.Fatalf("PostEvents: %v", err)
+	}
+	if len(srv.Events("cluster-1")) != 1 {
+		t.Fatalf("expected deduplicated event, got %d", len(srv.Events("cluster-1")))
+	}
+}
+
+func TestMockOdooRotateCredentials(t *testing.T) {
+	srv := mockodoo.NewServer()
+	srv.SetBootstrapToken("cluster-1", "token-1")
+	server := httptest.NewServer(srv.Handler())
+	defer server.Close()
+
+	httpClient, err := agent.NewHTTPClient(agent.Config{
+		BaseURL:   server.URL,
+		ClusterID: "cluster-1",
+		Token:     "token-1",
+		HTTP:      server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	resp, err := httpClient.RotateCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("RotateCredentials: %v", err)
+	}
+	if resp.Token == "" || resp.Token == "token-1" {
+		t.Fatalf("expected new token, got %q", resp.Token)
+	}
+}
+
 func agentMediaType() string {
 	return "application/vnd.vworkspace.agent.v1+json"
 }

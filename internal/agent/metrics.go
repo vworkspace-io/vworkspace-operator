@@ -18,10 +18,14 @@ var (
 		Name: "vworkspace_operator_applied_jobs_total",
 		Help: "Total number of Pull-mode jobs applied successfully.",
 	})
+	eventBufferOccupancy = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "vworkspace_operator_event_buffer_occupancy",
+		Help: "Current depth of the outbound Pull-mode event buffer.",
+	})
 )
 
 func init() {
-	metrics.Registry.MustRegister(pullJobLagSeconds, connectivityState, appliedJobsTotal)
+	metrics.Registry.MustRegister(pullJobLagSeconds, connectivityState, appliedJobsTotal, eventBufferOccupancy)
 }
 
 // SetPullJobLagSeconds updates the oldest unapplied job lag gauge.
@@ -37,4 +41,9 @@ func SetConnectivityState(mode string, state float64) {
 // IncAppliedJobs increments the applied jobs counter.
 func IncAppliedJobs() {
 	appliedJobsTotal.Inc()
+}
+
+// SetEventBufferOccupancy updates the outbound event buffer depth gauge.
+func SetEventBufferOccupancy(count int) {
+	eventBufferOccupancy.Set(float64(count))
 }
