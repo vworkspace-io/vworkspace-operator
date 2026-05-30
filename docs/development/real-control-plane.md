@@ -80,7 +80,7 @@ go test -tags=integration ./test/integration/... -run TestRealControlPlane -coun
 
 End-to-end validation with a server-deployed app job is coordinated outside this repo:
 
-1. Deploy operator on kind with Flux CRDs (`INSTALL_FLUX_CRDS=true` in [validate-helm-kind.sh](../../hack/validate-helm-kind.sh)).
+1. Deploy operator on kind with Flux CRDs (`INSTALL_FLUX_CRDS=true` in [validate-helm-kind.sh](https://github.com/vworkspace-io/vworkspace-operator/blob/main/hack/validate-helm-kind.sh)).
 2. Register against server docker-compose.
 3. Enqueue deploy from server UI or test helper; confirm `ApplicationInstance` + `HelmRelease`.
 4. Confirm `POST /api/agent/events` updates visible on the server.
