@@ -41,6 +41,7 @@ type ClusterReconciler struct {
 	RegistrationClient agent.RegistrationClient
 	CredentialsSecret  string
 	OperatorNamespace  string
+	Reporter           agent.StatusReporter
 }
 
 // +kubebuilder:rbac:groups=ops.vworkspace.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -56,6 +57,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	prevConditions := append([]metav1.Condition(nil), cluster.Status.Conditions...)
 	secretName := r.credentialsSecretName()
 	namespace := r.operatorNamespace()
 
@@ -67,11 +69,29 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
 				return ctrl.Result{}, fmt.Errorf("update registration failure status: %w", statusErr)
 			}
+			r.reportConditions(cluster, prevConditions)
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 		if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("reload cluster after registration: %w", err)
 		}
+		prevConditions = append([]metav1.Condition(nil), cluster.Status.Conditions...)
+	}
+
+	if cluster.Spec.RotateCredentials {
+		if err := r.rotateCredentials(ctx, cluster, secretName, namespace); err != nil {
+			log.Error(err, "credential rotation failed")
+			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RotationFailed", err.Error())
+			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
+				return ctrl.Result{}, fmt.Errorf("update rotation failure status: %w", statusErr)
+			}
+			r.reportConditions(cluster, prevConditions)
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+		if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("reload cluster after rotation: %w", err)
+		}
+		prevConditions = append([]metav1.Condition(nil), cluster.Status.Conditions...)
 	}
 
 	clientForHeartbeat := r.AgentClient
@@ -95,6 +115,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if err := r.Status().Update(ctx, cluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update disconnected status: %w", err)
 		}
+		r.reportConditions(cluster, prevConditions)
 		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
@@ -116,7 +137,60 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.Status().Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update cluster status: %w", err)
 	}
+	r.reportConditions(cluster, prevConditions)
 	return ctrl.Result{RequeueAfter: time.Minute}, nil
+}
+
+func (r *ClusterReconciler) rotateCredentials(ctx context.Context, cluster *opsv1alpha1.Cluster, secretName, namespace string) error {
+	creds, err := r.loadStoredCredentials(ctx, namespace, secretName)
+	if err != nil {
+		return fmt.Errorf("load stored credentials: %w", err)
+	}
+
+	rotateClient := r.AgentClient
+	if rotateClient == nil {
+		rotateClient, err = agent.NewHTTPClient(agent.Config{
+			BaseURL:   creds.BaseURL,
+			ClusterID: creds.ClusterID,
+			Token:     creds.Token,
+		})
+		if err != nil {
+			return fmt.Errorf("configure rotate client: %w", err)
+		}
+	}
+
+	resp, err := rotateClient.RotateCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	newCreds := agent.Credentials{
+		BaseURL:   creds.BaseURL,
+		ClusterID: creds.ClusterID,
+		Token:     resp.Token,
+	}
+	if err := agent.PersistCredentials(ctx, r.Client, namespace, secretName, newCreds, cluster); err != nil {
+		return err
+	}
+
+	cluster.Spec.RotateCredentials = false
+	if err := r.Update(ctx, cluster); err != nil {
+		return fmt.Errorf("clear rotate credentials flag: %w", err)
+	}
+
+	ref := agent.ResourceRefFromMeta(opsv1alpha1.GroupVersion.WithKind("Cluster"), cluster.ObjectMeta)
+	r.Reporter.ReportAudit(ref, "CredentialRotated", []metav1.Condition{{
+		Type:    opsv1alpha1.ConditionAuthenticated,
+		Status:  metav1.ConditionTrue,
+		Reason:  "CredentialRotated",
+		Message: "Bootstrap credential rotated successfully",
+	}})
+	return nil
+}
+
+func (r *ClusterReconciler) reportConditions(cluster *opsv1alpha1.Cluster, prev []metav1.Condition) {
+	ref := agent.ResourceRefFromMeta(opsv1alpha1.GroupVersion.WithKind("Cluster"), cluster.ObjectMeta)
+	r.Reporter.ReportConditionTransitions(ref, prev, cluster.Status.Conditions)
 }
 
 func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1alpha1.Cluster, token, secretName, namespace string) error {

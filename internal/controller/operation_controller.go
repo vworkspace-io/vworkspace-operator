@@ -24,6 +24,7 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
 	"github.com/vworkspace-io/vworkspace-operator/internal/engines"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +41,7 @@ type OperationReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Registry *engines.Registry
+	Reporter agent.StatusReporter
 }
 
 // +kubebuilder:rbac:groups=ops.vworkspace.io,resources=operations,verbs=get;list;watch;create;update;patch;delete
@@ -87,6 +89,8 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.blockOperation(ctx, op, "DependencyMissing", fmt.Sprintf("engine %q is not registered", op.Spec.Engine))
 	}
 
+	prevConditions := append([]metav1.Condition(nil), op.Status.Conditions...)
+
 	engine, err := r.Registry.Get(op.Spec.Engine)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -106,6 +110,8 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if err := r.Status().Update(ctx, op); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update running status: %w", err)
 		}
+		r.reportConditions(op, prevConditions)
+		prevConditions = append([]metav1.Condition(nil), op.Status.Conditions...)
 	}
 
 	status, err := engine.Status(ctx, op)
@@ -133,6 +139,7 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if err := r.Status().Update(ctx, op); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update terminal status: %w", err)
 		}
+		r.reportConditions(op, prevConditions)
 		return ctrl.Result{}, nil
 	}
 
@@ -140,6 +147,7 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.Status().Update(ctx, op); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update in-flight status: %w", err)
 	}
+	r.reportConditions(op, prevConditions)
 	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 }
 
@@ -179,16 +187,19 @@ func conflicts(existing, incoming opsv1alpha1.OperationType) bool {
 }
 
 func (r *OperationReconciler) blockOperation(ctx context.Context, op *opsv1alpha1.Operation, reason, message string) (ctrl.Result, error) {
+	prevConditions := append([]metav1.Condition(nil), op.Status.Conditions...)
 	op.Status.Phase = opsv1alpha1.PhasePending
 	op.Status.Conditions = conditions.Set(op.Status.Conditions, opsv1alpha1.ConditionBlocked, metav1.ConditionTrue, reason, message)
 	op.Status.Conditions = conditions.Set(op.Status.Conditions, opsv1alpha1.ConditionAccepted, metav1.ConditionFalse, reason, message)
 	if err := r.Status().Update(ctx, op); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update blocked status: %w", err)
 	}
+	r.reportConditions(op, prevConditions)
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
 func (r *OperationReconciler) failOperation(ctx context.Context, op *opsv1alpha1.Operation, message string) (ctrl.Result, error) {
+	prevConditions := append([]metav1.Condition(nil), op.Status.Conditions...)
 	now := metav1.Now()
 	op.Status.Phase = opsv1alpha1.PhaseFailed
 	op.Status.FinishedAt = &now
@@ -196,7 +207,13 @@ func (r *OperationReconciler) failOperation(ctx context.Context, op *opsv1alpha1
 	if err := r.Status().Update(ctx, op); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update failed status: %w", err)
 	}
+	r.reportConditions(op, prevConditions)
 	return ctrl.Result{}, nil
+}
+
+func (r *OperationReconciler) reportConditions(op *opsv1alpha1.Operation, prev []metav1.Condition) {
+	ref := agent.ResourceRefFromMeta(opsv1alpha1.GroupVersion.WithKind("Operation"), op.ObjectMeta)
+	r.Reporter.ReportConditionTransitions(ref, prev, op.Status.Conditions)
 }
 
 func (r *OperationReconciler) SetupWithManager(mgr ctrl.Manager) error {

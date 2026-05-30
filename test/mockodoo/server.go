@@ -5,6 +5,7 @@ package mockodoo
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,11 +34,20 @@ type Server struct {
 
 type clusterState struct {
 	bootstrapToken string
+	rotationCount  int
 	pending        []agent.Job
 	acked          map[string]bool
 	statuses       map[string][]agent.StatusUpdate
 	results        map[string]agent.JobResult
 	events         []agent.Event
+	eventKeys      map[string]struct{}
+}
+
+// EventFilter selects stored events for inspection.
+type EventFilter struct {
+	Kind      string
+	Namespace string
+	Name      string
 }
 
 // NewServer returns an empty mock Odoo server.
@@ -105,14 +115,30 @@ func (s *Server) JobResult(jobID string) (agent.JobResult, bool) {
 
 // Events returns events posted to /api/agent/events for a cluster.
 func (s *Server) Events(clusterID string) []agent.Event {
+	return s.EventsFiltered(clusterID, EventFilter{})
+}
+
+// EventsFiltered returns events matching optional resource filters.
+func (s *Server) EventsFiltered(clusterID string, filter EventFilter) []agent.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cs := s.clusters[clusterID]
 	if cs == nil {
 		return nil
 	}
-	out := make([]agent.Event, len(cs.events))
-	copy(out, cs.events)
+	var out []agent.Event
+	for _, ev := range cs.events {
+		if filter.Kind != "" && ev.ResourceRef.Kind != filter.Kind {
+			continue
+		}
+		if filter.Namespace != "" && ev.ResourceRef.Namespace != filter.Namespace {
+			continue
+		}
+		if filter.Name != "" && ev.ResourceRef.Name != filter.Name {
+			continue
+		}
+		out = append(out, ev)
+	}
 	return out
 }
 
@@ -150,9 +176,10 @@ func (s *Server) ensureClusterLocked(clusterID string) *clusterState {
 	cs, ok := s.clusters[clusterID]
 	if !ok {
 		cs = &clusterState{
-			acked:    make(map[string]bool),
-			statuses: make(map[string][]agent.StatusUpdate),
-			results:  make(map[string]agent.JobResult),
+			acked:     make(map[string]bool),
+			statuses:  make(map[string][]agent.StatusUpdate),
+			results:   make(map[string]agent.JobResult),
+			eventKeys: make(map[string]struct{}),
 		}
 		s.clusters[clusterID] = cs
 	}
@@ -180,8 +207,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleResult(w, r, jobID)
 	case r.Method == http.MethodPost && path == "/api/agent/events":
 		s.handleEvents(w, r)
+	case r.Method == http.MethodPost && path == "/api/agent/credentials/rotate":
+		s.handleRotate(w, r)
 	case r.Method == http.MethodPost && path == "/api/admin/enqueue":
 		s.handleAdminEnqueue(w, r)
+	case r.Method == http.MethodGet && path == "/api/admin/events":
+		s.handleAdminEvents(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "/api/admin/jobs/") && strings.HasSuffix(path, "/result"):
 		jobID := strings.TrimSuffix(strings.TrimPrefix(path, "/api/admin/jobs/"), "/result")
 		s.handleAdminJobResult(w, r, jobID)
@@ -366,8 +397,59 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cs := s.ensureClusterLocked(clusterID)
-	cs.events = append(cs.events, req.Events...)
+	for _, event := range req.Events {
+		key := strings.TrimSpace(event.EventKey)
+		if key != "" {
+			if _, seen := cs.eventKeys[key]; seen {
+				continue
+			}
+			cs.eventKeys[key] = struct{}{}
+		}
+		cs.events = append(cs.events, event)
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
+	clusterID, err := s.authorize(r, "")
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Unauthorized", err.Error())
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cs := s.ensureClusterLocked(clusterID)
+	cs.rotationCount++
+	if cs.bootstrapToken != "" {
+		delete(s.tokenIndex, cs.bootstrapToken)
+	}
+	cs.bootstrapToken = fmt.Sprintf("bootstrap-%s-rotated-%d", clusterID, cs.rotationCount)
+	s.tokenIndex[cs.bootstrapToken] = clusterID
+	token := cs.bootstrapToken
+	s.mu.Unlock()
+
+	w.Header().Set("Content-Type", mediaTypeV1)
+	_ = json.NewEncoder(w).Encode(agent.RotateCredentialsResponse{Token: token})
+}
+
+func (s *Server) handleAdminEvents(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "Unauthorized", "missing or invalid admin token")
+		return
+	}
+	clusterID := strings.TrimSpace(r.URL.Query().Get("cluster"))
+	if clusterID == "" {
+		writeError(w, http.StatusBadRequest, "MissingCluster", "cluster query parameter is required")
+		return
+	}
+	filter := EventFilter{
+		Kind:      strings.TrimSpace(r.URL.Query().Get("kind")),
+		Namespace: strings.TrimSpace(r.URL.Query().Get("namespace")),
+		Name:      strings.TrimSpace(r.URL.Query().Get("name")),
+	}
+	events := s.EventsFiltered(clusterID, filter)
+	w.Header().Set("Content-Type", mediaTypeV1)
+	_ = json.NewEncoder(w).Encode(agent.EventsRequest{Events: events})
 }
 
 func (s *Server) authorize(r *http.Request, clusterID string) (string, error) {

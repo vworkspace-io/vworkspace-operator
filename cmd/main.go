@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+
 package main
 
 import (
@@ -157,27 +160,6 @@ func main() {
 	}
 
 	fluxEngine := helmengine.NewFluxEngine(mgr.GetClient())
-	if err := (&controller.ApplicationInstanceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Engine: fluxEngine,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ApplicationInstance")
-		os.Exit(1)
-	}
-
-	engineRegistry := engines.NewRegistry(
-		engines.NewHelmEngine(mgr.GetClient()),
-		engines.NewVeleroEngine(mgr.GetClient()),
-	)
-	if err := (&controller.OperationReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Registry: engineRegistry,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Operation")
-		os.Exit(1)
-	}
 
 	credNamespace := strings.TrimSpace(agentCredentialsNamespace)
 	if credNamespace == "" {
@@ -185,6 +167,8 @@ func main() {
 	}
 
 	var agentClient agent.Client
+	var eventBatcher *agent.EventBatcher
+	statusReporter := agent.NoopStatusReporter()
 	if agentEnabled {
 		creds, err := agent.CredentialsConfig{
 			BaseURL:         odooBaseURL,
@@ -208,7 +192,34 @@ func main() {
 			setupLog.Error(err, "unable to configure agent client")
 			os.Exit(1)
 		}
+		eventBatcher = agent.NewEventBatcher(agentClient)
+		eventBatcher.Log = ctrl.Log.WithName("agent-events")
+		statusReporter = agent.NewStatusReporter(eventBatcher)
 		setupLog.Info("pull-mode agent enabled", "cluster_id", creds.ClusterID)
+	}
+
+	if err := (&controller.ApplicationInstanceReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Engine:   fluxEngine,
+		Reporter: statusReporter,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ApplicationInstance")
+		os.Exit(1)
+	}
+
+	engineRegistry := engines.NewRegistry(
+		engines.NewHelmEngine(mgr.GetClient()),
+		engines.NewVeleroEngine(mgr.GetClient()),
+	)
+	if err := (&controller.OperationReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Registry: engineRegistry,
+		Reporter: statusReporter,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Operation")
+		os.Exit(1)
 	}
 
 	if err := (&controller.ClusterReconciler{
@@ -217,6 +228,7 @@ func main() {
 		AgentClient:       agentClient,
 		CredentialsSecret: agentCredentialsSecret,
 		OperatorNamespace: credNamespace,
+		Reporter:          statusReporter,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
 		os.Exit(1)
@@ -261,6 +273,7 @@ func main() {
 	}
 
 	if agentEnabled {
+		go eventBatcher.Start(ctx)
 		agentRuntime := agent.NewRuntime(agent.RuntimeConfig{
 			K8s:              mgr.GetClient(),
 			Scheme:           mgr.GetScheme(),
@@ -268,6 +281,7 @@ func main() {
 			SecretName:       agentCredentialsSecret,
 			PollInterval:     agentPollInterval,
 			Idempotency:      idempotencyStore,
+			EventBatcher:     eventBatcher,
 			Log:              ctrl.Log.WithName("agent-runtime"),
 			InitialClusterID: clusterID,
 		})

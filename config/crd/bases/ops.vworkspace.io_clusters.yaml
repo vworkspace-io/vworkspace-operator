@@ -59,6 +59,11 @@ spec:
                   RegistrationToken is a one-time token exchanged for a long-lived credential.
                   Cleared from the spec after successful registration.
                 type: string
+              rotateCredentials:
+                description: |-
+                  RotateCredentials requests an immediate bootstrap credential rotation via Odoo.
+                  Cleared from the spec after a successful rotation.
+                type: boolean
             type: object
           status:
             description: ClusterStatus defines observed cluster connectivity posture.

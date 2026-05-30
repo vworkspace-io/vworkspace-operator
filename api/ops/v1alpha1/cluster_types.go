@@ -39,6 +39,10 @@ type ClusterSpec struct {
 	// Cleared from the spec after successful registration.
 	// +optional
 	RegistrationToken string `json:"registrationToken,omitempty"`
+	// RotateCredentials requests an immediate bootstrap credential rotation via Odoo.
+	// Cleared from the spec after a successful rotation.
+	// +optional
+	RotateCredentials bool `json:"rotateCredentials,omitempty"`
 }
 
 // ClusterCredentialStatus reports bootstrap credential materialization.
