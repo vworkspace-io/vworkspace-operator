@@ -1,7 +1,7 @@
 # Backup and restore runbook
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This is a worked example that walks an operator through requesting a backup of an `ApplicationInstance`, watching the result, verifying the Velero artifact, restoring into a fresh namespace, and validating the restore. The narrative is in [../operations/backups-and-restores.md](../operations/backups-and-restores.md); this document is the concrete `kubectl` and verification path.
 

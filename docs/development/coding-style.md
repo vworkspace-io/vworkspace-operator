@@ -1,7 +1,7 @@
 # Coding style
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document captures the project's Go coding-style conventions. The principle: prefer the language's defaults and the controller-runtime idioms; reach for a project-specific convention only where there is a concrete reason. None of this is meant to be a substitute for taste; it is a record of the recurring decisions we have already made so they do not get re-argued.
 

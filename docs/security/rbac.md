@@ -1,7 +1,7 @@
 # RBAC
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 `vworkspace-operator` runs with a deliberately small set of cluster-wide permissions and a deliberately narrow set of namespace-scoped permissions. This document describes that RBAC model, why it is shaped that way, and what the YAML actually looks like. The accompanying reasoning about why the operator is not `cluster-admin` and why Velero / external-secrets / the workflow runner have their own service accounts is in [least-privilege.md](least-privilege.md).
 

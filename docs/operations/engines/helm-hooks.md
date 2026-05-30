@@ -1,7 +1,7 @@
 # Engine: Helm hook jobs
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 Many Helm charts already ship migration logic as `helm.sh/hook` jobs that run pre-install, pre-upgrade, post-upgrade, or post-install. The operator's `helmHookJob` engine is the integration point that lets an `Operation` trigger one of those hooks by name without re-implementing the migration. The principle is the same as the rest of the operator: the chart is authoritative for app-internal behavior; the operator wires inputs and observes outputs.
 

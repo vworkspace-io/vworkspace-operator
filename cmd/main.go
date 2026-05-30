@@ -75,7 +75,8 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var clusterID string
-	var odooBaseURL string
+	var controlPlaneBaseURL string
+	var odooBaseURLDeprecated string
 	var agentToken string
 	var agentEnabled bool
 	var agentPollInterval time.Duration
@@ -97,16 +98,23 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.StringVar(&clusterID, "cluster-id", os.Getenv("VWORKSPACE_CLUSTER_ID"),
-		"Stable cluster identity registered with Odoo.")
-	flag.StringVar(&odooBaseURL, "odoo-base-url", os.Getenv("ODOO_BASE_URL"), "Odoo base URL for Pull-mode connectivity.")
+		"Stable cluster identity registered with the control plane.")
+	flag.StringVar(
+		&controlPlaneBaseURL,
+		"control-plane-base-url",
+		firstNonEmpty(os.Getenv("CONTROL_PLANE_BASE_URL"), os.Getenv("ODOO_BASE_URL")),
+		"HTTPS base URL of the vWorkspace Server control plane for Pull-mode connectivity.",
+	)
+	flag.StringVar(&odooBaseURLDeprecated, "odoo-base-url", os.Getenv("ODOO_BASE_URL"),
+		"Deprecated: use --control-plane-base-url. Odoo/vWorkspace Server base URL for Pull-mode connectivity.")
 	flag.StringVar(&agentToken, "agent-token", os.Getenv("VWORKSPACE_AGENT_TOKEN"),
 		"Bearer token for Pull-mode agent API.")
 	flag.BoolVar(&agentEnabled, "agent-enabled", false,
-		"Enable the Pull-mode agent loop (long-poll jobs from Odoo).")
+		"Enable the Pull-mode agent loop (long-poll jobs from the control plane).")
 	flag.DurationVar(&agentPollInterval, "agent-poll-interval", 30*time.Second,
-		"Long-poll wait duration when fetching jobs from Odoo.")
+		"Long-poll wait duration when fetching jobs from the control plane.")
 	flag.StringVar(&agentCredentialsSecret, "agent-credentials-secret", agent.DefaultCredentialsSecret,
-		"Kubernetes Secret name containing odoo-base-url, cluster-id, and token keys.")
+		"Kubernetes Secret name containing control-plane-base-url (or odoo-base-url), cluster-id, and token keys.")
 	flag.StringVar(&agentCredentialsNamespace, "agent-credentials-namespace", os.Getenv("POD_NAMESPACE"),
 		"Namespace of the agent credentials Secret.")
 	flag.BoolVar(&enableWebhooks, "webhooks-enabled", false, "Enable validating admission webhooks.")
@@ -114,6 +122,11 @@ func main() {
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	resolvedControlPlaneBaseURL := strings.TrimSpace(controlPlaneBaseURL)
+	if resolvedControlPlaneBaseURL == "" {
+		resolvedControlPlaneBaseURL = strings.TrimSpace(odooBaseURLDeprecated)
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -171,7 +184,7 @@ func main() {
 	statusReporter := agent.NoopStatusReporter()
 	if agentEnabled {
 		creds, err := agent.CredentialsConfig{
-			BaseURL:         odooBaseURL,
+			BaseURL:         resolvedControlPlaneBaseURL,
 			ClusterID:       clusterID,
 			Token:           agentToken,
 			SecretNamespace: credNamespace,
@@ -304,4 +317,13 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

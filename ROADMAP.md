@@ -1,6 +1,6 @@
 # Roadmap
 
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 **Audience:** Maintainers, contributors, operators planning to adopt vworkspace-operator.
 **Scope:** This document covers the operator only. For the broader product roadmap, see the parent project's [ROADMAP.md](https://github.com/vworkspace-io/vworkspace/blob/main/docs/ROADMAP.md).
 
@@ -24,13 +24,13 @@ The first working operator. Tagged as `v0.0.x` pre-releases; not yet recommended
 - [x] Flux `HelmRelease` as the Helm engine (MVP adapter). `ApplicationInstance` reconciled into `HelmRelease`.
 - [x] Two operation engines: `helm` (chart version / values bump) and `velero` (namespace-scoped backup and restore stubs).
 - [~] Pull-mode transport: HTTP client and heartbeat; job applier loop not complete. See [docs/connectivity/pull-mode.md](docs/connectivity/pull-mode.md).
-- [ ] Push-mode transport for in-cluster Odoo installs.
+- [ ] Push-mode transport for in-cluster vWorkspace Server installs.
 - [~] Minimum RBAC generated; namespace isolation enforcement via webhook still pending.
 - [ ] Bootstrap on k3s, Talos, and single-node Docker documented end-to-end in [docs/install/cluster-bootstrap.md](docs/install/cluster-bootstrap.md).
 
 Continuations tracked in [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md).
 
-Exit criteria: A user can install the operator on a fresh k3s cluster, register it with an Odoo instance, deploy Nextcloud through Odoo, take a Velero backup, and restore it, all via the documented commands.
+Exit criteria: A user can install the operator on a fresh k3s cluster, register it with a vWorkspace Server instance, deploy Nextcloud through the control plane, take a Velero backup, and restore it, all via the documented commands.
 
 ## Phase 2 — Beta, `v0.1.x` (Q4 2026)
 
@@ -39,10 +39,10 @@ Operational maturity. Suitable for early adopters who can tolerate API evolution
 - Operation templates and capability metadata model. See [docs/operations/operation-templates.md](docs/operations/operation-templates.md).
 - Admission webhook that gates `Operation.spec.type` per namespace and enforces concurrency rules (no restore during upgrade; no two upgrades on the same release).
 - Cluster identity and registration tokens, with rotation. See [docs/security/authentication.md](docs/security/authentication.md).
-- Full observability surface: Prometheus metrics, structured JSON logs with the documented fields, Kubernetes events on every condition transition, audit events posted back to Odoo's Discuss audit channel. See [docs/operate/observability.md](docs/operate/observability.md).
+- Full observability surface: Prometheus metrics, structured JSON logs with the documented fields, Kubernetes events on every condition transition, audit events posted back to the control plane audit log. See [docs/operate/observability.md](docs/operate/observability.md).
 - Conversion webhook scaffolding for forthcoming CRD evolution.
 
-Exit criteria: Multiple operators are running stably on independent clusters from a single Odoo install, with full audit and observability.
+Exit criteria: Multiple operators are running stably on independent clusters from a single vWorkspace Server install, with full audit and observability.
 
 ## Phase 3 — Public release, `v0.2` (Q1 2027)
 
@@ -51,7 +51,7 @@ Aligned with the parent project's first public release.
 - Argo Workflows engine for multi-step operations (e.g., quiesce → snapshot → verify → unquiesce). See [docs/operations/engines/argo-workflows.md](docs/operations/engines/argo-workflows.md).
 - CSI snapshot and VolSync engines for storage-centric backup and replication. See [docs/operations/engines/csi-snapshots-volsync.md](docs/operations/engines/csi-snapshots-volsync.md).
 - mTLS and signed payloads for Pull mode.
-- Per-cluster operator version pinning, channel subscription (`stable`, `candidate`, `edge`), and staged rollouts coordinated from Odoo. See [docs/operate/upgrades.md](docs/operate/upgrades.md).
+- Per-cluster operator version pinning, channel subscription (`stable`, `candidate`, `edge`), and staged rollouts coordinated from vWorkspace Server. See [docs/operate/upgrades.md](docs/operate/upgrades.md).
 - GitOps adapter (Flux Kustomize or Argo CD `Application`) for orgs that require Git-mediated change control.
 
 Exit criteria: First tagged public release with signed images, signed Helm chart (OCI), and a published security disclosure policy.

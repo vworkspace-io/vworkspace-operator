@@ -14,6 +14,9 @@ const (
 	// DefaultCredentialsSecret is the Secret name used when --agent-credentials-secret is set without a namespace.
 	DefaultCredentialsSecret = "vworkspace-agent-credentials"
 
+	// SecretKeyControlPlaneBaseURL is the preferred Secret data key for the control plane HTTPS base URL.
+	SecretKeyControlPlaneBaseURL = "control-plane-base-url"
+	// SecretKeyOdooBaseURL is a deprecated alias for SecretKeyControlPlaneBaseURL.
 	SecretKeyOdooBaseURL = "odoo-base-url"
 	SecretKeyClusterID   = "cluster-id"
 	SecretKeyToken       = "token"
@@ -60,7 +63,7 @@ func (c CredentialsConfig) Load(ctx context.Context) (Credentials, error) {
 			return Credentials{}, fmt.Errorf("get agent credentials secret %s/%s: %w", ns, c.SecretName, err)
 		}
 		if cred.BaseURL == "" {
-			cred.BaseURL = string(secret.Data[SecretKeyOdooBaseURL])
+			cred.BaseURL = baseURLFromSecretData(secret.Data)
 		}
 		if cred.ClusterID == "" {
 			cred.ClusterID = string(secret.Data[SecretKeyClusterID])
@@ -75,7 +78,17 @@ func (c CredentialsConfig) Load(ctx context.Context) (Credentials, error) {
 	cred.Token = strings.TrimSpace(cred.Token)
 
 	if cred.BaseURL == "" || cred.ClusterID == "" || cred.Token == "" {
-		return Credentials{}, fmt.Errorf("incomplete agent credentials: odoo base URL, cluster ID, and token are required")
+		return Credentials{}, fmt.Errorf("incomplete agent credentials: control plane base URL, cluster ID, and token are required")
 	}
 	return cred, nil
+}
+
+func baseURLFromSecretData(data map[string][]byte) string {
+	if data == nil {
+		return ""
+	}
+	if v := strings.TrimSpace(string(data[SecretKeyControlPlaneBaseURL])); v != "" {
+		return v
+	}
+	return strings.TrimSpace(string(data[SecretKeyOdooBaseURL]))
 }

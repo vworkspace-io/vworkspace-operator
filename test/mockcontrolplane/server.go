@@ -1,6 +1,6 @@
-// Package mockodoo implements an in-memory HTTP server that mimics the Pull-mode
-// Odoo agent API for local development and integration tests.
-package mockodoo
+// Package mockcontrolplane implements an in-memory HTTP server that mimics the Pull-mode
+// control plane agent API for local development and integration tests.
+package mockcontrolplane
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 
 const mediaTypeV1 = "application/vnd.vworkspace.agent.v1+json"
 
-// Server is an in-memory mock of the Odoo Pull-mode agent API.
+// Server is an in-memory mock of the control plane Pull-mode agent API.
 type Server struct {
 	mu sync.Mutex
 
@@ -50,7 +50,7 @@ type EventFilter struct {
 	Name      string
 }
 
-// NewServer returns an empty mock Odoo server.
+// NewServer returns an empty mock control plane server.
 func NewServer() *Server {
 	s := &Server{
 		registrationTokens: make(map[string]string),
@@ -426,7 +426,6 @@ func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 	cs.bootstrapToken = fmt.Sprintf("bootstrap-%s-rotated-%d", clusterID, cs.rotationCount)
 	s.tokenIndex[cs.bootstrapToken] = clusterID
 	token := cs.bootstrapToken
-	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", mediaTypeV1)
 	_ = json.NewEncoder(w).Encode(agent.RotateCredentialsResponse{Token: token})

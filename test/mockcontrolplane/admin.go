@@ -1,4 +1,4 @@
-package mockodoo
+package mockcontrolplane
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 )
 
-const adminTokenHeader = "X-Mock-Odoo-Admin-Token"
+const adminTokenHeader = "X-Mock-Control-Plane-Admin-Token"
 
 // AdminEnqueueRequest enqueues a Pull-mode job for e2e and dev tooling.
 type AdminEnqueueRequest struct {
@@ -20,14 +20,14 @@ type AdminEnqueueRequest struct {
 	Job       agent.Job `json:"job"`
 }
 
-// AdminClient talks to mock Odoo admin endpoints from outside the cluster.
+// AdminClient talks to mock control plane admin endpoints from outside the cluster.
 type AdminClient struct {
 	BaseURL string
 	Token   string
 	HTTP    *http.Client
 }
 
-// NewAdminClient returns an admin client for the given mock Odoo base URL.
+// NewAdminClient returns an admin client for the given mock control plane base URL.
 func NewAdminClient(baseURL, token string, httpClient *http.Client) *AdminClient {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -39,7 +39,7 @@ func NewAdminClient(baseURL, token string, httpClient *http.Client) *AdminClient
 	}
 }
 
-// EnqueueJob posts a job to the mock Odoo admin API.
+// EnqueueJob posts a job to the mock control plane admin API.
 func (c *AdminClient) EnqueueJob(clusterID string, job agent.Job) error {
 	body, err := json.Marshal(AdminEnqueueRequest{
 		ClusterID: strings.TrimSpace(clusterID),
@@ -99,7 +99,7 @@ func (c *AdminClient) JobResult(jobID string) (agent.JobResult, bool, error) {
 	return result, true, nil
 }
 
-// ListEvents returns events posted to mock Odoo for a cluster via the admin API.
+// ListEvents returns events posted to mock control plane for a cluster via the admin API.
 func (c *AdminClient) ListEvents(clusterID string, filter EventFilter) ([]agent.Event, error) {
 	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/api/admin/events", nil)
 	if err != nil {

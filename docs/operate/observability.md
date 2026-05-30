@@ -3,9 +3,9 @@
 **Status:** Alpha
 **Last Updated:** 2026-05-30
 
-`vworkspace-operator` emits the signals an operator (the person) needs to answer "is this cluster healthy and what happened on it recently". The four surfaces are Prometheus metrics, structured JSON logs, Kubernetes events on every condition transition, and an audit-event stream posted to Odoo's `POST /api/agent/events`. Each is documented below with the concrete metric names, log fields, and endpoints.
+`vworkspace-operator` emits the signals an operator (the person) needs to answer "is this cluster healthy and what happened on it recently". The four surfaces are Prometheus metrics, structured JSON logs, Kubernetes events on every condition transition, and an audit-event stream posted to the control plane's `POST /api/agent/events`. Each is documented below with the concrete metric names, log fields, and endpoints.
 
-The principle is "the cluster is the source of truth for what is happening; Odoo is the place a human reads the summary". Everything the operator publishes locally to Kubernetes is replicated, coalesced, into the audit stream the AI assistant in Discuss watches; nothing important happens on the cluster without leaving a record both places.
+The principle is "the cluster is the source of truth for what is happening; vWorkspace Server is the place a human reads the summary". Everything the operator publishes locally to Kubernetes is replicated, coalesced, into the audit stream the AI assistant in Discuss watches; nothing important happens on the cluster without leaving a record both places.
 
 ## Prometheus metrics
 
@@ -61,7 +61,7 @@ The operator's logger is the controller-runtime logger (zap under the hood), con
 Log levels in practice:
 
 - `info`: every condition transition, every external write (Helm Release apply, Velero Backup create, Workflow create, Job create), reconciliation start and end, audit-event send.
-- `warn`: retryable failures (Odoo unreachable but bootstrap credential intact), admission warnings, operations entering `Blocked`.
+- `warn`: retryable failures (control plane unreachable but bootstrap credential intact), admission warnings, operations entering `Blocked`.
 - `error`: non-retryable failures, panics caught by controller-runtime, credential rotation failures.
 - `debug`: per-step reconciliation traces; off by default. Enabled with `--zap-log-level=debug`.
 
@@ -90,7 +90,7 @@ Events are namespace-local for `ApplicationInstance` and `Operation`; the `Clust
 
 ## Audit events to Odoo
 
-Significant events are also posted to Odoo's `POST /api/agent/events` over the operator's outbound channel (Pull mode) or written through the API server (Push mode). The audit payload is:
+Significant events are also posted to the control plane's `POST /api/agent/events` over the operator's outbound channel (Pull mode) or written through the API server (Push mode). The audit payload is:
 
 ```json
 {
@@ -107,7 +107,7 @@ Significant events are also posted to Odoo's `POST /api/agent/events` over the o
 }
 ```
 
-Audit events are idempotent (stable keys per cluster_id + kind + operation_id) and coalesced into batches: every second, or when the buffer reaches a size threshold, whichever comes first. When the link to Odoo is down, events are queued in a bounded local buffer (`vworkspace_operator_event_buffer_occupancy`) and flushed on reconnect. Buffer overflow is itself reported as a `Cluster.status` condition and a `ClusterEventBufferOverflow` event.
+Audit events are idempotent (stable keys per cluster_id + kind + operation_id) and coalesced into batches: every second, or when the buffer reaches a size threshold, whichever comes first. When the link to the control plane is down, events are queued in a bounded local buffer (`vworkspace_operator_event_buffer_occupancy`) and flushed on reconnect. Buffer overflow is itself reported as a `Cluster.status` condition and a `ClusterEventBufferOverflow` event.
 
 In Odoo, the AI assistant in Discuss subscribes to the audit stream for the cluster's organization. The human operator and the AI assistant share one timeline.
 

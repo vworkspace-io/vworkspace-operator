@@ -1,7 +1,7 @@
 # Kubernetes distros
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 `vworkspace-operator` is designed to install on stock Kubernetes and avoids distro-specific assumptions where possible. This document captures the small set of distro-specific gotchas worth knowing about before running [quickstart.md](quickstart.md) on each of the supported substrates: k3s, Talos, Harvester, managed K8s (EKS / GKE / AKS), and a single-node Docker host running embedded k3s.
 
@@ -81,16 +81,16 @@ The bundle installs without distro-specific modification on EKS, GKE, and AKS. P
 - **Azure AD Workload Identity.** Recommended for Velero (Azure Blob backend) and external-secrets (Azure Key Vault).
 - **Default StorageClass.** AKS ships `default` (Azure managed disks) as the default.
 
-In all three, the bundle's `cert-manager` and Pull-mode outbound to Odoo work without further changes; the only cluster-specific items are the storage and the IAM/Workload-Identity bindings for Velero and external-secrets.
+In all three, the bundle's `cert-manager` and Pull-mode outbound to the control plane work without further changes; the only cluster-specific items are the storage and the IAM/Workload-Identity bindings for Velero and external-secrets.
 
 ## Single-node Docker host with embedded k3s
 
-The smallest supported substrate. The vWorkspace control plane's `curl | bash` installer (for the Odoo side of the world) targets this scenario; the operator side is identical to k3s above, with a few additional considerations:
+The smallest supported substrate. The vWorkspace control plane's `curl | bash` installer (for the control-plane side of the world) targets this scenario; the operator side is identical to k3s above, with a few additional considerations:
 
 - **Embedded k3s lifecycle.** k3s is installed by the host's package manager (`curl -sfL https://get.k3s.io | sh -`). The operator does not manage k3s itself.
 - **Local-path persistence.** Single-node deployments commonly use `local-path` for PVs. This is fine for development and small homelab; for production-grade backup, install Longhorn (or another snapshot-capable driver) even on a single node.
 - **No multi-node Velero requirements.** Velero's node-agent (formerly Restic) DaemonSet places a pod on every node; on a single-node cluster, that is one pod. Configure storage in the usual way.
-- **DNS for application URLs.** On a single-node host that is not on a managed DNS plane (homelab behind NAT, for instance), use a DNS provider you control (Cloudflare with API access for the Odoo control plane's `curl | bash` installer is the common path; the operator does not configure DNS for you).
+- **DNS for application URLs.** On a single-node host that is not on a managed DNS plane (homelab behind NAT, for instance), use a DNS provider you control (Cloudflare with API access for the vWorkspace Server control plane's `curl | bash` installer is the common path; the operator does not configure DNS for you).
 - **Resource budget.** A 2 vCPU / 4 GiB RAM host comfortably runs the operator and one or two small applications (Nextcloud + Vaultwarden). For Mattermost or OnlyOffice, plan for 4 vCPU / 8 GiB RAM minimum.
 
 ## Verifying any distro

@@ -30,17 +30,18 @@ const (
 
 // ClusterSpec defines operator cluster identity configuration.
 type ClusterSpec struct {
-	// ClusterID is the stable identity registered with Odoo.
+	// ClusterID is the stable identity registered with the control plane.
 	// +optional
 	ClusterID string `json:"clusterId,omitempty"`
-	// OdooBaseURL is the HTTPS base URL for Pull-mode connectivity.
+	// OdooBaseURL is the HTTPS base URL for Pull-mode connectivity to vWorkspace Server.
+	// Prefer documenting this field as the control plane base URL; JSON name odooBaseUrl is retained for compatibility.
 	// +optional
 	OdooBaseURL string `json:"odooBaseUrl,omitempty"`
 	// RegistrationToken is a one-time token exchanged for a long-lived credential.
 	// Cleared from the spec after successful registration.
 	// +optional
 	RegistrationToken string `json:"registrationToken,omitempty"`
-	// RotateCredentials requests an immediate bootstrap credential rotation via Odoo.
+	// RotateCredentials requests an immediate bootstrap credential rotation via the control plane.
 	// Cleared from the spec after a successful rotation.
 	// +optional
 	RotateCredentials bool `json:"rotateCredentials,omitempty"`
@@ -48,7 +49,7 @@ type ClusterSpec struct {
 
 // ClusterCredentialStatus reports bootstrap credential materialization.
 type ClusterCredentialStatus struct {
-	// SecretName is the Kubernetes Secret holding odoo-base-url, cluster-id, and token.
+	// SecretName is the Kubernetes Secret holding control-plane-base-url (or odoo-base-url), cluster-id, and token.
 	SecretName string `json:"secretName,omitempty"`
 	// SecretNamespace is the namespace of the credentials Secret.
 	SecretNamespace string `json:"secretNamespace,omitempty"`
@@ -64,7 +65,7 @@ type ClusterStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// LastHeartbeat is updated when a recent round-trip to Odoo succeeded.
+	// LastHeartbeat is updated when a recent round-trip to the control plane succeeded.
 	// +optional
 	LastHeartbeat *metav1.Time `json:"lastHeartbeat,omitempty"`
 	// CredentialStatus reports where bootstrap credentials are stored.

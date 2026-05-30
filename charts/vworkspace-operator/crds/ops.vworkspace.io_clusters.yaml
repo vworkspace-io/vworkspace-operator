@@ -49,10 +49,13 @@ spec:
             description: ClusterSpec defines operator cluster identity configuration.
             properties:
               clusterId:
-                description: ClusterID is the stable identity registered with Odoo.
+                description: ClusterID is the stable identity registered with the
+                  control plane.
                 type: string
               odooBaseUrl:
-                description: OdooBaseURL is the HTTPS base URL for Pull-mode connectivity.
+                description: |-
+                  OdooBaseURL is the HTTPS base URL for Pull-mode connectivity to vWorkspace Server.
+                  Prefer documenting this field as the control plane base URL; JSON name odooBaseUrl is retained for compatibility.
                 type: string
               registrationToken:
                 description: |-
@@ -61,7 +64,7 @@ spec:
                 type: string
               rotateCredentials:
                 description: |-
-                  RotateCredentials requests an immediate bootstrap credential rotation via Odoo.
+                  RotateCredentials requests an immediate bootstrap credential rotation via the control plane.
                   Cleared from the spec after a successful rotation.
                 type: boolean
             type: object
@@ -141,8 +144,8 @@ spec:
                       token was exchanged successfully.
                     type: boolean
                   secretName:
-                    description: SecretName is the Kubernetes Secret holding odoo-base-url,
-                      cluster-id, and token.
+                    description: SecretName is the Kubernetes Secret holding control-plane-base-url
+                      (or odoo-base-url), cluster-id, and token.
                     type: string
                   secretNamespace:
                     description: SecretNamespace is the namespace of the credentials
@@ -151,7 +154,7 @@ spec:
                 type: object
               lastHeartbeat:
                 description: LastHeartbeat is updated when a recent round-trip to
-                  Odoo succeeded.
+                  the control plane succeeded.
                 format: date-time
                 type: string
             type: object

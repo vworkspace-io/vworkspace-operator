@@ -1,7 +1,7 @@
 # Backups and restores
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document is the end-to-end narrative for backing up and restoring an `ApplicationInstance`. It is not a reference: it walks through what an operator does, what the cluster does in response, where artifacts live, how retention works, how to restore into a different namespace, how to validate the restored application, and the pitfalls worth knowing about before they bite.
 
@@ -63,7 +63,7 @@ The first two are the data. The third is the index that connects an `Operation` 
 
 Retention is controlled by Velero's `ttl` field on each Backup. A Backup with `ttl: 720h` (30 days) is deleted automatically by Velero 30 days after creation; the deletion removes both the tarball in object storage and the CSI snapshot references the Backup owns. The operator does not enforce its own retention on top of Velero; the Velero TTL is the contract.
 
-Recurring backups are not modeled as a CRD in the operator's API today. The Odoo control plane drives a recurring schedule by emitting one `Operation` per fire (every hour, every night, every Sunday). Each `Operation` has its own `ttl`. The Odoo catalog publishes recommended defaults per application class — for example, "hourly backups retained 24 hours; daily backups retained 30 days; weekly backups retained 12 weeks" — which an organization can override. A future RFC may introduce a `Schedule` CRD; for now, the operator stays simple.
+Recurring backups are not modeled as a CRD in the operator's API today. The vWorkspace Server control plane drives a recurring schedule by emitting one `Operation` per fire (every hour, every night, every Sunday). Each `Operation` has its own `ttl`. The control plane catalog publishes recommended defaults per application class — for example, "hourly backups retained 24 hours; daily backups retained 30 days; weekly backups retained 12 weeks" — which an organization can override. A future RFC may introduce a `Schedule` CRD; for now, the operator stays simple.
 
 ## Restoring into the same namespace
 

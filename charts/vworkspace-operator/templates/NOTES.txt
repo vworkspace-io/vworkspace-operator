@@ -12,12 +12,12 @@ Deployment: {{ include "vworkspace-operator.fullname" . }}
 
   kubectl get crd applicationinstances.apps.vworkspace.io clusters.ops.vworkspace.io operations.ops.vworkspace.io
 
-3. Register this cluster with Odoo (one-time token exchange):
+3. Register this cluster with vWorkspace Server (one-time token exchange):
 
   kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "vworkspace-operator.fullname" . }} -- \
     /manager register \
       --token=<one-time-token> \
-      --odoo-endpoint=https://workspace.example.org \
+      --control-plane-endpoint=https://your-server.example.org \
       --cluster-name=<cluster-id>
 
   Or apply a Cluster CR — see docs/install/cluster-bootstrap.md.
@@ -32,7 +32,7 @@ Deployment: {{ include "vworkspace-operator.fullname" . }}
     -n {{ .Release.Namespace }} \
     --reuse-values \
     --set agent.enabled=true \
-    --set agent.odooBaseUrl=https://workspace.example.org
+    --set agent.controlPlaneBaseUrl=https://your-server.example.org
 {{- else }}
 
 4. Pull-mode agent is enabled. Ensure Secret/{{ .Values.agent.credentialsSecret }} exists

@@ -1,7 +1,7 @@
 # Engine: Velero
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 Velero is the operator's default engine for namespace-scoped backup and restore. The operator does not call the Velero binary, mount its config, or shell out to `velero backup create`; it materializes Velero's own CRDs (`velero.io/Backup` and `velero.io/Restore`), watches their status, and aggregates that status onto the matching `Operation`. Velero remains the controller; the operator is a well-behaved client.
 

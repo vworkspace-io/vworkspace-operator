@@ -1,7 +1,7 @@
 # Prerequisites
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document is the prerequisites checklist for installing `vworkspace-operator`. Most items are properties of the cluster you already run; a few have opinionated recommendations for the cases that warrant them.
 
@@ -55,9 +55,9 @@ Two notes:
 
 ## Egress
 
-The operator's Pull-mode default needs outbound HTTPS (port 443) to the Odoo control plane. No inbound port on the cluster is required for Pull. Concretely:
+The operator's Pull-mode default needs outbound HTTPS (port 443) to the vWorkspace Server control plane. No inbound port on the cluster is required for Pull. Concretely:
 
-- The operator pod's outbound HTTP client must reach `https://<odoo-host>` for `/api/agent/*` endpoints. The host and (optional) proxy are configured in `Cluster.spec.odoo.endpoint` and `Cluster.spec.odoo.proxy`.
+- The operator pod's outbound HTTP client must reach `https://<odoo-host>` for `/api/agent/*` endpoints. The host and (optional) proxy are configured in `Cluster.spec.odooBaseUrl` and `Cluster.spec (egress proxy — see pull-mode docs)`.
 - Velero needs outbound access to the configured `BackupStorageLocation` (S3, GCS, Azure Blob, MinIO, on-prem object store). Configure your egress firewall accordingly.
 - external-secrets needs outbound access to whichever upstream secret store you use (Vault, AWS, GCP, Azure, Akeyless, etc.).
 - cert-manager needs outbound access to your ACME endpoint (typically Let's Encrypt).
@@ -96,8 +96,8 @@ A short checklist before you run the first `helm install`:
 
 - A kubeconfig pointing at the target cluster with `cluster-admin` rights (or equivalent for installing CRDs and webhooks).
 - The cluster's default StorageClass identified (`kubectl get sc`). If none is default, decide whether to set one before install.
-- A reachable Odoo URL (Pull mode) and the ability to log in as an organization admin to issue a registration token.
-- The cluster's egress destinations approved in your firewall (Odoo URL, chart source registry, `BackupStorageLocation`, external secret store, ACME endpoint).
+- A reachable control plane URL (Pull mode) and the ability to log in as an organization admin to issue a registration token.
+- The cluster's egress destinations approved in your firewall (control plane URL, chart source registry, `BackupStorageLocation`, external secret store, ACME endpoint).
 - For air-gapped installs: a private OCI registry mirror and a private Helm chart mirror, plus the procedure described in [offline-and-airgapped.md](offline-and-airgapped.md).
 
 Once you have these, [quickstart.md](quickstart.md) is two commands.

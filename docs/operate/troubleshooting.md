@@ -1,7 +1,7 @@
 # Troubleshooting
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document maps common failure modes to the conditions and reasons the operator publishes, with the `kubectl` commands to investigate each. The patterns are organized by where the symptom shows up: the `Cluster` CR, an `ApplicationInstance`, or an `Operation`. The deeper diagnostic surfaces — structured logs, metrics, the `HelmRelease`, the engine-specific child resource — are covered as supporting evidence.
 
@@ -11,7 +11,7 @@ For each symptom the structure is: the condition you see, what it means, the inv
 
 ### `Cluster.status.conditions[Connected]=False`, reason `OdooUnreachable`
 
-**Meaning.** The operator cannot reach `Cluster.spec.odoo.endpoint`. Pull-mode jobs are not being fetched; outbound audit events are buffering locally.
+**Meaning.** The operator cannot reach `Cluster.spec.odooBaseUrl`. Pull-mode jobs are not being fetched; outbound audit events are buffering locally.
 
 **Investigate.**
 
@@ -27,7 +27,7 @@ Check:
 
 - DNS resolution from the operator pod (`nslookup workspace.example.org` inside the pod).
 - Outbound firewall to the Odoo host's IP and port.
-- The `Cluster.spec.odoo.proxy` block matches the environment's proxy.
+- The `Cluster.spec (egress proxy — see pull-mode docs)` block matches the environment's proxy.
 - The proxy's CA bundle is mounted via `operator.extraCaBundles` (see [../install/offline-and-airgapped.md](../install/offline-and-airgapped.md)).
 
 **Resolve.** Fix DNS / firewall / proxy. The operator retries with backoff; no operator restart is needed once the path is open.
@@ -42,7 +42,7 @@ Check:
 
 ### `Cluster.status.conditions[Authenticated]=False`, reason `CredentialRevoked`
 
-**Meaning.** The long-lived credential is no longer accepted by Odoo (revoked from the Odoo side, or rotation failed and the grace period expired).
+**Meaning.** The long-lived credential is no longer accepted by Odoo (revoked from the control-plane side, or rotation failed and the grace period expired).
 
 **Investigate.**
 
@@ -51,7 +51,7 @@ kubectl get secret -n vworkspace-system vworkspace-operator-credentials -o yaml
 kubectl get events -n vworkspace-system | grep -i credential
 ```
 
-**Resolve.** If Odoo intentionally revoked the credential (admin action, suspected leak), re-register with a fresh token. If the rotation failed silently, re-register with a fresh token and audit the rotation logs (look for `vworkspace_operator_credential_age_seconds` flatlined for longer than the rotation interval).
+**Resolve.** If control plane intentionally revoked the credential (admin action, suspected leak), re-register with a fresh token. If the rotation failed silently, re-register with a fresh token and audit the rotation logs (look for `vworkspace_operator_credential_age_seconds` flatlined for longer than the rotation interval).
 
 ### `Cluster.status.conditions[ControllersHealthy]=False`, reason `ControllerMissing` or `ControllerDegraded`
 
@@ -180,7 +180,7 @@ kubectl logs -n velero deploy/velero --tail=200
 
 The Velero Backup's `status.failureReason` is the canonical source.
 
-**Resolve.** Address the Velero-side problem (storage location credentials, snapshot class, etc.) and create a fresh `Operation`. Failed operations are not retried by the operator on their own; re-issue from Odoo or via `kubectl`. The engine reference is in [../operations/engines/velero.md](../operations/engines/velero.md).
+**Resolve.** Address the Velero-side problem (storage location credentials, snapshot class, etc.) and create a fresh `Operation`. Failed operations are not retried by the operator on their own; re-issue from the control plane or via `kubectl`. The engine reference is in [../operations/engines/velero.md](../operations/engines/velero.md).
 
 ### `Operation.status.conditions[Failed]=True`, reason `JobFailedBackoffExceeded`
 

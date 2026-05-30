@@ -10,7 +10,7 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
   --create-namespace \
   --set image.tag=latest \
   --set agent.enabled=true \
-  --set agent.odooBaseUrl=http://mock-odoo:8080
+  --set agent.controlPlaneBaseUrl=http://mock-control-plane:8080
 ```
 
 Validate rendering without applying:
@@ -33,7 +33,7 @@ Validate on kind:
 | `image.repository` | `vworkspace/vworkspace-operator` | Operator image |
 | `image.tag` | Chart `appVersion` | Image tag |
 | `agent.enabled` | `false` | Enable Pull-mode job poller |
-| `agent.odooBaseUrl` | `https://odoo.example.org` | Odoo or mock Odoo base URL |
+| `agent.controlPlaneBaseUrl` | `https://odoo.example.org` | Odoo or mock control plane base URL |
 | `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret for agent bearer token |
 | `crds.install` | `true` | Install CRDs from `crds/` |
 

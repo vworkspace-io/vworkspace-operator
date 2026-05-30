@@ -1,15 +1,15 @@
 # GitOps mode
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
-In GitOps mode, Odoo renders the desired state of each cluster as a set of manifests and commits them to a Git repository. Flux (or Argo CD) on the cluster pulls the Git repository, applies what is there, and reports status back. Neither Odoo nor the operator talks to the other directly; they communicate through Git.
+In GitOps mode, the control plane renders the desired state of each cluster as a set of manifests and commits them to a Git repository. Flux (or Argo CD) on the cluster pulls the Git repository, applies what is there, and reports status back. Neither Odoo nor the operator talks to the other directly; they communicate through Git.
 
 GitOps is the right choice when change control must flow through Git: regulated organizations, multi-team approval workflows, audit regimes that require every change to land in a reviewed commit, and orgs that already treat Git as the system of record. It is not the right choice when low-latency, ad-hoc operator action is the dominant workflow — for that, [Pull](pull-mode.md) or [Push](push-mode.md) are simpler.
 
-## What Odoo writes to Git
+## What the control plane writes to Git
 
-The manifests Odoo writes are the **same CRDs** used in every other mode: `ApplicationInstance` (`apps.vworkspace.io/v1alpha1`) and `Operation` (`ops.vworkspace.io/v1alpha1`). Optionally — for organizations that want every Helm intent visible in Git — `HelmRelease` resources may be written directly, in which case the operator can be configured to treat them as authoritative and skip the `ApplicationInstance → HelmRelease` materialization step.
+The manifests the control plane writes are the **same CRDs** used in every other mode: `ApplicationInstance` (`apps.vworkspace.io/v1alpha1`) and `Operation` (`ops.vworkspace.io/v1alpha1`). Optionally — for organizations that want every Helm intent visible in Git — `HelmRelease` resources may be written directly, in which case the operator can be configured to treat them as authoritative and skip the `ApplicationInstance → HelmRelease` materialization step.
 
 A typical repository layout looks like:
 
@@ -32,7 +32,7 @@ The Flux components used for GitOps mode (`GitRepository`, `Kustomization`) are 
 
 ## Authentication
 
-- **Odoo holds a Git write credential.** A deploy key, an SSH key, a fine-grained personal access token, or an OAuth app credential, scoped to write the relevant repository path. Best practice is one write credential per Odoo install, and to gate the actual cluster paths via repository-side `CODEOWNERS` or branch-protection rules.
+- **Odoo holds a Git write credential.** A deploy key, an SSH key, a fine-grained personal access token, or an OAuth app credential, scoped to write the relevant repository path. Best practice is one write credential per vWorkspace Server install, and to gate the actual cluster paths via repository-side `CODEOWNERS` or branch-protection rules.
 - **The cluster holds a Git read credential.** A deploy key or a fine-grained token scoped to read the relevant repository path. The cluster never needs write access to the repository for the GitOps loop to function.
 - **Neither side holds a kubeconfig for the other.** Like Pull mode, GitOps mode keeps Odoo out of the cluster's credential plane.
 

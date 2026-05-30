@@ -1,7 +1,7 @@
 # Helm-first
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 The single most important architectural choice in `vworkspace-operator` is that **application deployment logic lives in upstream Helm charts, not in the operator**. The operator's job is to express Odoo's intent in a vocabulary a Helm controller already speaks — specifically a Flux `HelmRelease` — and to aggregate the resulting conditions back into the operator's own CRDs. This page records why we chose that posture and, given that we did, which Helm engine we ship by default.
 
@@ -61,6 +61,6 @@ The reasons line up with the goals in [overview.md](overview.md):
 - **Small operator.** Flux owns release lifecycle. The operator owns intent and status.
 - **Clean separation.** Flux reconciles Helm; Velero reconciles backups; Argo Workflows reconciles multi-step DAGs; the operator wires and observes.
 - **Composable with GitOps.** Because the operator's outputs are Kubernetes resources (`HelmRelease`, `Backup`, ...), the same outputs can be rendered to Git for [GitOps mode](../connectivity/gitops-mode.md) without changing the in-cluster reconciliation loop.
-- **One operator per cluster, surviving Odoo outages.** Because Flux is in the cluster, Helm reconciliation continues whether or not Odoo is reachable. The operator's job during an Odoo outage is to keep telling Flux the truth it already knows.
+- **One operator per cluster, surviving control plane outages.** Because Flux is in the cluster, Helm reconciliation continues whether or not the control plane is reachable. The operator's job during an control plane outage is to keep telling Flux the truth it already knows.
 
 Where this leaves the operator is a comfortable place: it is the layer that translates "what Odoo wants" into "what Flux understands", and translates "what Flux is doing" back into "something Odoo and the AI assistant can reason about." Everything that is genuinely about Helm stays inside Helm; everything that is genuinely about Odoo stays inside Odoo; the operator sits cleanly between them.

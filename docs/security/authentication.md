@@ -1,9 +1,9 @@
 # Authentication and identity
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
-This document describes how a cluster authenticates itself to Odoo (and vice versa) in Pull mode, what the credential lifecycle looks like, and the optional security layers an organization can turn on for production deployments. Push and GitOps modes use simpler credential models, summarized at the end.
+This document describes how a cluster authenticates itself to the control plane (and vice versa) in Pull mode, what the credential lifecycle looks like, and the optional security layers an organization can turn on for production deployments. Push and GitOps modes use simpler credential models, summarized at the end.
 
 The design goals: minimum credential surface on Odoo (no kubeconfig); per-cluster scoped tokens; clear rotation procedures; no secret material in logs. The rationale is recorded in [../adr/0003-pull-mode-as-default-connectivity.md](../adr/0003-pull-mode-as-default-connectivity.md).
 
@@ -37,7 +37,7 @@ kubectl -n vworkspace-system exec deploy/vworkspace-app-operator \
   -- vworkspace-app-operator register --token=<one-time-token>
 ```
 
-4. The operator presents the token on its first outbound connection to Odoo's `POST /api/agent/register`. Odoo verifies the token (matching hash, not expired, not used), generates a long-lived bearer token plus an optional client certificate, returns them to the operator over the same TLS connection, marks the identity record as `Active`, and never accepts the registration token again.
+4. The operator presents the token on its first outbound connection to the control plane's `POST /api/agent/register`. Odoo verifies the token (matching hash, not expired, not used), generates a long-lived bearer token plus an optional client certificate, returns them to the operator over the same TLS connection, marks the identity record as `Active`, and never accepts the registration token again.
 5. The operator persists the long-lived material as a Kubernetes `Secret` (`vworkspace-system/vworkspace-operator-credentials`), zeroes the in-memory copy of the one-time token, and begins pulling jobs.
 
 The one-time token is the only piece of secret material the admin handles. It is short-lived (default 24 hours), single-use, and the only path Odoo offers for issuing a long-lived credential to a cluster.
@@ -88,8 +88,8 @@ With mTLS, the bearer token is reduced to a session marker; the certificate is t
 
 For Pull-mode deployments where job payloads flow through infrastructure the cluster does not fully trust (a corporate proxy, a message broker), payloads can be:
 
-- **Signed** by Odoo with an Odoo-side keypair, verified by the operator with Odoo's public key (stored in `Cluster.status.odooPublicKey`). The operator rejects payloads that do not verify, with audit event `JobPayloadSignatureInvalid`.
-- **Encrypted** to the cluster's public key (uploaded to Odoo at registration time). Odoo encrypts payloads that contain chart-values material on send; the operator decrypts on receive using `Secret/vworkspace-system/vworkspace-operator-keypair`. Decryption failures surface as `JobPayloadDecryptionFailed`.
+- **Signed** by Odoo with an control-plane-side keypair, verified by the operator with Odoo's public key (stored in `Cluster.status.odooPublicKey`). The operator rejects payloads that do not verify, with audit event `JobPayloadSignatureInvalid`.
+- **Encrypted** to the cluster's public key (uploaded to the control plane at registration time). Odoo encrypts payloads that contain chart-values material on send; the operator decrypts on receive using `Secret/vworkspace-system/vworkspace-operator-keypair`. Decryption failures surface as `JobPayloadDecryptionFailed`.
 
 Toggles:
 
@@ -117,13 +117,13 @@ The operator rotates its bootstrap credential on a schedule defined by Odoo (def
 2. The operator writes the new credential into `Secret/vworkspace-operator-credentials` (replacing the old data), updates its in-memory HTTP client, and continues operating.
 3. After the grace period, Odoo invalidates the old credential.
 
-Rotation is fully automatic; no human action is required. The operator emits a Kubernetes event on rotation and an audit event to Odoo. If rotation fails (e.g., Odoo unreachable), the operator continues to use the existing credential until it expires; it does not stop reconciling because it could not rotate.
+Rotation is fully automatic; no human action is required. The operator emits a Kubernetes event on rotation and an audit event to Odoo. If rotation fails (e.g., control plane unreachable), the operator continues to use the existing credential until it expires; it does not stop reconciling because it could not rotate.
 
 Manual rotation is supported: an admin in Odoo can revoke a credential, which forces the operator to re-rotate (or to re-register if the credential was revoked before rotation). The operator surfaces the revocation as `Cluster.status.conditions[Authenticated]=False`.
 
-## How Odoo authenticates operator status posts
+## How the control plane authenticates operator status posts
 
-Status flows the other way: the operator posts to `POST /api/agent/events` (and the per-job `/ack`, `/status`, `/result` endpoints) on Odoo. Odoo authenticates these posts in one of two ways:
+Status flows the other way: the operator posts to `POST /api/agent/events` (and the per-job `/ack`, `/status`, `/result` endpoints) on Odoo. the control plane authenticates these posts in one of two ways:
 
 - **mTLS** (the recommended path when mTLS is enabled overall). Odoo's reverse proxy authenticates the client certificate, and the cluster's `cluster_id` is derived from the certificate's CN/SAN.
 - **HMAC** (the default when mTLS is not enabled). Each post carries an HMAC over its canonical body using a key derived from the bootstrap credential. Odoo verifies the HMAC server-side. The same key is rotated alongside the bootstrap credential.
@@ -136,7 +136,7 @@ In Push mode, Odoo holds a per-cluster ServiceAccount kubeconfig scoped to `apps
 
 ## GitOps mode
 
-In GitOps mode, Odoo holds a Git write credential and the cluster holds a Git read credential. Each credential is scoped to the Git repository the organization has dedicated to the cluster (or to a subdirectory within a multi-cluster repository). Status flows back via the same audit-event endpoint used in Pull mode: the operator is still installed on the cluster and is still authenticated to Odoo for status posts, but the inbound intent reaches the cluster through Git rather than through `POST /api/agent/jobs`.
+In GitOps mode, Odoo holds a Git write credential and the cluster holds a Git read credential. Each credential is scoped to the Git repository the organization has dedicated to the cluster (or to a subdirectory within a multi-cluster repository). Status flows back via the same audit-event endpoint used in Pull mode: the operator is still installed on the cluster and is still authenticated to the control plane for status posts, but the inbound intent reaches the cluster through Git rather than through `POST /api/agent/jobs`.
 
 ## Stored credentials are Kubernetes Secrets
 

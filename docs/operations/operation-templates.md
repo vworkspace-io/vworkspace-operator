@@ -1,7 +1,7 @@
 # Operation templates and capabilities
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 `vworkspace-operator` runs day-2 actions without encoding app-specific logic. The mechanism is a small, generic operation-template model coupled to capability metadata declared on each `ApplicationInstance`. The template says "an operation of this shape can be requested"; the capability says "this particular application is willing to be operated on this way, using this engine". The operator combines the two to validate a request and pick the right engine.
 
@@ -11,11 +11,11 @@ This document defines the template/capability model, where capabilities come fro
 
 The alternative — a separate CRD per verb (`Backup`, `Restore`, `Upgrade`, `Migration`, `RunCommand`, `Runbook`) — multiplies the API surface and copies the same condition contract across CRDs. We keep a single `Operation` CRD (recorded in [ADR 0004](../adr/0004-two-crds-applicationinstance-and-operation.md)) and let templates restrict which combinations of `type`, `engine`, target, and parameters are runnable. This keeps RBAC, audit, and status mapping uniform across every day-2 verb.
 
-The template/capability split also keeps app-specific behavior out of the operator. The operator does not "know" how to back up Nextcloud differently from WordPress; it knows that an `ApplicationInstance` annotated `ops.vworkspace.io/backup=velero` can run a Backup template that materializes a `velero.io/Backup`. The Odoo catalog curates what is annotated and which template applies; the operator stays generic.
+The template/capability split also keeps app-specific behavior out of the operator. The operator does not "know" how to back up Nextcloud differently from WordPress; it knows that an `ApplicationInstance` annotated `ops.vworkspace.io/backup=velero` can run a Backup template that materializes a `velero.io/Backup`. The control plane catalog curates what is annotated and which template applies; the operator stays generic.
 
 ## Anatomy of an operation template
 
-A template is a server-side declaration that the operator and the Odoo catalog both understand. It binds the following:
+A template is a server-side declaration that the operator and the control plane catalog both understand. It binds the following:
 
 | Field            | Meaning                                                                                                                                                                                                                  |
 |------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -26,7 +26,7 @@ A template is a server-side declaration that the operator and the Odoo catalog b
 | `preconditions`  | A small declarative list (target `Ready=True`, no conflicting `Operation` in flight, named `Secret` exists, target generation matches). The reconciler evaluates these before materializing any child resource.           |
 | `targetSelectors`| Label and annotation selectors that constrain which `ApplicationInstance` resources the template applies to. The capability annotations described below are the primary selector.                                          |
 
-Templates are not themselves stored as CRDs in the cluster; they are part of the Odoo catalog plus the operator's compiled-in defaults. The operator ships with a small built-in set (Velero Backup, Velero Restore, Helm Upgrade, Helm Hook Migration, Kubernetes Job RunCommand, Argo Workflows Runbook) and the Odoo catalog can extend or constrain that set per organization.
+Templates are not themselves stored as CRDs in the cluster; they are part of the control plane catalog plus the operator's compiled-in defaults. The operator ships with a small built-in set (Velero Backup, Velero Restore, Helm Upgrade, Helm Hook Migration, Kubernetes Job RunCommand, Argo Workflows Runbook) and the control plane catalog can extend or constrain that set per organization.
 
 ## Capability metadata on `ApplicationInstance`
 
@@ -78,11 +78,11 @@ When an `Operation` of `type: Backup` and `engine: velero` is requested against 
 
 Capabilities are curated, not inferred. The order of precedence is:
 
-1. **Odoo catalog (primary).** Each catalog entry in the Odoo control plane carries the capability set that should be projected onto an `ApplicationInstance` created from it. The operator reads the catalog entry as part of the apply (Pull mode), or Odoo stamps the annotations directly when it server-side-applies the CR (Push mode), or the rendered manifest in Git already contains them (GitOps mode).
+1. **control plane catalog (primary).** Each catalog entry in the vWorkspace Server control plane carries the capability set that should be projected onto an `ApplicationInstance` created from it. The operator reads the catalog entry as part of the apply (Pull mode), or Odoo stamps the annotations directly when it server-side-applies the CR (Push mode), or the rendered manifest in Git already contains them (GitOps mode).
 2. **Chart annotations (secondary).** If the chart's `Chart.yaml` declares vWorkspace annotations under its own `annotations:` block (for example, a chart maintained by the vWorkspace project itself), the operator may copy them onto the `ApplicationInstance` at apply time. This is opt-in per catalog entry and is used only for charts whose maintainers have explicitly modeled the capability contract.
 3. **Never from Pods or Deployments.** The operator does not introspect rendered chart objects to guess what a chart can do. Doing so would couple the operator to app-internal naming conventions and silently misclassify capabilities when charts change.
 
-The practical consequence is that adding a new application to the vWorkspace catalog means describing its capabilities once in the Odoo catalog entry, not writing app-specific operator code. Adding a new operation engine (for example, an OnlyOffice-aware migration runner) means writing one Argo `WorkflowTemplate` and one template entry, not extending the operator.
+The practical consequence is that adding a new application to the vWorkspace catalog means describing its capabilities once in the control plane catalog entry, not writing app-specific operator code. Adding a new operation engine (for example, an OnlyOffice-aware migration runner) means writing one Argo `WorkflowTemplate` and one template entry, not extending the operator.
 
 ## Preconditions
 

@@ -1,7 +1,7 @@
 # CRDs at a glance
 
 **Status:** Alpha — both CRDs are at `v1alpha1`.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 The operator owns exactly two CRDs. Everything Odoo asks the cluster to do, in every connectivity mode, is expressed as one of these two resources. The complete spec/status reference for each lives next door:
 
@@ -46,7 +46,7 @@ spec:
 
 What the operator reads:
 
-- `appRef.catalogId` ties the instance to a curated Odoo catalog entry that carries capability metadata (which day-2 operations apply, see [day-2-operations.md](day-2-operations.md)).
+- `appRef.catalogId` ties the instance to a curated control plane catalog entry that carries capability metadata (which day-2 operations apply, see [day-2-operations.md](day-2-operations.md)).
 - `chart.sourceType` is one of the chart sources the admission webhook allows (`oci` or `helm`); `url`, `name`, and `version` identify the artifact.
 - `release.name` and `release.namespace` go straight into the materialized `HelmRelease`.
 - `values.source` is `inline`, `secretRef`, or `configMapRef`. The latter two let chart values reference data the operator does not itself need to read.

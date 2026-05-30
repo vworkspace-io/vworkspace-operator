@@ -1,7 +1,7 @@
 # Offline and air-gapped installs
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document covers installing the operator on a cluster that does not have direct internet access. The four operational levers are: mirror the container images into a registry the cluster can reach; mirror the Helm charts into an OCI chart registry the cluster can reach; transfer the registration token via out-of-band means; and configure HTTP/HTTPS proxy on the operator's outbound Pull-mode connection (when the cluster reaches the internet only through a forward proxy).
 
@@ -76,7 +76,7 @@ If the token's TTL is too short for your operational reality (a 24-hour default 
 
 ## Step 4: configuring the outbound proxy
 
-Some "air-gapped" deployments are actually "behind a corporate proxy", which is operationally different. The operator's Pull-mode outbound HTTPS to Odoo can be sent through a forward proxy by configuring the `Cluster` CR:
+Some "air-gapped" deployments are actually "behind a corporate proxy", which is operationally different. The operator's Pull-mode outbound HTTPS to the control plane can be sent through a forward proxy by configuring the `Cluster` CR:
 
 ```yaml
 apiVersion: ops.vworkspace.io/v1alpha1

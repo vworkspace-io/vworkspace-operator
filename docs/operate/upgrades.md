@@ -1,7 +1,7 @@
 # Upgrading the operator
 
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document covers upgrading the operator itself. Application upgrades — bumping `ApplicationInstance.spec.chart.version` — are a different topic and are documented in [../operations/upgrades-and-migrations.md](../operations/upgrades-and-migrations.md).
 
@@ -49,7 +49,7 @@ A platform team that manages many clusters typically does not roll a new version
 - **Burn-in.** A wave can specify a burn-in window (e.g., 24 hours on `dev` before promotion to `internal`). The Cluster Registry tracks the in-wave deployment time and refuses to promote earlier than the window allows.
 - **Per-wave version pinning.** A wave can be pinned to a specific version while the rest of the fleet has moved on. This is useful when a customer-facing cluster needs to stay on an older version while an internal one tests a candidate.
 
-The waves are an Odoo-side scheduling concern; the operator simply consumes the version it is told to run. From the cluster's perspective, the chart version changes when Odoo writes a new value into Flux's `HelmRelease` for the operator's bundle (Pull mode) or commits it to the watched Git repo (GitOps mode) or applies it directly (Push mode).
+The waves are an control-plane-side scheduling concern; the operator simply consumes the version it is told to run. From the cluster's perspective, the chart version changes when the control plane writes a new value into Flux's `HelmRelease` for the operator's bundle (Pull mode) or commits it to the watched Git repo (GitOps mode) or applies it directly (Push mode).
 
 ## The upgrade itself
 

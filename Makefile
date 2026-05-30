@@ -130,10 +130,13 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
-MOCK_ODOO_IMAGE ?= example.com/mock-odoo:v0.0.1
-.PHONY: docker-build-mockodoo
-docker-build-mockodoo: ## Build docker image with the in-cluster mock Odoo server.
-	$(CONTAINER_TOOL) build -f Dockerfile.mockodoo -t ${MOCK_ODOO_IMAGE} .
+MOCK_CONTROL_PLANE_IMAGE ?= example.com/mock-control-plane:v0.0.1
+MOCK_ODOO_IMAGE ?= $(MOCK_CONTROL_PLANE_IMAGE)
+.PHONY: docker-build-mockcontrolplane docker-build-mockodoo
+docker-build-mockcontrolplane: ## Build docker image with the in-cluster mock control plane server.
+	$(CONTAINER_TOOL) build -f Dockerfile.mockcontrolplane -t ${MOCK_CONTROL_PLANE_IMAGE} .
+
+docker-build-mockodoo: docker-build-mockcontrolplane ## Deprecated alias for docker-build-mockcontrolplane.
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

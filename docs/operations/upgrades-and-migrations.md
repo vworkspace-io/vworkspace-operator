@@ -1,7 +1,7 @@
 # Upgrades and migrations
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This document explains how an `ApplicationInstance` is upgraded, when an upgrade needs to be wrapped in an `Operation` of `type: Migration`, how rollback works, and how the catalog's forbidden-version policy is enforced. The engine-level references are in [engines/helm-hooks.md](engines/helm-hooks.md) (chart hooks during upgrade), [engines/argo-workflows.md](engines/argo-workflows.md) (multi-step migrations), and [engines/velero.md](engines/velero.md) (pre-upgrade backup).
 
@@ -90,7 +90,7 @@ Manual rollback by editing `ApplicationInstance.spec.chart.version` back to the 
 
 ## Forbidden-version policy
 
-Some chart versions are known-bad in vWorkspace's testing matrix (corrupted releases, regressions caught after publication, charts whose dependencies pin incompatible images). The Odoo catalog publishes a "forbidden versions" list per chart, and the operator enforces it via its validating admission webhook.
+Some chart versions are known-bad in vWorkspace's testing matrix (corrupted releases, regressions caught after publication, charts whose dependencies pin incompatible images). The control plane catalog publishes a "forbidden versions" list per chart, and the operator enforces it via its validating admission webhook.
 
 The enforcement model:
 
@@ -104,13 +104,13 @@ The enforcement model:
 
 The forbidden-version list is delivered to the operator as part of the catalog payload (in Pull mode), as catalog data that Odoo pushes alongside the `ApplicationInstance` CR (Push mode), or as a versioned manifest in the watched Git repo (GitOps mode). The cluster caches the list and re-evaluates on every admission; the list does not need to be checked over the network at admission time, which keeps the webhook latency bounded and the cluster reconciling under network partition.
 
-Bypass: an admin can force a forbidden version by setting the annotation `apps.vworkspace.io/override-forbidden: "true"` on the `ApplicationInstance` along with a justification annotation. The webhook still admits, but the operator emits a high-severity audit event to Odoo and sets `Degraded=True/ForbiddenVersionOverride`. This is a deliberate safety valve, not the recommended path.
+Bypass: an admin can force a forbidden version by setting the annotation `apps.vworkspace.io/override-forbidden: "true"` on the `ApplicationInstance` along with a justification annotation. The webhook still admits, but the operator emits a high-severity audit event to the control plane and sets `Degraded=True/ForbiddenVersionOverride`. This is a deliberate safety valve, not the recommended path.
 
 ## Practical notes
 
 - **The operator does not auto-upgrade applications.** A chart bump only happens when the `ApplicationInstance.spec.chart.version` changes. The catalog publishes "this version is now recommended"; deciding when to bump is the operator's (or the AI assistant's, with confirmation) call. Auto-upgrade may be revisited later as an opt-in catalog property.
 - **Maintenance windows** are enforced on `Operation` resources (migrations, run-commands) but not on plain `ApplicationInstance` edits. If you need a maintenance window for a plain chart bump, use the `Operation` `type: Migration` path; otherwise the chart bump is reconciled as soon as the operator sees it.
-- **Pre-upgrade backups** are recommended for production data-bearing applications. The catalog can express this as "Backup operation is suggested before an Upgrade operation on this application class". The Odoo control plane surfaces the suggestion; the operator does not refuse the upgrade if no recent Backup exists.
+- **Pre-upgrade backups** are recommended for production data-bearing applications. The catalog can express this as "Backup operation is suggested before an Upgrade operation on this application class". The vWorkspace Server control plane surfaces the suggestion; the operator does not refuse the upgrade if no recent Backup exists.
 - **Helm rollback limits.** Flux can roll back as long as the previous release revision is still in Helm's history. Aggressive `historyMax` settings on the chart can truncate that history; the operator's `HelmRelease` defaults set `historyMax: 10`, which is a reasonable balance between storage and useful history.
 
 ## Related material

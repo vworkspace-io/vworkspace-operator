@@ -17,7 +17,7 @@ It also has costs:
 - **API surface explosion.** Six verbs means six CRDs, each with its own status contract, each with its own admission webhook configuration, each with its own conversion-webhook story when the API evolves. Adding a seventh verb is adding a seventh CRD.
 - **Duplicated status contract.** Every verb wants the same condition vocabulary: `Accepted`, `Running`, `Succeeded`, `Failed`, `Cancelled`, `Blocked`. Six near-identical condition implementations is a maintenance hazard.
 - **Cross-verb coordination is awkward.** A migration that wants to take a backup first is two CRs of two different kinds, related only by ownership references. Querying "all operations on `nextcloud-myteam` right now" requires listing six kinds and filtering.
-- **Audit and observability fragmentation.** Metrics labels include the CRD kind, so dashboards have six panels per metric. The audit-event stream to Odoo carries six event types per verb.
+- **Audit and observability fragmentation.** Metrics labels include the CRD kind, so dashboards have six panels per metric. The audit-event stream to the control plane carries six event types per verb.
 
 A single CRD with `spec.type` and `spec.engine` flips these costs. The verb is a field, not a kind. A single condition contract, a single admission webhook, a single audit-event shape, a single status field set. The schema in `spec.parameters` is per-verb but does not require a new CRD kind; the admission webhook validates `parameters` against the operation template's input schema.
 

@@ -1,6 +1,6 @@
 # RFCs
 
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This directory holds the project's Requests for Comments. An RFC is a written design proposal that needs broader review than a PR description provides, but is not yet a decision the project has made. RFCs are the place a substantial new feature or a new public surface starts; once accepted, they typically result in one or more ADRs that record the decisions the RFC made.
 

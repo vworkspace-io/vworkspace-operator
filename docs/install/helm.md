@@ -1,7 +1,7 @@
 # Helm install guide
 
 **Status:** Alpha
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 This document is the full reference for installing `vworkspace-operator` with the in-repo Helm chart at `charts/vworkspace-operator/`. For the shortest path, start with [quickstart.md](quickstart.md) Option A.
 
@@ -35,10 +35,10 @@ These values are exercised by `./hack/validate-helm-kind.sh`:
 | `image.tag` | `latest` or locally built `helm-validate` | Use `latest` when pulling from Docker Hub |
 | `crds.install` | `true` | Installs ApplicationInstance, Operation, Cluster CRDs |
 | `agent.enabled` | `false` | Enable after cluster registration |
-| `agent.odooBaseUrl` | Odoo or mock URL | Required when `agent.enabled=true` |
+| `agent.controlPlaneBaseUrl` | Odoo or mock URL | Required when `agent.enabled=true` |
 | `agent.credentialsSecret` | `vworkspace-agent-credentials` | Written by registration |
 
-Example with Pull-mode enabled against mock Odoo (local dev):
+Example with Pull-mode enabled against mock control plane (local dev):
 
 ```bash
 helm install vworkspace-operator ./charts/vworkspace-operator \
@@ -46,7 +46,7 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
   --create-namespace \
   --set image.tag=latest \
   --set agent.enabled=true \
-  --set agent.odooBaseUrl=http://mock-odoo:8080
+  --set agent.controlPlaneBaseUrl=http://mock-control-plane:8080
 ```
 
 ## Values reference
@@ -59,8 +59,8 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
 | `replicaCount` | `1` | Manager Deployment replicas |
 | `crds.install` | `true` | Render CRDs from `crds/` via chart template |
 | `agent.enabled` | `false` | Start Pull-mode job poller |
-| `agent.odooBaseUrl` | `https://odoo.example.org` | Odoo base URL (flag `--odoo-base-url`) |
-| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret with `token`, `cluster-id`, `odoo-base-url` |
+| `agent.controlPlaneBaseUrl` | `https://odoo.example.org` | control plane base URL (flag `--control-plane-base-url` (alias: `--control-plane-base-url`)) |
+| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret with `token`, `cluster-id`, `control-plane-base-url` |
 | `agent.pollIntervalSeconds` | `30` | Long-poll interval |
 | `rbac.create` | `true` | ClusterRole and ClusterRoleBinding |
 | `serviceAccount.create` | `true` | Dedicated ServiceAccount |
@@ -100,7 +100,7 @@ After `helm install`, the operator is running but not yet connected to Odoo.
      -n vworkspace-system \
      --reuse-values \
      --set agent.enabled=true \
-     --set agent.odooBaseUrl=https://workspace.example.org
+     --set agent.controlPlaneBaseUrl=https://workspace.example.org
    ```
 
 3. **Validate** — see [quickstart.md](quickstart.md) Step 3.
@@ -165,6 +165,6 @@ helm template vworkspace-operator ./charts/vworkspace-operator \
 ## Related material
 
 - [quickstart.md](quickstart.md) — Supported install path and validation steps.
-- [cluster-bootstrap.md](cluster-bootstrap.md) — Registration token flow on the Odoo side.
+- [cluster-bootstrap.md](cluster-bootstrap.md) — Registration token flow on the control-plane side.
 - [container-images.md](container-images.md) — Published tags and registry secrets.
 - [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) — Chart maintainer notes.

@@ -15,7 +15,7 @@ const (
 	defaultMaxBuffer = 1000
 )
 
-// EventBatcher coalesces outbound events and flushes them to Odoo.
+// EventBatcher coalesces outbound events and flushes them to the control plane.
 type EventBatcher struct {
 	Client Client
 	Log    interface {
@@ -79,7 +79,7 @@ func (b *EventBatcher) OverflowState() (active bool, dropped int64) {
 // BufferOverflowMessage formats the Cluster BufferOverflow condition message.
 func BufferOverflowMessage(dropped int64) string {
 	return fmt.Sprintf(
-		"Dropped %d outbound event(s) because the buffer is full; verify Odoo connectivity and that events are being accepted",
+		"Dropped %d outbound event(s) because the buffer is full; verify control plane connectivity and that events are being accepted",
 		dropped,
 	)
 }

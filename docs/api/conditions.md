@@ -1,7 +1,7 @@
 # Conditions
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 The operator emits standard Kubernetes condition objects on three places:
 
@@ -148,12 +148,12 @@ The operator maintains a `Cluster` resource that reports its own posture: how it
 
 ### `Connected`
 
-`Connected=True` means the most recent outbound round-trip to Odoo succeeded within the heartbeat interval.
+`Connected=True` means the most recent outbound round-trip to the control plane succeeded within the heartbeat interval.
 
 | `status` | Reasons | Meaning |
 |----------|---------|---------|
-| True     | `RoundTripOK` | Recent round-trip to Odoo succeeded. |
-| False    | `OdooUnreachable` | Outbound HTTPS to Odoo is failing. `message` carries the underlying network error. |
+| True     | `RoundTripOK` | Recent round-trip to the control plane succeeded. |
+| False    | `OdooUnreachable` | Outbound HTTPS to the control plane is failing. `message` carries the underlying network error. |
 
 ### `Disconnected`
 
@@ -161,7 +161,7 @@ The operator maintains a `Cluster` resource that reports its own posture: how it
 
 | `status` | Reasons | Meaning |
 |----------|---------|---------|
-| True     | `NoRecentRoundTrip` | No successful contact with Odoo within the disconnect window. |
+| True     | `NoRecentRoundTrip` | No successful contact with the control plane within the disconnect window. |
 | False    | `Connected` | The connection is alive. |
 
 ### `Authenticated`

@@ -37,16 +37,16 @@ import (
 var _ = Describe("Pull-mode job loop", Ordered, func() {
 	BeforeAll(func() {
 		skipUnlessKindAvailable()
-		deployMockOdoo()
+		deployMockControlPlane()
 		createPullLoopNamespaces()
 		deployOperatorWithAgent()
-		startMockOdooPortForward()
+		startMockControlPlanePortForward()
 	})
 
 	AfterAll(func() {
-		stopMockOdooPortForward()
+		stopMockControlPlanePortForward()
 		teardownPullLoopNamespaces()
-		teardownMockOdoo()
+		teardownMockControlPlane()
 		teardownOperatorWithAgent()
 	})
 
@@ -57,7 +57,7 @@ var _ = Describe("Pull-mode job loop", Ordered, func() {
 		applyClusterRegistrationCR()
 	})
 
-	It("applies jobs from mock Odoo through the deployed operator", func() {
+	It("applies jobs from mock control plane through the deployed operator", func() {
 		const (
 			appName        = "pull-loop-e2e-app"
 			jobID          = "job-e2e-pull-1"
@@ -114,7 +114,7 @@ var _ = Describe("Pull-mode job loop", Ordered, func() {
 		payload, err := json.Marshal(op)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("enqueueing backup operation apply job on mock Odoo")
+		By("enqueueing backup operation apply job on mock control plane")
 		Expect(mockOdooAdminClient.EnqueueJob(pullLoopClusterID, agent.Job{
 			ID:        jobID,
 			Kind:      "apply",

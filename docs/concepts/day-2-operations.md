@@ -1,7 +1,7 @@
 # Day-2 operations
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 Installing an application is the easy part. The hard part is everything that happens after: backups, restores, upgrades, migrations, rollbacks, configuration changes that need a maintenance window, and recovery from incidents. `vworkspace-operator` treats day-2 operations as **first-class resources**, expressed as `Operation` CRs (`ops.vworkspace.io/v1alpha1`) and executed by the appropriate proven controller. There is no separate scripting layer in Odoo, no SSH-into-a-cluster runbook, no per-application Python in the operator.
 

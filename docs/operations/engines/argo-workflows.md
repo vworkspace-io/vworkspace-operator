@@ -1,7 +1,7 @@
 # Engine: Argo Workflows
 
 **Status:** Alpha
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 Argo Workflows is the operator's engine for multi-step, branching, retry-aware day-2 work. The operator does not embed a workflow engine of its own; it materializes a `workflows.argoproj.io/v1alpha1` `Workflow`, lets the Argo controller run it, and aggregates the resulting status onto the matching `Operation`. The most common use is `type: Migration`, but the same engine backs operator-defined runbooks (`type: Runbook`) and any operation that benefits from a DAG.
 

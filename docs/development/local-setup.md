@@ -1,7 +1,7 @@
 # Local development setup
 
 **Status:** Alpha
-**Last Updated:** 2026-05-29
+**Last Updated:** 2026-05-30
 
 This page covers installing Go and running the operator test suite on a Linux workstation or self-hosted GitHub Actions runner. For CI runner isolation and parallel job layout, see [self-hosted-runner.md](self-hosted-runner.md).
 
@@ -86,15 +86,15 @@ make test
 
 `make test` runs code generation, `go fmt`, `go vet`, envtest-backed controller tests, and unit tests with coverage written to `cover.out`.
 
-## Run the mock Odoo server (Phase 1d)
+## Run the mock control plane server (Phase 1d)
 
-For Pull-mode development without real Odoo modules:
+For Pull-mode development without the vWorkspace Server control plane API:
 
 ```bash
-go run ./test/mockodoo/cmd/mockodoo -addr :8080
+go run ./test/mockcontrolplane/cmd/mockcontrolplane -addr :8080
 ```
 
-See [mock-odoo.md](mock-odoo.md) for endpoints and integration with the operator agent.
+See [mock-control-plane.md](mock-control-plane.md) for endpoints and integration with the operator agent.
 
 ## Dev container
 

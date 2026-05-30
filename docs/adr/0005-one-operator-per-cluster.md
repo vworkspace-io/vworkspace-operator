@@ -4,11 +4,11 @@
 
 ## Context
 
-The vWorkspace platform manages multiple clusters from a single Odoo control plane. The product's audience includes single-cluster homelab operators and multi-cluster organizations alike — a small business with one production cluster, a school with one staging and one production, an agency with one cluster per client engagement.
+The vWorkspace platform manages multiple clusters from a single vWorkspace Server control plane. The product's audience includes single-cluster homelab operators and multi-cluster organizations alike — a small business with one production cluster, a school with one staging and one production, an agency with one cluster per client engagement.
 
 A reasonable initial design would be a single, centralized operator that manages many clusters. The operator would hold credentials for each cluster's API server (or run as a multi-cluster controller via `kubeconfig`-per-cluster), reconcile CRDs that live in one place, and produce a unified status surface. This is the shape of fleet-management tools like Cluster API's management cluster pattern.
 
-A second design is one operator per cluster: each cluster runs its own copy of `vworkspace-operator`, reconciles CRDs on its own API server, and reports status to Odoo over the connectivity channel ([0003](0003-pull-mode-as-default-connectivity.md)). The operator is unaware of other clusters; it manages only the API it is running against.
+A second design is one operator per cluster: each cluster runs its own copy of `vworkspace-operator`, reconciles CRDs on its own API server, and reports status to the control plane over the connectivity channel ([0003](0003-pull-mode-as-default-connectivity.md)). The operator is unaware of other clusters; it manages only the API it is running against.
 
 The trade-offs:
 
@@ -16,7 +16,7 @@ The trade-offs:
 |---------------------------------------|----------------------------------------------------------------------------------------|----------------------------------------------------------------------------------|
 | Credential surface                    | The operator holds kubeconfigs for every cluster it manages. A compromise reaches them all. | Each cluster holds only its own credentials. A compromise is bounded.            |
 | Failure isolation                      | Operator failure affects every cluster it manages.                                      | Operator failure on one cluster does not affect others.                          |
-| Network requirements                   | Operator needs reachability to every cluster's API.                                     | Each cluster only needs outbound to Odoo (Pull) or inbound from Odoo (Push).      |
+| Network requirements                   | Operator needs reachability to every cluster's API.                                     | Each cluster only needs outbound to the control plane (Pull) or inbound from the control plane (Push).      |
 | Odoo-down behavior                     | Centralized operator typically lives in or near Odoo; an Odoo-region outage is severe.  | Each cluster reconciles autonomously when Odoo is unreachable.                   |
 | Per-cluster policy                     | Multi-tenancy inside the operator. Complex to get right; easy to leak across tenants.    | Each cluster has its own RBAC, its own admission webhook, its own policy.        |
 | Operator upgrade blast radius          | Bumping the operator's version touches every cluster simultaneously.                    | Each cluster upgrades independently; staged rollouts are natural.                  |
@@ -29,7 +29,7 @@ A centralized operator also couples cluster reconciliation to the operator's ava
 
 The resource cost of one-operator-per-cluster is real (an extra deployment per cluster) but small in absolute terms. Cluster footprint dominates: any cluster running vWorkspace applications is already running Flux, cert-manager, external-secrets, Velero, and the application workloads themselves; adding the operator is a rounding error.
 
-Multi-cluster operations (a DR migration that copies an application from cluster A to cluster B) are not lost in the one-per-cluster model; they are coordinated by Odoo. Odoo issues two `Operation` CRs (one on each cluster) and watches their statuses. The orchestration logic lives in Odoo, where it belongs — Odoo is the place a human declares intent — not in a cluster-local operator that happens to have access to two clusters.
+Multi-cluster operations (a DR migration that copies an application from cluster A to cluster B) are not lost in the one-per-cluster model; they are coordinated by Odoo. Odoo issues two `Operation` CRs (one on each cluster) and watches their statuses. The orchestration logic lives in Odoo, where it belongs — vWorkspace Server is the place a human declares intent — not in a cluster-local operator that happens to have access to two clusters.
 
 ## Decision
 
@@ -48,13 +48,13 @@ This decision is recorded here as a constraint that other decisions inherit. The
 
 **Bounded blast radius.** A compromised operator pod compromises one cluster, not a fleet. The credential blast radius is one cluster's bootstrap credential ([../security/authentication.md](../security/authentication.md)), not a kubeconfig collection.
 
-**Cluster autonomy.** The cluster's reconciliation loop runs whether Odoo is up or not. Applications stay up during Odoo outages. New intent waits until Odoo is reachable; existing desired state continues to reconcile. This is the explicit goal of the Pull-mode design.
+**Cluster autonomy.** The cluster's reconciliation loop runs whether Odoo is up or not. Applications stay up during control plane outages. New intent waits until the control plane is reachable; existing desired state continues to reconcile. This is the explicit goal of the Pull-mode design.
 
 **One operator version per cluster.** Each cluster has its own operator version. Staged rollouts and per-cluster pinning ([../operate/upgrades.md](../operate/upgrades.md)) are natural. An operator upgrade on one cluster does not affect any other.
 
 **Per-cluster RBAC and policy.** Each cluster has its own RBAC, its own admission webhook, its own allowed-namespaces list, its own allowed-operation-templates list. Multi-tenancy inside the operator is not a concern; the cluster is the tenancy boundary.
 
-**Odoo manages many clusters.** The fan-out from "one human declares intent" to "many clusters reconcile" lives in Odoo. The Cluster Registry in Odoo is the place an operator sees the fleet; the operator on each cluster is unaware of the others.
+**Odoo manages many clusters.** The fan-out from "one human declares intent" to "many clusters reconcile" lives in Odoo. The Cluster Registry in vWorkspace Server is the place an operator sees the fleet; the operator on each cluster is unaware of the others.
 
 **Cross-cluster work is coordinated centrally.** A DR migration between two clusters is two `Operation` CRs (on the source and the destination), watched by Odoo. The cluster-local operators do not talk to each other; they only talk to Odoo. This is appropriate: cross-cluster coordination is a control-plane concern, not a controller concern.
 

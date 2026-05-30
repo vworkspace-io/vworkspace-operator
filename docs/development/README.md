@@ -1,7 +1,7 @@
 # Development
 
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-05-30
 
 This chapter is the developer's reference for contributing to `vworkspace-operator`. The repository root's `CONTRIBUTING.md` covers the process (how to file issues, how to propose changes, DCO sign-off); this chapter expands on the engineering details a contributor needs once their PR has been triaged.
 

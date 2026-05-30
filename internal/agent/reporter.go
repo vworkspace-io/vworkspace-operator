@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// StatusReporter queues condition transition events for outbound delivery to Odoo.
+// StatusReporter queues condition transition events for outbound delivery to the control plane.
 type StatusReporter struct {
 	batcher *EventBatcher
 }

@@ -1,4 +1,4 @@
-package mockodoo_test
+package mockcontrolplane_test
 
 import (
 	"context"
@@ -10,14 +10,14 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
-	"github.com/vworkspace-io/vworkspace-operator/test/mockodoo"
+	"github.com/vworkspace-io/vworkspace-operator/test/mockcontrolplane"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestMockOdooRegister(t *testing.T) {
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.AddRegistrationToken("one-time", "cluster-prod-1")
 	server := httptest.NewServer(srv.Handler())
 	defer server.Close()
@@ -33,7 +33,7 @@ func TestMockOdooRegister(t *testing.T) {
 }
 
 func TestMockOdooJobAckAndResult(t *testing.T) {
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.SetBootstrapToken("cluster-1", "token-1")
 
 	app := &appsv1alpha1.ApplicationInstance{
@@ -106,7 +106,7 @@ func TestMockOdooJobAckAndResult(t *testing.T) {
 }
 
 func TestMockOdooPollerIntegration(t *testing.T) {
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.SetBootstrapToken("cluster-1", "token-1")
 
 	app := &appsv1alpha1.ApplicationInstance{
@@ -177,13 +177,13 @@ func TestMockOdooPollerIntegration(t *testing.T) {
 }
 
 func TestMockOdooAdminEnqueue(t *testing.T) {
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.SetBootstrapToken("cluster-1", "token-1")
 	srv.AdminToken = "admin-1"
 	server := httptest.NewServer(srv.Handler())
 	defer server.Close()
 
-	admin := mockodoo.NewAdminClient(server.URL, "admin-1", server.Client())
+	admin := mockcontrolplane.NewAdminClient(server.URL, "admin-1", server.Client())
 	if err := admin.EnqueueJob("cluster-1", agent.Job{
 		ID:   "job-admin-1",
 		Kind: "apply",
@@ -206,7 +206,7 @@ func TestMockOdooAdminEnqueue(t *testing.T) {
 }
 
 func TestMockOdooRejectsWrongCluster(t *testing.T) {
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.SetBootstrapToken("cluster-1", "token-1")
 	server := httptest.NewServer(srv.Handler())
 	defer server.Close()
@@ -225,7 +225,7 @@ func TestMockOdooRejectsWrongCluster(t *testing.T) {
 }
 
 func TestMockOdooEventDedup(t *testing.T) {
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.SetBootstrapToken("cluster-1", "token-1")
 	server := httptest.NewServer(srv.Handler())
 	defer server.Close()
@@ -260,7 +260,7 @@ func TestMockOdooEventDedup(t *testing.T) {
 }
 
 func TestMockOdooRotateCredentials(t *testing.T) {
-	srv := mockodoo.NewServer()
+	srv := mockcontrolplane.NewServer()
 	srv.SetBootstrapToken("cluster-1", "token-1")
 	server := httptest.NewServer(srv.Handler())
 	defer server.Close()
