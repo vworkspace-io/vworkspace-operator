@@ -65,7 +65,7 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
 | `rbac.create` | `true` | ClusterRole and ClusterRoleBinding |
 | `serviceAccount.create` | `true` | Dedicated ServiceAccount |
 
-See [charts/vworkspace-operator/values.yaml](../../charts/vworkspace-operator/values.yaml) for manager flags, resources, and scheduling.
+See [charts/vworkspace-operator/values.yaml](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/values.yaml) for manager flags, resources, and scheduling.
 
 ## CRD installation
 
@@ -167,4 +167,4 @@ helm template vworkspace-operator ./charts/vworkspace-operator \
 - [quickstart.md](quickstart.md) — Supported install path and validation steps.
 - [cluster-bootstrap.md](cluster-bootstrap.md) — Registration token flow on the control-plane side.
 - [container-images.md](container-images.md) — Published tags and registry secrets.
-- [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) — Chart maintainer notes.
+- [charts/vworkspace-operator/README.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/README.md) — Chart maintainer notes.

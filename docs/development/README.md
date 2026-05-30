@@ -26,7 +26,7 @@ If you find a contradiction between this chapter and `CONTRIBUTING.md`, `CONTRIB
 
 Phase 1 foundation code is on disk: CRD types under `api/apps/v1alpha1` and `api/ops/v1alpha1`, reconcilers under `internal/controller/`, Flux and operation engines, and a Pull-mode HTTP client stub. Admission webhooks, full agent job applier, and e2e coverage against kind are still in progress — see [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) for the sub-phase breakdown.
 
-The intended-vs-actual gap for later milestones (Argo CD adapter, workflow engines, webhooks) is tracked in [project-layout.md](project-layout.md) and [ROADMAP.md](../../ROADMAP.md).
+The intended-vs-actual gap for later milestones (Argo CD adapter, workflow engines, webhooks) is tracked in [project-layout.md](project-layout.md) and [ROADMAP.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/ROADMAP.md).
 
 ## Related material
 

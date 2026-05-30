@@ -98,7 +98,7 @@ See [mock-control-plane.md](mock-control-plane.md) for endpoints and integration
 
 ## Dev container
 
-The repository includes a [`.devcontainer/devcontainer.json`](../../.devcontainer/devcontainer.json) based on `golang:1.25` with Docker-in-Docker. Open the folder in VS Code or Cursor with Dev Containers to get Go, make, and kubectl tooling without a host install.
+The repository includes a [`.devcontainer/devcontainer.json`](https://github.com/vworkspace-io/vworkspace-operator/blob/main/.devcontainer/devcontainer.json)) based on `golang:1.25` with Docker-in-Docker. Open the folder in VS Code or Cursor with Dev Containers to get Go, make, and kubectl tooling without a host install.
 
 ## Troubleshooting
 

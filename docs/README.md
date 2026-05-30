@@ -3,7 +3,7 @@
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.  
 **Last Updated:** 2026-05-30
 
-This directory is the canonical documentation for **vworkspace-operator**, the cluster-side Kubernetes operator driven by **[vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server)** (the control plane). The repository [README](../README.md) is the short orientation; this index is suitable for browsing on GitHub or as the nav source for [GitHub Pages](publication.md).
+This directory is the canonical documentation for **vworkspace-operator**, the cluster-side Kubernetes operator driven by **[vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server)** (the control plane). The repository [README](https://github.com/vworkspace-io/vworkspace-operator/blob/main/README.md) is the short orientation; this index is suitable for browsing on GitHub or as the nav source for [GitHub Pages](publication.md).
 
 ## How to read these docs
 

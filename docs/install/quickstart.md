@@ -40,7 +40,7 @@ kubectl -n vworkspace-system rollout status deploy/vworkspace-operator --timeout
 ```
 
 Full values reference, upgrade path, and kind validation: [helm.md](helm.md).
-See [charts/vworkspace-operator/README.md](../../charts/vworkspace-operator/README.md) for chart maintainer notes.
+See [charts/vworkspace-operator/README.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/README.md) for chart maintainer notes.
 
 ### Option B — OCI chart (future release)
 

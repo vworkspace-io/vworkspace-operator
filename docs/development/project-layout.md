@@ -68,7 +68,7 @@ Pull-mode client implementing `FetchJobs`, `AckJob`, `ReportStatus`, `ReportResu
 
 ### `config/`
 
-See [config/README.md](../../config/README.md). CRD and RBAC YAML under `config/crd/` and `config/rbac/` are generated.
+See [config/README.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/config/README.md). CRD and RBAC YAML under `config/crd/` and `config/rbac/` are generated.
 
 ### `test/e2e/`
 

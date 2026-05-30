@@ -4,7 +4,7 @@
 **Last Updated:** 2026-05-30
 **Audience:** Engineers continuing vworkspace-operator development.
 
-This document breaks Phase 1 into continuable sub-phases, defines acceptance criteria, and explains how to resume work on any day. It complements [ROADMAP.md](../../ROADMAP.md) (milestones) and [project-layout.md](project-layout.md) (directory contract).
+This document breaks Phase 1 into continuable sub-phases, defines acceptance criteria, and explains how to resume work on any day. It complements [ROADMAP.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/ROADMAP.md) (milestones) and [project-layout.md](project-layout.md) (directory contract).
 
 ## Source of truth
 
@@ -310,7 +310,7 @@ make run            # optional, against kind
 
 ### Git tags
 
-- Pre-release tags: `v0.0.x` aligned with [ROADMAP.md](../../ROADMAP.md).
+- Pre-release tags: `v0.0.x` aligned with [ROADMAP.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/ROADMAP.md).
 - Container image tag matches git tag on release.
 
 ### Feature flags
@@ -444,7 +444,7 @@ Run everything: `make test`.
 - [ ] End-to-end install: vWorkspace Server registers a cluster; operator deploys an app via Pull mode without the in-repo mock.
 - [ ] Published doc site on GitHub Pages.
 
-See [ROADMAP.md](../../ROADMAP.md) Phase 3 for milestone dates.
+See [ROADMAP.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/ROADMAP.md) Phase 3 for milestone dates.
 
 ## Phase 1f next session (suggested)
 

@@ -17,6 +17,6 @@
 
 ## Stability
 
-The CRDs and the surrounding API surface (labels, annotations, condition types and reasons, admission rules) are versioned together. The `v1alpha1` label is a deliberate signal: the project will iterate on the schema and the validation rules through several alphas before promoting to `v1beta1` and then `v1`. Pin operator versions in production and read the repository [CHANGELOG](../../CHANGELOG.md) before upgrading.
+The CRDs and the surrounding API surface (labels, annotations, condition types and reasons, admission rules) are versioned together. The `v1alpha1` label is a deliberate signal: the project will iterate on the schema and the validation rules through several alphas before promoting to `v1beta1` and then `v1`. Pin operator versions in production and read the repository [CHANGELOG](https://github.com/vworkspace-io/vworkspace-operator/blob/main/CHANGELOG.md) before upgrading.
 
 For the conceptual treatment of *why* the API surface is two CRDs and a status vocabulary, see [../concepts/crds.md](../concepts/crds.md).

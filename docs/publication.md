@@ -6,7 +6,7 @@ This repository publishes English documentation with [MkDocs Material](https://s
 
 **https://operator.docs.vworkspace.io/**
 
-Source Markdown lives under [`docs/`](README.md). The site is built on every push to `main` by [`.github/workflows/docs.yml`](../.github/workflows/docs.yml).
+Source Markdown lives under [`docs/`](README.md). The site is built on every push to `main` by [`.github/workflows/docs.yml`](https://github.com/vworkspace-io/vworkspace-operator/blob/main/.github/workflows/docs.yml)).
 
 ## URL strategy
 
@@ -55,7 +55,7 @@ Notes:
 - Do not use a path in DNS; paths are an application/hub concern.
 - Propagation may take minutes up to 48 hours.
 
-Keep [`docs/CNAME`](CNAME) and `site_url` in [`mkdocs.yml`](../mkdocs.yml) in sync with the hostname you configure in GitHub.
+Keep [`docs/CNAME`](CNAME) and `site_url` in [`mkdocs.yml`](https://github.com/vworkspace-io/vworkspace-operator/blob/main/mkdocs.yml)) in sync with the hostname you configure in GitHub.
 
 ### 2. GitHub repository settings (`vworkspace-io/vworkspace-operator`)
 
@@ -92,10 +92,10 @@ mkdocs build --strict
 
 | File | Purpose |
 |------|---------|
-| [`mkdocs.yml`](../mkdocs.yml) | Site name, `site_url`, theme, navigation |
+| [`mkdocs.yml`](https://github.com/vworkspace-io/vworkspace-operator/blob/main/mkdocs.yml)) | Site name, `site_url`, theme, navigation |
 | [`docs/CNAME`](CNAME) | Custom domain file copied into the built site root |
-| [`requirements-docs.txt`](../requirements-docs.txt) | MkDocs Material dependency |
-| [`.github/workflows/docs.yml`](../.github/workflows/docs.yml) | Build on push to `main`, deploy via GitHub Pages |
+| [`requirements-docs.txt`](https://github.com/vworkspace-io/vworkspace-operator/blob/main/requirements-docs.txt)) | MkDocs Material dependency |
+| [`.github/workflows/docs.yml`](https://github.com/vworkspace-io/vworkspace-operator/blob/main/.github/workflows/docs.yml)) | Build on push to `main`, deploy via GitHub Pages |
 
 The workflow uses `actions/upload-pages-artifact` and `actions/deploy-pages` with the `github-pages` environment — no `gh-pages` branch is required.
 
@@ -103,7 +103,7 @@ The workflow uses `actions/upload-pages-artifact` and `actions/deploy-pages` wit
 
 - Use relative paths for in-repo doc links (`../connectivity/pull-mode.md`) so they work on GitHub and on MkDocs.
 - Cross-repo links to [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) and [vworkspace](https://github.com/vworkspace-io/vworkspace) use full GitHub URLs.
-- The root [README](../README.md) includes a badge to the live docs URL once Pages is configured.
+- The root [README](https://github.com/vworkspace-io/vworkspace-operator/blob/main/README.md)) includes a badge to the live docs URL once Pages is configured.
 
 ## Troubleshooting
 
