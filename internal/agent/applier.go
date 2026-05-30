@@ -271,7 +271,7 @@ func (a *Applier) ensureManagedLabels(obj *unstructured.Unstructured) {
 	if labelsMap == nil {
 		labelsMap = map[string]string{}
 	}
-	labelsMap[labels.ManagedByKey] = labels.ManagedByOdoo
+	labelsMap[labels.ManagedByKey] = labels.ManagedByControlPlane
 	if a.ClusterID != "" {
 		labelsMap[labels.ClusterIDKey] = a.ClusterID
 	}
@@ -283,7 +283,7 @@ func (a *Applier) ensureManagedLabelsOnTyped(obj metav1.Object) {
 	if labelsMap == nil {
 		labelsMap = map[string]string{}
 	}
-	labelsMap[labels.ManagedByKey] = labels.ManagedByOdoo
+	labelsMap[labels.ManagedByKey] = labels.ManagedByControlPlane
 	if a.ClusterID != "" {
 		labelsMap[labels.ClusterIDKey] = a.ClusterID
 	}

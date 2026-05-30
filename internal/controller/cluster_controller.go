@@ -126,9 +126,9 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := clientForHeartbeat.Heartbeat(ctx); err != nil {
 		log.Error(err, "heartbeat failed")
 		agent.SetConnectivityState("pull", -1)
-		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "OdooUnreachable", err.Error())
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "ControlPlaneUnreachable", err.Error())
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionDisconnected, metav1.ConditionTrue, "NoRecentRoundTrip", err.Error())
-		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "OdooAuthenticationFailed", err.Error())
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "ControlPlaneAuthenticationFailed", err.Error())
 	} else {
 		now := metav1.Now()
 		cluster.Status.LastHeartbeat = &now
@@ -224,9 +224,9 @@ func (r *ClusterReconciler) reportConditions(cluster *opsv1alpha1.Cluster, prev 
 }
 
 func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1alpha1.Cluster, token, secretName, namespace string) error {
-	baseURL := strings.TrimSpace(cluster.Spec.OdooBaseURL)
+	baseURL := strings.TrimSpace(cluster.Spec.ControlPlaneBaseURL)
 	if baseURL == "" {
-		return fmt.Errorf("spec.odooBaseUrl (control plane base URL) is required for registration")
+		return fmt.Errorf("spec.controlPlaneBaseUrl is required for registration")
 	}
 
 	regClient := r.RegistrationClient
@@ -268,7 +268,7 @@ func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1a
 		RegistrationTokenConsumed: true,
 	}
 	fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionTrue, "RegistrationComplete", "registration token exchanged for bootstrap credential")
-	fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "OdooReachable", "registration exchange succeeded")
+	fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "ControlPlaneReachable", "registration exchange succeeded")
 	return r.Status().Update(ctx, fresh)
 }
 

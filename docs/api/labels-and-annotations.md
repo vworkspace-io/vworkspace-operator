@@ -15,12 +15,12 @@ Labels are used for selection and ownership. The operator reads all three, write
 
 **Required on `ApplicationInstance` and `Operation`. Required on namespaces the operator is allowed to act in (as `managed-by=vworkspace`, see below for the namespace gate exception). Optional on downstream resources, where the operator writes it for clarity.**
 
-| Value      | Meaning |
-|------------|---------|
-| `odoo`     | Odoo is the upstream source of intent for this resource. The operator only acts on `ApplicationInstance` and `Operation` resources carrying this label. |
+| Value            | Meaning |
+|------------------|---------|
+| `control-plane`  | The control plane is the upstream source of intent for this resource. The operator only acts on `ApplicationInstance` and `Operation` resources carrying this label. |
 | `vworkspace` | Used on namespaces as the namespace gate (see below). |
 
-Resources without `app.vworkspace.io/managed-by=odoo` are ignored by the operator's reconcilers. This is the bright line that distinguishes "things Odoo asked for" from "things a human or another system created."
+Resources without `app.vworkspace.io/managed-by=control-plane` are ignored by the operator's reconcilers. This is the bright line that distinguishes "things Odoo asked for" from "things a human or another system created."
 
 ### `app.vworkspace.io/cluster-id`
 
@@ -65,7 +65,7 @@ This is a *label*, not an annotation, and the key is bare `managed-by` (not `app
 - **Required.** The operator's RBAC profile gives it permissions only in namespaces matching `managed-by=vworkspace`. Apply attempts in other namespaces are rejected by the admission webhook with reason `NamespaceNotGated`.
 - **Set by.** The cluster admin or the install bundle. The operator does not create, label, or relabel namespaces itself.
 
-If you also see `app.vworkspace.io/managed-by=odoo` on a namespace, treat it as informational (some operators set it to reflect that Odoo is the source of intent for the namespace); the namespace gate that actually grants the operator permissions is `managed-by=vworkspace`.
+If you also see `app.vworkspace.io/managed-by=control-plane` on a namespace, treat it as informational (some operators set it to reflect that Odoo is the source of intent for the namespace); the namespace gate that actually grants the operator permissions is `managed-by=vworkspace`.
 
 ## Annotations
 
@@ -103,7 +103,7 @@ These are not configuration; do not edit them by hand.
 
 | Item                                              | Where                              | Required? |
 |---------------------------------------------------|------------------------------------|-----------|
-| `app.vworkspace.io/managed-by=odoo` (label)        | `ApplicationInstance`, `Operation` | Required  |
+| `app.vworkspace.io/managed-by=control-plane` (label)        | `ApplicationInstance`, `Operation` | Required  |
 | `app.vworkspace.io/cluster-id=<id>` (label)        | `ApplicationInstance`, `Operation` | Required  |
 | `app.vworkspace.io/application-instance=<name>` (label) | Downstream resources of an `ApplicationInstance` | Written by operator |
 | `managed-by=vworkspace` (label on namespace)       | Operator-managed namespaces        | Required  |

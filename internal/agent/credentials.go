@@ -14,12 +14,10 @@ const (
 	// DefaultCredentialsSecret is the Secret name used when --agent-credentials-secret is set without a namespace.
 	DefaultCredentialsSecret = "vworkspace-agent-credentials"
 
-	// SecretKeyControlPlaneBaseURL is the preferred Secret data key for the control plane HTTPS base URL.
+	// SecretKeyControlPlaneBaseURL is the Secret data key for the control plane HTTPS base URL.
 	SecretKeyControlPlaneBaseURL = "control-plane-base-url"
-	// SecretKeyOdooBaseURL is a deprecated alias for SecretKeyControlPlaneBaseURL.
-	SecretKeyOdooBaseURL = "odoo-base-url"
-	SecretKeyClusterID   = "cluster-id"
-	SecretKeyToken       = "token"
+	SecretKeyClusterID           = "cluster-id"
+	SecretKeyToken               = "token"
 )
 
 // Credentials holds Pull-mode connectivity material.
@@ -87,8 +85,5 @@ func baseURLFromSecretData(data map[string][]byte) string {
 	if data == nil {
 		return ""
 	}
-	if v := strings.TrimSpace(string(data[SecretKeyControlPlaneBaseURL])); v != "" {
-		return v
-	}
-	return strings.TrimSpace(string(data[SecretKeyOdooBaseURL]))
+	return strings.TrimSpace(string(data[SecretKeyControlPlaneBaseURL]))
 }

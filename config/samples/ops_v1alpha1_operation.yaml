@@ -4,7 +4,7 @@ metadata:
   name: nextcloud-myteam-backup
   namespace: org-myteam
   labels:
-    app.vworkspace.io/managed-by: odoo
+    app.vworkspace.io/managed-by: control-plane
     app.vworkspace.io/cluster-id: cluster-prod-1
     app.vworkspace.io/application-instance: nextcloud-myteam
 spec:
@@ -24,4 +24,4 @@ metadata:
   name: cluster-prod-1
 spec:
   clusterId: cluster-prod-1
-  odooBaseUrl: https://odoo.example.com
+  controlPlaneBaseUrl: https://control-plane.example.com

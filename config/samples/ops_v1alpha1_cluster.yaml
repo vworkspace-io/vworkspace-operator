@@ -5,5 +5,5 @@ metadata:
   namespace: vworkspace-system
 spec:
   clusterId: cluster-prod-1
-  odooBaseUrl: https://workspace.example.org
+  controlPlaneBaseUrl: https://workspace.example.org
   registrationToken: vwksp-reg-REPLACE_ME

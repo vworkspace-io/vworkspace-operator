@@ -22,7 +22,7 @@ clusters/
         operation-nextcloud-myteam-backup-2026-05-28.yaml
 ```
 
-Each manifest carries the same labels as in any other mode (`app.vworkspace.io/managed-by=odoo`, `app.vworkspace.io/cluster-id=<id>`) so the operator can recognize Odoo-owned objects regardless of who applied them.
+Each manifest carries the same labels as in any other mode (`app.vworkspace.io/managed-by=control-plane`, `app.vworkspace.io/cluster-id=<id>`) so the operator can recognize Odoo-owned objects regardless of who applied them.
 
 ## How the cluster syncs
 

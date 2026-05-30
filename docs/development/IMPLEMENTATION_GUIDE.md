@@ -317,7 +317,7 @@ make run            # optional, against kind
 
 | Flag / env | Purpose |
 |------------|---------|
-| `--control-plane-base-url` (alias: `--control-plane-base-url`) / `CONTROL_PLANE_BASE_URL` | Odoo host for Pull-mode |
+| `--control-plane-base-url` / `CONTROL_PLANE_BASE_URL` | Control plane host for Pull-mode |
 | `--agent-token` / `VWORKSPACE_AGENT_TOKEN` | Bearer token |
 | `--cluster-id` / `VWORKSPACE_CLUSTER_ID` | Cluster identity |
 | `--agent-enabled` | Start long-poll job loop |
@@ -440,7 +440,7 @@ Run everything: `make test`.
 
 **Acceptance criteria**
 
-- [x] Operator docs and CLI use "control plane" / vWorkspace Server naming; deprecated Odoo-named flags remain as aliases.
+- [x] Operator docs and CLI use "control plane" / vWorkspace Server naming; Odoo-named compatibility aliases removed pre-1.0.
 - [ ] End-to-end install: vWorkspace Server registers a cluster; operator deploys an app via Pull mode without the in-repo mock.
 - [ ] Published doc site on GitHub Pages.
 

@@ -31,7 +31,7 @@ Operator                Odoo               Cluster                Flux Helm
    |                      |                     |                     |
    | 4. Server-side apply ApplicationInstance to local API server     |
    |    fieldManager: vworkspace-operator                              |
-   |    labels: app.vworkspace.io/managed-by=odoo,                    |
+   |    labels: app.vworkspace.io/managed-by=control-plane,                    |
    |            app.vworkspace.io/cluster-id=cluster-prod-1            |
    |----------------------------------------->|                     |
    |          201 Created (or 200 OK on update)                       |

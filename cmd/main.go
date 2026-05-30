@@ -76,7 +76,6 @@ func main() {
 	var enableHTTP2 bool
 	var clusterID string
 	var controlPlaneBaseURL string
-	var odooBaseURLDeprecated string
 	var agentToken string
 	var agentEnabled bool
 	var agentPollInterval time.Duration
@@ -102,11 +101,9 @@ func main() {
 	flag.StringVar(
 		&controlPlaneBaseURL,
 		"control-plane-base-url",
-		firstNonEmpty(os.Getenv("CONTROL_PLANE_BASE_URL"), os.Getenv("ODOO_BASE_URL")),
+		os.Getenv("CONTROL_PLANE_BASE_URL"),
 		"HTTPS base URL of the vWorkspace Server control plane for Pull-mode connectivity.",
 	)
-	flag.StringVar(&odooBaseURLDeprecated, "odoo-base-url", os.Getenv("ODOO_BASE_URL"),
-		"Deprecated: use --control-plane-base-url. Odoo/vWorkspace Server base URL for Pull-mode connectivity.")
 	flag.StringVar(&agentToken, "agent-token", os.Getenv("VWORKSPACE_AGENT_TOKEN"),
 		"Bearer token for Pull-mode agent API.")
 	flag.BoolVar(&agentEnabled, "agent-enabled", false,
@@ -114,7 +111,7 @@ func main() {
 	flag.DurationVar(&agentPollInterval, "agent-poll-interval", 30*time.Second,
 		"Long-poll wait duration when fetching jobs from the control plane.")
 	flag.StringVar(&agentCredentialsSecret, "agent-credentials-secret", agent.DefaultCredentialsSecret,
-		"Kubernetes Secret name containing control-plane-base-url (or odoo-base-url), cluster-id, and token keys.")
+		"Kubernetes Secret name containing control-plane-base-url, cluster-id, and token keys.")
 	flag.StringVar(&agentCredentialsNamespace, "agent-credentials-namespace", os.Getenv("POD_NAMESPACE"),
 		"Namespace of the agent credentials Secret.")
 	flag.BoolVar(&enableWebhooks, "webhooks-enabled", false, "Enable validating admission webhooks.")
@@ -124,9 +121,6 @@ func main() {
 	flag.Parse()
 
 	resolvedControlPlaneBaseURL := strings.TrimSpace(controlPlaneBaseURL)
-	if resolvedControlPlaneBaseURL == "" {
-		resolvedControlPlaneBaseURL = strings.TrimSpace(odooBaseURLDeprecated)
-	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -317,13 +311,4 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
 }

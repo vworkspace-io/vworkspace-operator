@@ -33,10 +33,9 @@ type ClusterSpec struct {
 	// ClusterID is the stable identity registered with the control plane.
 	// +optional
 	ClusterID string `json:"clusterId,omitempty"`
-	// OdooBaseURL is the HTTPS base URL for Pull-mode connectivity to vWorkspace Server.
-	// Prefer documenting this field as the control plane base URL; JSON name odooBaseUrl is retained for compatibility.
+	// ControlPlaneBaseURL is the HTTPS base URL for Pull-mode connectivity to vWorkspace Server.
 	// +optional
-	OdooBaseURL string `json:"odooBaseUrl,omitempty"`
+	ControlPlaneBaseURL string `json:"controlPlaneBaseUrl,omitempty"`
 	// RegistrationToken is a one-time token exchanged for a long-lived credential.
 	// Cleared from the spec after successful registration.
 	// +optional
@@ -49,7 +48,7 @@ type ClusterSpec struct {
 
 // ClusterCredentialStatus reports bootstrap credential materialization.
 type ClusterCredentialStatus struct {
-	// SecretName is the Kubernetes Secret holding control-plane-base-url (or odoo-base-url), cluster-id, and token.
+	// SecretName is the Kubernetes Secret holding control-plane-base-url, cluster-id, and token.
 	SecretName string `json:"secretName,omitempty"`
 	// SecretNamespace is the namespace of the credentials Secret.
 	SecretNamespace string `json:"secretNamespace,omitempty"`

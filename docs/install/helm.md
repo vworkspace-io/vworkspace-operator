@@ -87,7 +87,7 @@ After `helm install`, the operator is running but not yet connected to Odoo.
    kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
      /manager register \
        --token=<one-time-token> \
-       --odoo-endpoint=https://workspace.example.org \
+       --control-plane-endpoint=https://workspace.example.org \
        --cluster-name=cluster-prod-1
    ```
 
