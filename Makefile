@@ -101,6 +101,10 @@ validate-helm-kind: ## Validate Helm chart install on kind (see hack/validate-he
 	chmod +x hack/validate-helm-kind.sh
 	./hack/validate-helm-kind.sh
 
+.PHONY: test-integration-real
+test-integration-real: ## Live vWorkspace Server smoke test (-tags=integration; needs CONTROL_PLANE_BASE_URL + VWORKSPACE_REGISTRATION_TOKEN)
+	go test -tags=integration ./test/integration/... -run TestRealControlPlane -count=1 -v
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	"$(GOLANGCI_LINT)" run

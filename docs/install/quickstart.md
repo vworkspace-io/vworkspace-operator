@@ -42,6 +42,16 @@ kubectl -n vworkspace-system rollout status deploy/vworkspace-operator --timeout
 Full values reference, upgrade path, and kind validation: [helm.md](helm.md).
 See [charts/vworkspace-operator/README.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/README.md) for chart maintainer notes.
 
+### Option: real vWorkspace Server
+
+For local development against the [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) docker-compose stack (not the in-repo mock):
+
+1. Start the server: `make up && make init-db` in the server repo ([DEV_ENVIRONMENT.md](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/development/DEV_ENVIRONMENT.md)).
+2. Issue a registration token in **Cluster Registry**.
+3. Run `./hack/dev-real-control-plane.sh` for `CONTROL_PLANE_BASE_URL`, register, and Helm agent flags (kind on Linux needs the host gateway IP — see [../development/real-control-plane.md](../development/real-control-plane.md)).
+
+Use the mock control plane instead when you do not need Odoo: [../development/mock-control-plane.md](../development/mock-control-plane.md).
+
 ### Option B — OCI chart (future release)
 
 ```

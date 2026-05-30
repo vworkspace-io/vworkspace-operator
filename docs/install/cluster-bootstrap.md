@@ -15,7 +15,8 @@ Provision the cluster on whichever substrate you run. The supported substrates a
 
 - A Kubernetes cluster at version 1.28 or newer.
 - A working `kubeconfig` on the admin's machine pointing at the cluster.
-- The prerequisites in [prerequisites.md](prerequisites.md) (default StorageClass, ingress controller of your choice, egress to Odoo).
+- The prerequisites in [prerequisites.md](prerequisites.md) (default StorageClass, ingress controller of your choice, egress to the control plane).
+- **Velero** (optional but required for backup `Operation` CRs): install Velero and its CRDs in the cluster before requesting `backup.velero` / `restore.velero` operations from the control plane. The in-repo Helm chart does not bundle Velero — see [prerequisites.md](prerequisites.md#bundled-components-you-can-opt-out-of) and [../operations/engines/velero.md](../operations/engines/velero.md). E2e can install Velero CRDs when `E2E_INSTALL_VELERO=true`.
 
 Sanity check:
 

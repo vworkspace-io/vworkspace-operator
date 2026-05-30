@@ -13,8 +13,10 @@ The reader is assumed to be a Go developer who has read the [concepts chapter](.
 2. [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) — Phase 1 handoff: sub-phases, acceptance criteria, dependency order, rollback strategy, and what to pick up next.
 3. [project-layout.md](project-layout.md) — The Kubebuilder Go layout and where vWorkspace-specific packages live.
 4. [build-and-test.md](build-and-test.md) — Make targets and concrete commands. `make manifests`, `make generate`, `make fmt vet`, `make test`, `make docker-build`, `make deploy`, `make undeploy`. Running unit tests, envtest, and e2e tests against kind.
-5. [release-process.md](release-process.md) — SemVer pre-1.0; signed tags; container image publishing; OCI Helm chart releases; `CHANGELOG.md`; Release-Please-like vs hand-curated options; CRD conversion-webhook discipline for breaking changes.
-6. [coding-style.md](coding-style.md) — Go style: `gofmt`, `goimports`, `golangci-lint`. Naming. Logging fields. Reflection. Test layout. Conventional commits.
+5. [mock-control-plane.md](mock-control-plane.md) — In-repo mock agent API for CI and offline dev.
+6. [real-control-plane.md](real-control-plane.md) — vWorkspace Server docker-compose and kind networking for Phase 3.
+7. [release-process.md](release-process.md) — SemVer pre-1.0; signed tags; container image publishing; OCI Helm chart releases; `CHANGELOG.md`; Release-Please-like vs hand-curated options; CRD conversion-webhook discipline for breaking changes.
+8. [coding-style.md](coding-style.md) — Go style: `gofmt`, `goimports`, `golangci-lint`. Naming. Logging fields. Reflection. Test layout. Conventional commits.
 
 ## How this chapter differs from `CONTRIBUTING.md`
 
