@@ -102,7 +102,6 @@ apiVersion: ops.vworkspace.io/v1alpha1
 kind: Cluster
 metadata:
   name: cluster-prod-1
-  namespace: vworkspace-system
 spec:
   clusterId: cluster-prod-1
   controlPlaneBaseUrl: https://workspace.example.org
@@ -115,7 +114,7 @@ The operator's `Cluster` reconciler picks up the CR, calls `POST /api/agent/regi
 Watch the exchange:
 
 ```
-kubectl get cluster -n vworkspace-system cluster-prod-1 -o yaml | grep -A5 conditions:
+kubectl get cluster cluster-prod-1 -o yaml | grep -A5 conditions:
 ```
 
 You expect to see `Connected: True` with reason `ControlPlaneReachable` within a minute.

@@ -281,12 +281,11 @@ func applyClusterRegistrationCR() {
 kind: Cluster
 metadata:
   name: %s
-  namespace: %s
 spec:
   clusterId: %s
   controlPlaneBaseUrl: %s
   registrationToken: %s
-`, pullLoopClusterID, vworkspaceSystemNS, pullLoopClusterID, mockOdooServiceURL(), pullLoopRegistrationTok)
+`, pullLoopClusterID, pullLoopClusterID, mockOdooServiceURL(), pullLoopRegistrationTok)
 	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed())
 
 	Eventually(func(g Gomega) {

@@ -48,8 +48,7 @@ func TestClusterReconcilerRegistration(t *testing.T) {
 
 	cluster := &opsv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cluster-prod-1",
-			Namespace: "vworkspace-system",
+			Name: "cluster-prod-1",
 		},
 		Spec: opsv1alpha1.ClusterSpec{
 			ClusterID:           "cluster-prod-1",
@@ -77,12 +76,12 @@ func TestClusterReconcilerRegistration(t *testing.T) {
 		OperatorNamespace:  "vworkspace-system",
 	}
 
-	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name}}); err != nil {
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
 
 	updated := &opsv1alpha1.Cluster{}
-	if err := cl.Get(context.Background(), types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name}, updated); err != nil {
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
 		t.Fatalf("get cluster: %v", err)
 	}
 	if updated.Spec.RegistrationToken != "" {

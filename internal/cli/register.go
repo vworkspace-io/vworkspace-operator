@@ -24,8 +24,7 @@ func RunRegister(args []string) error {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	token := fs.String("token", "", "One-time registration token from the control plane (required)")
 	controlPlaneURL := fs.String("control-plane-endpoint", "", "Control plane HTTPS base URL (required unless CONTROL_PLANE_BASE_URL is set)")
-	clusterName := fs.String("cluster-name", "", "Cluster resource name (defaults to cluster ID from the control plane after registration)")
-	namespace := fs.String("namespace", envOr("POD_NAMESPACE", "vworkspace-system"), "Namespace for the Cluster CR")
+	clusterName := fs.String("cluster-name", "", "Cluster resource name (defaults to cluster-local)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -56,9 +55,12 @@ func RunRegister(args []string) error {
 	}
 
 	cluster := &opsv1alpha1.Cluster{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: opsv1alpha1.GroupVersion.String(),
+			Kind:       "Cluster",
+		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      *clusterName,
-			Namespace: *namespace,
+			Name: *clusterName,
 		},
 		Spec: opsv1alpha1.ClusterSpec{
 			ClusterID:           strings.TrimSpace(*clusterName),
@@ -75,7 +77,7 @@ func RunRegister(args []string) error {
 	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
 		latest := &opsv1alpha1.Cluster{}
-		if err := k8s.Get(context.Background(), client.ObjectKeyFromObject(cluster), latest); err != nil {
+		if err := k8s.Get(context.Background(), client.ObjectKey{Name: cluster.Name}, latest); err != nil {
 			return fmt.Errorf("get Cluster CR: %w", err)
 		}
 		if latest.Status.CredentialStatus != nil && latest.Status.CredentialStatus.RegistrationTokenConsumed {
