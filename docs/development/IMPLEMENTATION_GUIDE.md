@@ -410,7 +410,7 @@ Run everything: `make test`.
 |-------------|------|--------|
 | BufferOverflow Cluster condition | `internal/agent/events.go`, `internal/controller/cluster_controller.go` | Done |
 | Credential age metric | `internal/agent/metrics.go`, `internal/agent/credentials_store.go` | Done |
-| Helm Cluster CRD sync (`rotateCredentials`) | `charts/vworkspace-operator/crds/ops.vworkspace.io_clusters.yaml` | Done |
+| Helm Cluster CRD sync (`rotateCredentials`) | `charts/vworkspace-operator/files/crds/ops.vworkspace.io_clusters.yaml` | Done |
 | E2E status events on mock control plane | `test/e2e/pull_loop_test.go`, `test/mockcontrolplane/admin.go` | Done |
 | Unit tests | `internal/agent/events_test.go`, `internal/agent/metrics_test.go` | Done |
 | Documentation | this guide, CHANGELOG, observability, conditions | Done |

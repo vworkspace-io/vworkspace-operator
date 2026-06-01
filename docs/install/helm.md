@@ -57,7 +57,7 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
 | `image.tag` | Chart `appVersion` | Image tag (`latest` for CI-published builds on `main`) |
 | `image.pullPolicy` | `IfNotPresent` | Kubernetes pull policy |
 | `replicaCount` | `1` | Manager Deployment replicas |
-| `crds.install` | `true` | Render CRDs from `crds/` via chart template |
+| `crds.install` | `true` | Render CRDs from `files/crds/` via chart template |
 | `agent.enabled` | `false` | Start Pull-mode job poller |
 | `agent.controlPlaneBaseUrl` | `https://odoo.example.org` | control plane base URL (flag `--control-plane-base-url` (alias: `--control-plane-base-url`)) |
 | `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret with `token`, `cluster-id`, `control-plane-base-url` |
@@ -69,12 +69,12 @@ See [charts/vworkspace-operator/values.yaml](https://github.com/vworkspace-io/vw
 
 ## CRD installation
 
-CRDs ship under `charts/vworkspace-operator/crds/` and are applied when `crds.install=true` through `templates/crds.yaml` (Helm template glob). This matches the Phase 1d-b pattern: one release installs CRDs and the Deployment together.
+CRDs ship under `charts/vworkspace-operator/files/crds/` (not Helm's reserved `crds/` folder) and are applied when `crds.install=true` through `templates/crds.yaml`. Using `files/crds/` avoids Helm installing CRDs twice — once without release ownership and again via the template — which fails with invalid ownership metadata on fresh clusters.
 
 To manage CRDs outside Helm (GitOps or cluster bootstrap), set `crds.install=false` and apply CRDs separately:
 
 ```bash
-kubectl apply -f charts/vworkspace-operator/crds/
+kubectl apply -f charts/vworkspace-operator/files/crds/
 ```
 
 ## Post-install: register and enable agent
@@ -127,7 +127,7 @@ helm uninstall vworkspace-operator -n vworkspace-system
 CRDs installed by the chart are not removed automatically. Delete them explicitly if decommissioning the cluster:
 
 ```bash
-kubectl delete -f charts/vworkspace-operator/crds/ --ignore-not-found
+kubectl delete -f charts/vworkspace-operator/files/crds/ --ignore-not-found
 ```
 
 ## Local validation on kind

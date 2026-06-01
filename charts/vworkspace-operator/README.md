@@ -35,12 +35,12 @@ Validate on kind:
 | `agent.enabled` | `false` | Enable Pull-mode job poller |
 | `agent.controlPlaneBaseUrl` | `https://odoo.example.org` | Odoo or mock control plane base URL |
 | `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret for agent bearer token |
-| `crds.install` | `true` | Install CRDs from `crds/` |
+| `crds.install` | `true` | Install CRDs from `files/crds/` |
 
 See [values.yaml](values.yaml) for the full list.
 
 ## Notes
 
 - This chart installs **only** the vworkspace-operator controller. Flux, Velero, cert-manager, and other prerequisites remain separate ([prerequisites.md](../../docs/install/prerequisites.md)).
-- CRD files are copied from `config/crd/bases/` during chart maintenance; run `make manifests` before refreshing chart CRDs.
+- CRD files live under `files/crds/` (not Helm's reserved `crds/` directory) and are copied from `config/crd/bases/` during chart maintenance; run `make manifests` before refreshing chart CRDs.
 - Post-install hints are rendered in `templates/NOTES.txt`.
