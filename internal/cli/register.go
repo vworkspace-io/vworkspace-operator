@@ -114,12 +114,5 @@ func restConfig() (*rest.Config, error) {
 	return kubeConfig.ClientConfig()
 }
 
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
 // Ensure agent package is linked for credential constant reference in docs.
 var _ = agent.DefaultCredentialsSecret
