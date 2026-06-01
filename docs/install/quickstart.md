@@ -92,7 +92,6 @@ apiVersion: ops.vworkspace.io/v1alpha1
 kind: Cluster
 metadata:
   name: cluster-prod-1
-  namespace: vworkspace-system
 spec:
   clusterId: cluster-prod-1
   controlPlaneBaseUrl: https://workspace.example.org
