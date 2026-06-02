@@ -110,6 +110,50 @@ func TestPullLoopApplyReconcileAndReport(t *testing.T) {
 	}
 }
 
+func TestPullLoopApplyCreatesTargetNamespace(t *testing.T) {
+	ts := mockcontrolplane.NewTestServer()
+	defer ts.Close()
+	ts.SetBootstrapToken(testClusterID, testToken)
+
+	const targetNS = "apps"
+	app := sampleApplicationInstance("pull-loop-ns", targetNS)
+	payload, err := json.Marshal(app)
+	if err != nil {
+		t.Fatalf("marshal app: %v", err)
+	}
+	ts.EnqueueJob(testClusterID, agent.Job{
+		ID:        "job-pull-ns",
+		Kind:      "apply",
+		Payload:   payload,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+
+	cl, scheme := newPullLoopClient(t)
+	httpClient, err := ts.NewAgentClient(testClusterID, testToken)
+	if err != nil {
+		t.Fatalf("NewAgentClient: %v", err)
+	}
+	poller := &agent.AgentPoller{
+		Client: httpClient,
+		Applier: &agent.Applier{
+			Client:    cl,
+			Scheme:    scheme,
+			ClusterID: testClusterID,
+		},
+	}
+	if err := poller.PollOnce(context.Background()); err != nil {
+		t.Fatalf("PollOnce: %v", err)
+	}
+
+	ns := &corev1.Namespace{}
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: targetNS}, ns); err != nil {
+		t.Fatalf("get namespace %q: %v", targetNS, err)
+	}
+	if ns.Labels[labels.NamespaceGateKey] != labels.NamespaceGateValue {
+		t.Fatalf("expected namespace gate label on %q", targetNS)
+	}
+}
+
 func TestPullLoopIdempotentReplayNoop(t *testing.T) {
 	ts := mockcontrolplane.NewTestServer()
 	defer ts.Close()

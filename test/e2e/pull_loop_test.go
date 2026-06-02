@@ -64,10 +64,22 @@ var _ = Describe("Pull-mode job loop", Ordered, func() {
 			idempotencyKey = "pull-loop-e2e-key-1"
 		)
 
+		By("verifying target namespace is absent before apply job")
+		cmd := exec.Command("kubectl", "get", "namespace", appTestNamespace)
+		_, err := utils.Run(cmd)
+		Expect(err).To(HaveOccurred(), "apps namespace should not exist before the applier runs")
+
 		app := sampleE2EApplicationInstance(appName)
 		enqueueApplyJob(jobID, idempotencyKey, app)
 
 		waitForApplicationInstance(appName)
+
+		By("verifying applier created the gated target namespace")
+		cmd = exec.Command("kubectl", "get", "namespace", appTestNamespace,
+			"-o", "jsonpath={.metadata.labels.managed-by}")
+		label, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(label).To(Equal("vworkspace"))
 		waitForHelmRelease(appName)
 
 		result := waitForMockJobSucceeded(jobID)
