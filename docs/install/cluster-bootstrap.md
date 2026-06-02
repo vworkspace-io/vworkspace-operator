@@ -82,8 +82,11 @@ kubectl -n vworkspace-system exec deploy/controller-manager -- \
   /manager register \
     --token=<one-time-token> \
     --control-plane-endpoint=https://workspace.example.org \
-    --cluster-name=cluster-prod-1
+    --cluster-name=cluster-prod-1 \
+    --cluster-id=<server-issued-uuid>
 ```
+
+Use the UUID shown in Cluster Registry for `clusterId`, not the human slug.
 
 The CLI helper applies a `Cluster` CR for you and waits up to two minutes for the credential exchange to complete. Output on success:
 
@@ -103,7 +106,7 @@ kind: Cluster
 metadata:
   name: cluster-prod-1
 spec:
-  clusterId: cluster-prod-1
+  clusterId: <server-issued-uuid>
   controlPlaneBaseUrl: https://workspace.example.org
   registrationToken: <one-time-token>
 EOF

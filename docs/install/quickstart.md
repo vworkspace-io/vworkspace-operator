@@ -48,7 +48,7 @@ For local development against the [vWorkspace Server](https://github.com/vworksp
 
 1. Start the server: `make up && make init-db` in the server repo ([DEV_ENVIRONMENT.md](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/development/DEV_ENVIRONMENT.md)).
 2. Issue a registration token in **Cluster Registry**.
-3. Run `./hack/dev-real-control-plane.sh` for `CONTROL_PLANE_BASE_URL`, register, and Helm agent flags (kind on Linux needs the host gateway IP — see [../development/real-control-plane.md](../development/real-control-plane.md)).
+3. Run server `./hack/dev-integration.sh` for `CLUSTER_ID` (UUID) and a registration token, then `./hack/dev-real-control-plane.sh` for `CONTROL_PLANE_BASE_URL`, register, and Helm agent flags (kind on Linux needs the host gateway IP — see [../development/real-control-plane.md](../development/real-control-plane.md)).
 
 Use the mock control plane instead when you do not need Odoo: [../development/mock-control-plane.md](../development/mock-control-plane.md).
 
@@ -81,8 +81,11 @@ kubectl -n vworkspace-system exec deploy/controller-manager -- \
   /manager register \
     --token=<one-time-token> \
     --control-plane-endpoint=https://workspace.example.org \
-    --cluster-name=cluster-prod-1
+    --cluster-name=cluster-prod-1 \
+    --cluster-id=<server-issued-uuid>
 ```
+
+`--cluster-id` is the UUID from Cluster Registry (not the display slug). Omit it only when the registration token is not yet bound to a cluster.
 
 …or by applying a `Cluster` CR that carries the token:
 
@@ -93,7 +96,7 @@ kind: Cluster
 metadata:
   name: cluster-prod-1
 spec:
-  clusterId: cluster-prod-1
+  clusterId: <server-issued-uuid>
   controlPlaneBaseUrl: https://workspace.example.org
   registrationToken: <one-time-token>
 EOF

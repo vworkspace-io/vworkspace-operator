@@ -434,7 +434,7 @@ Run everything: `make test`.
 | Deliverable | Path / repo | Status |
 |-------------|-------------|--------|
 | Control-plane terminology in docs and flags | `docs/`, `cmd/main.go`, Helm chart | Done (pre-release polish) |
-| Real control plane dev script | `hack/dev-real-control-plane.sh` | Done |
+| Real control plane dev script | `hack/dev-real-control-plane.sh` (UUID `clusterId`, slug vs CR name) | Done |
 | Live server integration test (`-tags=integration`) | `test/integration/real_control_plane_test.go` | Done (manual / optional CI) |
 | Real control plane dev docs | `docs/development/real-control-plane.md` | Done |
 | Quickstart + pull-mode server registration docs | `docs/install/quickstart.md`, `docs/connectivity/pull-mode.md` | Done |
@@ -449,6 +449,7 @@ Run everything: `make test`.
 
 - [x] Operator docs and CLI use "control plane" / vWorkspace Server naming; Odoo-named compatibility aliases removed pre-1.0.
 - [x] Documented path from vWorkspace Server registration to operator agent flags without mock control plane.
+- [x] Dev scripts and `manager register` use server-issued UUID for `spec.clusterId` (not registry slug); see [real-control-plane.md](real-control-plane.md) and [vworkspace-server#9](https://github.com/vworkspace-io/vworkspace-server/issues/9).
 - [ ] End-to-end install: vWorkspace Server registers a cluster; operator deploys an app via Pull mode without the in-repo mock.
 - [ ] Published doc site on GitHub Pages.
 

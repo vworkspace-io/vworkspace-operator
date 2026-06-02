@@ -1,7 +1,7 @@
 # Real vWorkspace Server (control plane) development
 
 **Status:** Alpha — Phase 3 integration path.
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-02
 
 Use the [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) docker-compose stack when you need to validate Pull-mode against the real agent API instead of the in-repo [mock control plane](mock-control-plane.md).
 
@@ -9,9 +9,29 @@ Use the [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) 
 
 - vWorkspace Server running locally ([DEV_ENVIRONMENT.md](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/development/DEV_ENVIRONMENT.md)): `make up && make init-db`, default URL `http://127.0.0.1:8069`.
 - A Kubernetes context (kind/k3s) if you register via `manager register` or deploy the operator in-cluster.
-- A one-time registration token from **Cluster Registry → Issue registration token** in the server UI.
+- A one-time registration token from **Cluster Registry → Issue registration token** in the server UI (or from `./hack/dev-integration.sh` in the server repo).
 
 Agent API reference (server repo): [agent-api.md](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/connectivity/agent-api.md).
+
+## clusterId (UUID) vs slug
+
+vWorkspace Server assigns each cluster a **stable UUID** (`vws.cluster.cluster_id`). That value is what the Agent API calls `clusterId` on `POST /api/agent/register` and on `GET /api/agent/jobs?cluster=…`.
+
+The **slug** (for example `dev-integration`) is a human-readable name in Cluster Registry. It is fine for `Cluster.metadata.name` in Kubernetes, but sending the slug as `spec.clusterId` or `register --cluster-id` causes **403 Forbidden** when the registration token is bound to a cluster.
+
+| Concept | Example | Used for |
+|---------|---------|----------|
+| Server slug | `dev-integration` | UI, `VWORKSPACE_CLUSTER_SLUG`, optional K8s resource name |
+| Server `clusterId` (UUID) | `a1b2c3d4-…` | `spec.clusterId`, `--cluster-id`, agent poll query |
+| K8s `Cluster.metadata.name` | `cluster-local` | `kubectl get cluster`, `--cluster-name` |
+
+Run the server seed script to print the UUID:
+
+```bash
+cd ../vworkspace-server
+./hack/dev-integration.sh --skip-up   # if stack already up
+# exports CLUSTER_ID=<uuid> and REGISTRATION_TOKEN in its output
+```
 
 ## Quick hints script
 
@@ -19,14 +39,17 @@ Agent API reference (server repo): [agent-api.md](https://github.com/vworkspace-
 ./hack/dev-real-control-plane.sh
 ```
 
-Set `VWORKSPACE_REGISTRATION_TOKEN` before running to print a complete `register` command. Override `CONTROL_PLANE_BASE_URL` if the default host URL is wrong for your setup.
+When the server stack is healthy and `../vworkspace-server` exists, the script resolves `CLUSTER_ID` from Odoo for `VWORKSPACE_CLUSTER_SLUG` (default `dev-integration`). Set `VWORKSPACE_REGISTRATION_TOKEN` before running to print a complete `register` command. Override `CONTROL_PLANE_BASE_URL` if the default host URL is wrong for your setup.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `CONTROL_PLANE_BASE_URL` | `http://127.0.0.1:8069` (Linux host) / `http://host.docker.internal:8069` (macOS) | Control plane base URL |
 | `VWORKSPACE_SERVER_PORT` | `8069` | Odoo HTTP port in docker-compose |
 | `VWORKSPACE_REGISTRATION_TOKEN` | (empty) | One-time token for printed register command |
-| `VWORKSPACE_CLUSTER_NAME` | `cluster-dev-1` | Cluster CR name / register `--cluster-name` |
+| `VWORKSPACE_CLUSTER_ID` | (resolved from server when possible) | Server-issued UUID for `spec.clusterId` / `--cluster-id` |
+| `VWORKSPACE_CLUSTER_SLUG` | `dev-integration` | Server registry slug used to look up UUID |
+| `VWORKSPACE_CLUSTER_NAME` | `cluster-local` | Kubernetes `Cluster.metadata.name` / `register --cluster-name` |
+| `VWORKSPACE_SERVER_ROOT` | `../vworkspace-server` | Checkout used to resolve UUID via Odoo shell |
 
 ## Networking: kind on Linux
 
@@ -47,12 +70,13 @@ Set Helm `agent.controlPlaneBaseUrl` or `--control-plane-base-url` to the URL **
 ```bash
 export CONTROL_PLANE_BASE_URL=http://127.0.0.1:8069
 export VWORKSPACE_REGISTRATION_TOKEN=vwksp-reg-...
+export VWORKSPACE_CLUSTER_ID=<uuid-from-server-seed-or-ui>
 
 go run ./cmd/main.go register \
   --control-plane-endpoint "${CONTROL_PLANE_BASE_URL}" \
   --token "${VWORKSPACE_REGISTRATION_TOKEN}" \
-  --cluster-name cluster-dev-1 \
-  --namespace vworkspace-system
+  --cluster-name cluster-local \
+  --cluster-id "${VWORKSPACE_CLUSTER_ID}"
 ```
 
 **Operator with agent loop:**
@@ -68,11 +92,12 @@ make run -- \
 
 ## Integration test (live server)
 
-Not run in default CI. Requires a fresh registration token (single-use).
+Not run in default CI. Requires a fresh registration token (single-use) and the server UUID for the token's cluster.
 
 ```bash
 export CONTROL_PLANE_BASE_URL=http://127.0.0.1:8069
 export VWORKSPACE_REGISTRATION_TOKEN=vwksp-reg-...
+export VWORKSPACE_CLUSTER_ID=<server-uuid>
 go test -tags=integration ./test/integration/... -run TestRealControlPlane -count=1 -v
 ```
 
@@ -80,10 +105,12 @@ go test -tags=integration ./test/integration/... -run TestRealControlPlane -coun
 
 End-to-end validation with a server-deployed app job is coordinated outside this repo:
 
-1. Deploy operator on kind with Flux CRDs (`INSTALL_FLUX_CRDS=true` in [validate-helm-kind.sh](https://github.com/vworkspace-io/vworkspace-operator/blob/main/hack/validate-helm-kind.sh)).
-2. Register against server docker-compose.
-3. Enqueue deploy from server UI or test helper; confirm `ApplicationInstance` + `HelmRelease`.
+1. Server: `./hack/dev-integration.sh` — note `CLUSTER_ID` and `REGISTRATION_TOKEN`.
+2. Operator: `./hack/dev-real-control-plane.sh` — register with UUID, enable agent on kind (`INSTALL_FLUX_CRDS=true` in [validate-helm-kind.sh](https://github.com/vworkspace-io/vworkspace-operator/blob/main/hack/validate-helm-kind.sh)).
+3. Poll jobs; confirm `ApplicationInstance` + `HelmRelease`.
 4. Confirm `POST /api/agent/events` updates visible on the server.
+
+Server-side seed and UUID contract: [vworkspace-server#9](https://github.com/vworkspace-io/vworkspace-server/issues/9).
 
 ## Related
 
