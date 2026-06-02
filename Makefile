@@ -123,9 +123,21 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+# Extra CLI flags for `make run`, e.g.:
+#   make run ARGS="--agent-enabled=true"
+#   make run -- --agent-enabled=true
+_run_dd_flags := $(if $(findstring -- ,$(MAKEFLAGS)),$(filter-out --,$(wordlist 2,$(words $(MAKEFLAGS)),$(MAKEFLAGS))))
+ARGS ?= $(or $(_run_dd_flags),$(filter-out run,$(MAKECMDGOALS)))
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	go run ./cmd/main.go $(ARGS)
+
+# Support bare goals after `run` (legacy); flags with '=' or leading '--' need ARGS= or `run --`.
+ifneq ($(filter run,$(MAKECMDGOALS)),)
+$(filter-out run,$(MAKECMDGOALS)):
+	@:
+endif
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

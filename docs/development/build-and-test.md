@@ -24,7 +24,7 @@ The commands below reflect the current repository. Tool versions are pinned in t
 | `make uninstall`    | Removes the CRDs applied by `install`.                                                                                   |
 | `make deploy`       | Renders `config/default` with `kustomize`, applies it to the current context. Accepts `IMG=`.                            |
 | `make undeploy`     | Reverses `deploy`.                                                                                                       |
-| `make run`          | Runs the operator binary locally against the current kubectl context. Implies `make install`.                            |
+| `make run`          | Runs the operator binary locally against the current kubectl context. Pass flags with `make run -- <flags>` or `make run ARGS="<flags>"`. |
 | `make controller-gen` / `make kustomize` / `make envtest` | Downloads the pinned version of the tool into `./bin/`. Run automatically by other targets. |
 | `make help`         | Lists the available targets with descriptions.                                                                            |
 
