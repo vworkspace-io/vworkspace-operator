@@ -11,7 +11,7 @@ theme:
   features:
     - content.code.copy
     - navigation.sections
-    - navigation.expand
+    - navigation.indexes
     - search.suggest
   palette:
     - scheme: default
@@ -113,3 +113,6 @@ nav:
   - Publishing: publication.md
 
 docs_dir: docs
+
+extra_css:
+  - stylesheets/extra.css

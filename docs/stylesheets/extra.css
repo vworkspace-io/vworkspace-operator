@@ -1,0 +1,40 @@
+/* Sidebar: clearer section vs page hierarchy (desktop primary nav). */
+
+/* More space between top-level sections */
+.md-nav--primary > .md-nav__list > .md-nav__item--section:not(:first-child) {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Section headers (Concepts, Install, …) */
+.md-nav--primary > .md-nav__list > .md-nav__item--section > .md-nav__link {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0.15rem;
+}
+
+/* Nested pages: slightly smaller, indented */
+.md-nav--primary .md-nav__item--nested > .md-nav > .md-nav__list > .md-nav__item > .md-nav__link {
+  font-size: 0.8125rem;
+  padding-left: 0.35rem;
+}
+
+/* Deeper nesting (e.g. Operations → Engines) */
+.md-nav--primary .md-nav__item--nested .md-nav__item--nested > .md-nav > .md-nav__list > .md-nav__item > .md-nav__link {
+  padding-left: 0.85rem;
+  font-size: 0.8rem;
+}
+
+/* Active trail: keep current section readable */
+.md-nav--primary .md-nav__link--active {
+  font-weight: 600;
+}
+
+/* Collapsed sections: subtle chevron affordance */
+.md-nav--primary .md-nav__item--nested > .md-nav__link::after {
+  opacity: 0.55;
+}
