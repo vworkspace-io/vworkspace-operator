@@ -6,9 +6,16 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-06-02
+
+Phase 1 joint pre-release — Pull-mode agent contract aligned with [vworkspace-server v0.0.5](https://github.com/vworkspace-io/vworkspace-server/releases/tag/v0.0.5). Golden path (contract-only and full reconcile tiers) verified at this SHA; see [hub release note](https://github.com/vworkspace-io/vworkspace/blob/main/docs/releases/v0.0.x.md).
+
 ### Added
 
 - Docs: Flux **contract-only** (CRDs via `INSTALL_FLUX_CRDS`) vs **full reconcile** (helm-controller/source-controller) for Phase 1 golden path — [cluster-bootstrap.md](docs/install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile), [helm.md](docs/install/helm.md#optional-flux-controllers-for-ready), [real-control-plane.md](docs/development/real-control-plane.md). Fixes [#23](https://github.com/vworkspace-io/vworkspace-operator/issues/23).
+- Golden-path fixes: operator-owned target namespace before apply jobs; server UUID for `clusterId` in dev scripts; cluster-scoped Cluster CR in register CLI; Makefile flag forwarding; Helm CRD ownership on fresh clusters.
+- Phase 3 operator-side real control plane path: `hack/dev-real-control-plane.sh`, [docs/development/real-control-plane.md](docs/development/real-control-plane.md), optional `go test -tags=integration` live server smoke test.
+- Public-release documentation polish: [docs/publication.md](docs/publication.md), MkDocs sidebar navigation, refreshed README and docs index.
 
 ### Removed
 
@@ -17,97 +24,8 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 ### Changed
 
 - `manager register` accepts `--cluster-id` / `VWORKSPACE_CLUSTER_ID` for the server-issued cluster UUID; no longer copies `--cluster-name` into `spec.clusterId`.
-- `hack/dev-real-control-plane.sh` resolves and prints server UUID for register and Cluster CR examples; documents slug vs `clusterId` (pairs with [vworkspace-server#9](https://github.com/vworkspace-io/vworkspace-server/issues/9)).
-- **Breaking (pre-1.0):** `Cluster.spec.odooBaseUrl` renamed to `Cluster.spec.controlPlaneBaseUrl`.
-- **Breaking (pre-1.0):** Condition reason codes `OdooReachable`, `OdooUnreachable`, and `OdooAuthenticationFailed` renamed to `ControlPlaneReachable`, `ControlPlaneUnreachable`, and `ControlPlaneAuthenticationFailed`.
-- **Breaking (pre-1.0):** Label value `app.vworkspace.io/managed-by=odoo` renamed to `app.vworkspace.io/managed-by=control-plane`.
-
-### Added
-
-- Phase 3 operator-side real control plane path: `hack/dev-real-control-plane.sh`, [docs/development/real-control-plane.md](docs/development/real-control-plane.md), optional `go test -tags=integration` live server smoke test (`test/integration/real_control_plane_test.go`, `make test-integration-real`).
-- Public-release documentation polish: [docs/publication.md](docs/publication.md) (GitHub Pages / MkDocs guidance), refreshed root [README.md](README.md) and [docs/README.md](docs/README.md) index.
-- `--control-plane-base-url` / `CONTROL_PLANE_BASE_URL` flags and env vars for Pull-mode connectivity.
-- `--control-plane-endpoint` for `manager register` CLI.
-- Helm value `agent.controlPlaneBaseUrl`.
-- Credentials Secret key `control-plane-base-url`.
-- Mock control plane package at `test/mockcontrolplane/` (renamed from `test/mockodoo/`).
-
-### Changed
-
-- **Terminology:** Documentation, comments, and log messages now refer to **vWorkspace Server** / **control plane** instead of Odoo as the primary control-plane name. Odoo is mentioned only where it describes vWorkspace Server's implementation (Odoo 19) or historical ADR context.
-- Renamed dev doc [docs/development/mock-control-plane.md](docs/development/mock-control-plane.md) (was `mock-odoo.md`); `Dockerfile.mockcontrolplane`, `make docker-build-mockcontrolplane` (with deprecated Makefile aliases).
-
-### Added
-
-- Phase 2b polish: `Cluster.status.conditions[BufferOverflow]` when the outbound event buffer drops events (`EventBufferFull` / `BufferDrained`); clears after successful drain.
-- Prometheus gauge `vworkspace_operator_credential_age_seconds` (seconds since bootstrap credentials Secret was last updated or rotated).
-- Mock control plane admin client `ListEvents` helper; e2e asserts ApplicationInstance condition transitions reach mock control plane via `GET /api/admin/events`.
-- Unit tests for event buffer overflow state and credential age metric.
-- Phase 2 status reporting: `StatusReporter` and enhanced `EventBatcher` queue condition transitions from ApplicationInstance, Operation, and Cluster reconcilers to `POST /api/agent/events` with stable `eventKey` deduplication.
-- Credential rotation: `POST /api/agent/credentials/rotate` client, `Cluster.spec.rotateCredentials`, Cluster reconciler Secret update flow.
-- Mock control plane: `POST /api/agent/credentials/rotate`, `GET /api/admin/events`, event deduplication by `eventKey`, `EventsFiltered` test helper.
-- Prometheus metric `vworkspace_operator_event_buffer_occupancy`.
-- Integration test `test/integration/status_report_test.go` (reconciler condition change → mock control plane event).
-- Unit tests for reporter, event batcher requeue, and rotation client.
-
-### Changed
-
-- RBAC: added `events` create/patch, `leases` for leader election, `ocirepositories` in Helm chart; aligned kustomize and chart with least-privilege operator needs (ConfigMap idempotency, credentials Secret).
-- Pull-mode agent runtime shares a single `EventBatcher` with reconciler status reporting when `--agent-enabled=true`.
-- Phase 1f-a admission webhook hardening: `Operation` validation (namespace allow-list via `ops.vworkspace.io/allowed-types`, target existence, concurrency) and `ApplicationInstance` inline-secret rejection (`internal/webhook/`).
-- ApplicationInstance validating webhook (`internal/webhook/applicationinstance_webhook.go`).
-- Envtest webhook suite (`internal/webhook/webhook_envtest_test.go`) and expanded unit tests with fake client coverage.
-- Kustomize webhook bundle (`config/webhook/`, `config/default/manager_webhook_patch.yaml`) and Helm `webhooks.enabled` templates (`charts/vworkspace-operator/templates/webhook.yaml`).
-- Phase 1f-b Helm kind validation: `hack/validate-helm-kind.sh`, [docs/install/helm.md](docs/install/helm.md), chart `NOTES.txt`, values polish (`agent.controlPlaneBaseUrl`, `image.repository` default `vworkspace/vworkspace-operator`).
-- Phase 1e Pull-mode integration tests (`test/integration/pull_loop_test.go`): mock control plane enqueue, poller `PollOnce`, applier SSA, `ApplicationInstance` reconciler with Flux engine on fake client, idempotent replay `noop`.
-- Mock control plane test helper `test/mockcontrolplane/testserver.go` (`NewTestServer`, job result/status inspection).
-- `hack/dev-pull-loop.sh` for local mock control plane + operator agent workflow.
-- E2E Pull-mode loop on kind with in-cluster mock control plane (`test/e2e/pull_loop_test.go`): deploy mock Service, operator agent, Cluster registration, job enqueue via admin API, `ApplicationInstance` + `HelmRelease`, mock `succeeded` result.
-- Mock control plane admin enqueue API (`test/mockcontrolplane/admin.go`) and container image (`Dockerfile.mockodoo`, `make docker-build-mockodoo`).
-- Flux HelmRelease CRD install in e2e `BeforeSuite` (`test/utils/flux.go`); optional Velero Backup CRD when `E2E_INSTALL_VELERO=true`.
-- Operation validating webhook tests (`internal/webhook/operation_webhook_test.go`, `webhook_envtest_test.go`).
-- Helm chart scaffold at `charts/vworkspace-operator/` (Deployment, RBAC, CRDs, agent values).
-- Quickstart Option A documents in-repo `helm install` path.
-- In-repo mock control plane Pull-mode agent API (`test/mockcontrolplane/`) for development without the vWorkspace Server control plane API.
-- [docs/development/local-setup.md](docs/development/local-setup.md) — Go install and local `make test` workflow.
-- [docs/development/mock-control-plane.md](docs/development/mock-control-plane.md) — mock server usage and endpoints.
-
-### Added (Phase 1c)
-
-- Cluster registration flow: `spec.registrationToken` on `Cluster`, `POST /api/agent/register` client, credential persistence to `Secret/vworkspace-agent-credentials`, and `manager register` CLI subcommand.
-- Persistent Pull-mode idempotency via ConfigMap `vworkspace-applied-jobs` (`internal/agent/idempotency.go`).
-- Agent runtime with credential reload from Secret after registration (`internal/agent/runtime.go`).
-- Pull-mode Prometheus metrics: `vworkspace_operator_pull_job_lag_seconds`, `vworkspace_operator_connectivity_state`, `vworkspace_operator_applied_jobs_total`.
-- Operation validating admission webhook scaffold (`internal/webhook/operation_webhook.go`, `--webhooks-enabled`).
-- Sample Cluster CR (`config/samples/ops_v1alpha1_cluster.yaml`).
-
-### Changed
-
-- Cluster reconciler performs registration token exchange before connectivity heartbeats; clears one-time token from spec after success.
-- Pull-mode applier uses ConfigMap-backed idempotency store instead of in-memory map.
-- Helm engine support for `values.secretRef` and `values.configMapRef` when materializing Flux `HelmRelease` objects.
-- Docker Hub image publishing on `main` and `v*` tags (`docker.io/vworkspace/vworkspace-operator`).
-- Parallel self-hosted CI jobs with per-job checkout paths; [docs/development/self-hosted-runner.md](docs/development/self-hosted-runner.md).
-- [docs/install/container-images.md](docs/install/container-images.md) — image tags and registry secrets.
-
-### Changed
-
-- Default container image reference in kustomize manager manifest: `docker.io/vworkspace/vworkspace-operator`.
-- CI workflow runs `verify`, `test`, `lint`, and `e2e` in parallel (no serial `needs` chain).
-
-### Added (Phase 1a)
-
-- Kubebuilder v4 Go scaffold: `ApplicationInstance`, `Operation`, and `Cluster` CRDs at `v1alpha1`.
-- Flux `HelmRelease` engine adapter (`internal/helmengine`), operation engines (`helm`, `velero`), and Pull-mode HTTP agent client stub.
-- Reconcilers for ApplicationInstance, Operation, and Cluster with condition helpers and basic concurrency guards.
-- Unit and envtest coverage for validation, Helm materialization, Velero CR creation, and agent protocol parsing.
-- Makefile, multi-stage Dockerfile, CI workflow (`.github/workflows/ci.yml`), and `hack/verify-generated.sh`.
-- [docs/development/IMPLEMENTATION_GUIDE.md](docs/development/IMPLEMENTATION_GUIDE.md) — Phase 1 handoff document.
-
-### Changed
-
-- Project status from documentation-only to alpha scaffold with working `make test` / `make build`.
-- Updated development, config, and hack README files to reflect the live layout.
+- **Breaking (pre-1.0):** `Cluster.spec.odooBaseUrl` renamed to `Cluster.spec.controlPlaneBaseUrl`; condition reason codes and `app.vworkspace.io/managed-by` label value updated to control-plane terminology.
+- Pull-mode agent runtime, credential rotation, status reporting, admission webhooks, Helm chart, e2e/integration tests, and CI parallelization (see prior development history since v0.0.0).
 
 ## [0.0.0] - 2026-05-28
 
