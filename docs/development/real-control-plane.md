@@ -111,7 +111,7 @@ End-to-end validation with a server-deployed app job is coordinated outside this
 | Optional 5 | **Full reconcile** | `ApplicationInstance` `Ready=True`; chart workloads running |
 
 1. Server: `./hack/dev-integration.sh` — note `CLUSTER_ID` and `REGISTRATION_TOKEN`.
-2. Operator: `./hack/dev-real-control-plane.sh` — register with UUID, enable agent on kind. For contract proof, bootstrap with `INSTALL_FLUX_CRDS=true` ([validate-helm-kind.sh](../../hack/validate-helm-kind.sh)) — **CRDs only**, not controller pods.
+2. Operator: `./hack/dev-real-control-plane.sh` — register with UUID, enable agent on kind. For contract proof, bootstrap with `INSTALL_FLUX_CRDS=true` (`hack/validate-helm-kind.sh`) — **CRDs only**, not controller pods.
 3. Poll jobs; confirm `ApplicationInstance` + `HelmRelease` CRs (`kubectl get applicationinstances,helmreleases -A`).
 4. Confirm `POST /api/agent/events` updates visible on the server.
 5. **(Optional)** Install Flux controllers for `Ready` in dev: `flux install` or the bundled chart — [helm.md#optional-flux-controllers-for-ready](../install/helm.md#optional-flux-controllers-for-ready).
