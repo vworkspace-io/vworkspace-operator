@@ -22,6 +22,9 @@ config/render/
 # Helm
 *.tgz
 
+# MkDocs (GitHub Pages build output)
+site/
+
 # Editor and IDE
 .idea/
 .vscode/

@@ -88,6 +88,8 @@ Before pushing, run the same check as CI:
 mkdocs build --strict
 ```
 
+The `site/` directory is MkDocs build output—do not commit it; CI builds and deploys the site on every push to `main`.
+
 ## What gets deployed
 
 | File | Purpose |
