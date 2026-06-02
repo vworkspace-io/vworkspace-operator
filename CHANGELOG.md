@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Added
+
+- Docs: Flux **contract-only** (CRDs via `INSTALL_FLUX_CRDS`) vs **full reconcile** (helm-controller/source-controller) for Phase 1 golden path — [cluster-bootstrap.md](docs/install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile), [helm.md](docs/install/helm.md#optional-flux-controllers-for-ready), [real-control-plane.md](docs/development/real-control-plane.md). Fixes [#23](https://github.com/vworkspace-io/vworkspace-operator/issues/23).
+
 ### Removed
 
 - Deprecated Odoo-named compatibility aliases from pre-1.0 API cleanup: `--odoo-base-url` / `ODOO_BASE_URL`, `--odoo-endpoint`, Helm `agent.odooBaseUrl`, and credentials Secret key `odoo-base-url`.

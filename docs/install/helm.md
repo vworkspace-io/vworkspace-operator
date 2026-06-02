@@ -145,13 +145,40 @@ Environment variables:
 |----------|---------|---------|
 | `KIND_CLUSTER` | `vworkspace-operator-helm-validate` | kind cluster name |
 | `USE_PUBLISHED_IMAGE` | `0` | Set to `1` to pull `latest` from Docker Hub instead of building locally |
-| `INSTALL_FLUX_CRDS` | `false` | Apply Flux helm/source controller CRDs for HelmRelease smoke check |
+| `INSTALL_FLUX_CRDS` | `false` | Apply Flux **CRDs only** (contract tier — no controller pods). See [optional Flux controllers](#optional-flux-controllers-for-ready). |
 | `DELETE_CLUSTER` | `true` | Delete kind cluster when the script created it |
 
 Or via Makefile:
 
 ```bash
 make validate-helm-kind
+```
+
+Contract tier (CRDs only, matches e2e and Phase 1 golden path):
+
+```bash
+INSTALL_FLUX_CRDS=true ./hack/validate-helm-kind.sh
+```
+
+## Optional Flux controllers for Ready
+
+`INSTALL_FLUX_CRDS=true` installs the API types the operator needs to create `HelmRelease` resources. It does **not** install `helm-controller` or `source-controller`. Without those Deployments, `HelmRelease` objects are not reconciled and `ApplicationInstance` will not reach `Ready` — see [cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](cluster-bootstrap.md#flux-contract-only-vs-full-reconcile).
+
+To reach **full reconcile** on kind after the in-repo chart and CRDs:
+
+```bash
+# Flux CLI — installs controllers into flux-system
+flux check --pre
+flux install
+```
+
+Or install the production operator bundle (bundled Flux controllers) per [prerequisites.md](prerequisites.md#controllers-installed-by-the-operators-bundle) and [quickstart.md](quickstart.md) Option B.
+
+Verify controllers:
+
+```bash
+kubectl get deploy -n flux-system helm-controller source-controller
+kubectl get helmreleases -A
 ```
 
 ## Render without applying

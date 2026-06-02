@@ -1,7 +1,7 @@
 # Troubleshooting
 
 **Status:** Alpha
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-02
 
 This document maps common failure modes to the conditions and reasons the operator publishes, with the `kubectl` commands to investigate each. The patterns are organized by where the symptom shows up: the `Cluster` CR, an `ApplicationInstance`, or an `Operation`. The deeper diagnostic surfaces — structured logs, metrics, the `HelmRelease`, the engine-specific child resource — are covered as supporting evidence.
 
@@ -75,9 +75,23 @@ kubectl describe deploy -n velero velero
 
 ## `ApplicationInstance` symptoms
 
+### `HelmRelease` exists but never reconciles (no controller pods)
+
+**Meaning.** Flux CRDs are installed but `helm-controller` / `source-controller` are not running. The operator created the `HelmRelease`; nothing will install the chart until controllers are present.
+
+**Investigate.**
+
+```
+kubectl get crd helmreleases.helm.toolkit.fluxcd.io
+kubectl get deploy -A | grep -E 'helm-controller|source-controller'
+kubectl get helmrelease -n <ns> <name> -o yaml | grep -A10 status:
+```
+
+**Resolve.** Install Flux controllers (production Helm bundle, `flux install`, or [../install/helm.md#optional-flux-controllers-for-ready](../install/helm.md#optional-flux-controllers-for-ready)). See [../install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](../install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile).
+
 ### `ApplicationInstance` stuck in `Reconciling=True`
 
-**Meaning.** The operator is waiting for the underlying `HelmRelease` to settle. Most commonly the chart's reconcile is in progress or failing.
+**Meaning.** The operator is waiting for the underlying `HelmRelease` to settle. Most commonly the chart's reconcile is in progress or failing. If controllers are missing, see the symptom above first.
 
 **Investigate.**
 
