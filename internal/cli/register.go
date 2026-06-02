@@ -24,7 +24,8 @@ func RunRegister(args []string) error {
 	fs := flag.NewFlagSet("register", flag.ContinueOnError)
 	token := fs.String("token", "", "One-time registration token from the control plane (required)")
 	controlPlaneURL := fs.String("control-plane-endpoint", "", "Control plane HTTPS base URL (required unless CONTROL_PLANE_BASE_URL is set)")
-	clusterName := fs.String("cluster-name", "", "Cluster resource name (defaults to cluster-local)")
+	clusterName := fs.String("cluster-name", "", "Cluster resource metadata.name (defaults to cluster-local)")
+	clusterID := fs.String("cluster-id", "", "Server-issued cluster UUID for spec.clusterId (defaults to VWORKSPACE_CLUSTER_ID; omit when token is not bound to a cluster)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -40,6 +41,9 @@ func RunRegister(args []string) error {
 	}
 	if strings.TrimSpace(*clusterName) == "" {
 		*clusterName = "cluster-local"
+	}
+	if strings.TrimSpace(*clusterID) == "" {
+		*clusterID = os.Getenv("VWORKSPACE_CLUSTER_ID")
 	}
 
 	cfg, err := restConfig()
@@ -63,7 +67,7 @@ func RunRegister(args []string) error {
 			Name: *clusterName,
 		},
 		Spec: opsv1alpha1.ClusterSpec{
-			ClusterID:           strings.TrimSpace(*clusterName),
+			ClusterID:           strings.TrimSpace(*clusterID),
 			ControlPlaneBaseURL: strings.TrimSpace(*controlPlaneURL),
 			RegistrationToken:   strings.TrimSpace(*token),
 		},

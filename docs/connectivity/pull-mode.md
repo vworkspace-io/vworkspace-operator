@@ -60,15 +60,16 @@ For the request shapes that carry these credentials, see [job-protocol.md](job-p
 
 Against a live [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) instance (not the in-repo mock):
 
-1. Create a cluster identity and **Issue registration token** in Cluster Registry (server UI).
-2. Exchange the token with `POST /api/agent/register` — via the operator CLI or `Cluster` CR with `spec.registrationToken` ([../install/cluster-bootstrap.md](../install/cluster-bootstrap.md)).
+1. Create a cluster identity and **Issue registration token** in Cluster Registry (server UI). Note the server-issued **cluster UUID** (`clusterId` in the API), not only the slug.
+2. Exchange the token with `POST /api/agent/register` — via the operator CLI or `Cluster` CR with `spec.registrationToken` ([../install/cluster-bootstrap.md](../install/cluster-bootstrap.md)). When the token is bound to a cluster, set `spec.clusterId` (or `--cluster-id`) to that UUID; using the slug causes **403**.
 3. Enable `--agent-enabled=true` and set `--control-plane-base-url` to the URL **reachable from the operator process** (on kind/Linux this is often the docker bridge gateway, not `127.0.0.1` inside the pod).
 
 ```bash
 go run ./cmd/main.go register \
   --control-plane-endpoint https://workspace.example.org \
   --token vwksp-reg-... \
-  --cluster-name cluster-prod-1
+  --cluster-name cluster-prod-1 \
+  --cluster-id <server-issued-uuid>
 ```
 
 Local server dev: [../development/real-control-plane.md](../development/real-control-plane.md). Wire contract: [vWorkspace Server agent API](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/connectivity/agent-api.md).

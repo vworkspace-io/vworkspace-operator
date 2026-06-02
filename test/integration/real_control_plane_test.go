@@ -19,7 +19,7 @@ import (
 //   - VWORKSPACE_REGISTRATION_TOKEN — one-time token from Cluster Registry
 //
 // Optional:
-//   - VWORKSPACE_CLUSTER_ID — cluster id bound to the token (default: cluster-integration-real)
+//   - VWORKSPACE_CLUSTER_ID — server-issued cluster UUID bound to the token (required for token-bound clusters)
 //
 // Run:
 //
@@ -33,7 +33,7 @@ func TestRealControlPlaneRegisterPollHeartbeat(t *testing.T) {
 
 	clusterID := strings.TrimSpace(os.Getenv("VWORKSPACE_CLUSTER_ID"))
 	if clusterID == "" {
-		clusterID = "cluster-integration-real"
+		t.Skip("set VWORKSPACE_CLUSTER_ID to the server-issued cluster UUID (see vworkspace-server hack/dev-integration.sh CLUSTER_ID output)")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)

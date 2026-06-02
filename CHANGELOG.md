@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- `manager register` accepts `--cluster-id` / `VWORKSPACE_CLUSTER_ID` for the server-issued cluster UUID; no longer copies `--cluster-name` into `spec.clusterId`.
+- `hack/dev-real-control-plane.sh` resolves and prints server UUID for register and Cluster CR examples; documents slug vs `clusterId` (pairs with [vworkspace-server#9](https://github.com/vworkspace-io/vworkspace-server/issues/9)).
 - **Breaking (pre-1.0):** `Cluster.spec.odooBaseUrl` renamed to `Cluster.spec.controlPlaneBaseUrl`.
 - **Breaking (pre-1.0):** Condition reason codes `OdooReachable`, `OdooUnreachable`, and `OdooAuthenticationFailed` renamed to `ControlPlaneReachable`, `ControlPlaneUnreachable`, and `ControlPlaneAuthenticationFailed`.
 - **Breaking (pre-1.0):** Label value `app.vworkspace.io/managed-by=odoo` renamed to `app.vworkspace.io/managed-by=control-plane`.
