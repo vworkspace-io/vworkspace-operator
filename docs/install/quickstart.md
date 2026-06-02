@@ -1,7 +1,7 @@
 # Quickstart
 
 **Status:** Alpha
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-02
 
 This is the supported install path. Two commands install the operator, three more verify it, and the rest of this document describes what to check if something goes wrong. The complete bootstrap procedure (including issuing the registration token in Odoo) is in [cluster-bootstrap.md](cluster-bootstrap.md).
 
@@ -166,7 +166,17 @@ kubectl get cluster -n vworkspace-system cluster-prod-1 -o yaml
 With the cluster connected, you can create your first `ApplicationInstance` from Odoo. Open the Workspace Hub in Odoo, click "Deploy app", pick an entry from the catalog (Nextcloud is a good first choice), confirm, and watch the resulting CR appear:
 
 ```
+kubectl get applicationinstance -A
+kubectl get helmreleases -A
+```
+
+**Contract-only (Flux CRDs, no controllers):** common on the Phase 1 kind path (`INSTALL_FLUX_CRDS=true` in [helm.md](helm.md)). The operator creates `ApplicationInstance` and `HelmRelease` objects; the control-plane instance may stay `deploying` and `Ready` may not appear — that is expected. See [cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](cluster-bootstrap.md#flux-contract-only-vs-full-reconcile).
+
+**Full reconcile (Flux controllers running):** install the operator bundle with bundled Flux ([prerequisites.md](prerequisites.md#controllers-installed-by-the-operators-bundle)) or add controllers in dev ([helm.md#optional-flux-controllers-for-ready](helm.md#optional-flux-controllers-for-ready)). Then watch:
+
+```
 kubectl get applicationinstance -A -w
+kubectl get helmreleases -A -w
 ```
 
 Within a few minutes (depending on chart size and image pull time), the application's URL appears in the Workspace Hub. The `ApplicationInstance` reports `Ready=True`, the underlying `HelmRelease` reports `Ready=True`, and you can visit the URL.
@@ -237,6 +247,7 @@ If `Cluster.status.conditions[Connected]` is `False`:
 
 If `ApplicationInstance` is stuck in `Reconciling=True`:
 
+- If `kubectl get helmrelease -A` shows objects but `kubectl get deploy -A | grep helm-controller` is empty, you have CRDs only — install Flux controllers ([cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](cluster-bootstrap.md#flux-contract-only-vs-full-reconcile)) before expecting `Ready`.
 - Check the underlying `HelmRelease`: `kubectl get helmrelease -A`. If Flux reports `Ready=False`, the chart's own reconcile is failing; `kubectl describe helmrelease` shows the reason.
 - Check the chart source: `kubectl get helmrepository,ocirepository -A`. If the source cannot be fetched, Flux will surface the reason.
 - Check the operator's logs: `kubectl logs -n vworkspace-system deploy/vworkspace-app-operator`. The operator's structured logs include the `application_instance` name on every relevant line.

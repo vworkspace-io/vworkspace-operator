@@ -1,7 +1,7 @@
 # Implementation guide
 
 **Status:** Alpha — living handoff document for Phase 1 foundation work.
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-02
 **Audience:** Engineers continuing vworkspace-operator development.
 
 This document breaks Phase 1 into continuable sub-phases, defines acceptance criteria, and explains how to resume work on any day. It complements [ROADMAP.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/ROADMAP.md) (milestones) and [project-layout.md](project-layout.md) (directory contract).
@@ -16,6 +16,18 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 | Conditions | [docs/api/conditions.md](../api/conditions.md) |
 | Pull-mode protocol | [docs/connectivity/job-protocol.md](../connectivity/job-protocol.md) |
 | ADRs | [docs/adr/README.md](../adr/README.md) |
+| Flux CRDs vs controllers (golden path) | [docs/install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](../install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile) |
+
+## Phase 1 golden path — Flux tiers
+
+Phase 1 exit and the kind golden path intentionally support two verification tiers:
+
+| Tier | Install | Phase 1 exit proof |
+|------|---------|-------------------|
+| **Contract-only** | `INSTALL_FLUX_CRDS=true` (CRDs from helm/source-controller release manifests; no controller pods) | Pull job → `ApplicationInstance` → `HelmRelease` CR exists |
+| **Full reconcile** | Operator Helm bundle or `flux install` (controllers running) | `HelmRelease` and `ApplicationInstance` reach `Ready`; chart workloads deploy |
+
+**CRDs installed ≠ Flux controllers running.** Do not treat a server instance stuck in `deploying` as a failure on the contract-only path. Optional controller install for dev: [helm.md#optional-flux-controllers-for-ready](../install/helm.md#optional-flux-controllers-for-ready).
 
 ## Phase breakdown
 
@@ -98,7 +110,8 @@ This document breaks Phase 1 into continuable sub-phases, defines acceptance cri
 - [x] Prometheus metrics: `vworkspace_operator_pull_job_lag_seconds`, `vworkspace_operator_connectivity_state`, `vworkspace_operator_applied_jobs_total`.
 - [x] RBAC review against `docs/security/rbac.md` (Phase 2).
 - [ ] `make deploy IMG=...` installs operator + CRDs on kind (manual validation).
-- [ ] Sample `ApplicationInstance` reconciles when Flux CRDs are present (envtest/e2e gap).
+- [x] Sample `ApplicationInstance` materializes `HelmRelease` when Flux CRDs are present (contract tier; e2e/integration).
+- [ ] Sample `ApplicationInstance` reaches `Ready` when Flux **controllers** are running on kind (full reconcile tier).
 - [ ] Velero CRD present for backup `Operation` (documented prerequisite).
 
 ### Phase 1d — Parallel tracks (mock control plane, Helm, webhooks)
@@ -165,7 +178,7 @@ Phase 1d splits into three **non-blocking** branches. Use **mock control plane**
 - [x] Mock control plane runs in-cluster (Deployment + Service); operator reaches it via cluster DNS.
 - [x] Operator deployed with `--agent-enabled=true` and pre-seeded credentials Secret.
 - [x] Cluster CR registration exchanges token and persists credentials.
-- [x] Admin API enqueues `apply` job; operator poller applies `ApplicationInstance`; reconciler materializes `HelmRelease` when Flux CRDs installed.
+- [x] Admin API enqueues `apply` job; operator poller applies `ApplicationInstance`; reconciler materializes `HelmRelease` when Flux CRDs installed (controllers optional for `Ready`).
 - [x] Mock control plane records terminal `succeeded` result for the job.
 - [x] Optional backup operation e2e creates Velero `Backup` CR when Velero CRD installed (`E2E_INSTALL_VELERO=true`).
 - [x] `make test-e2e` passes on kind with docker.
@@ -208,7 +221,7 @@ Phase 1d splits into three **non-blocking** branches. Use **mock control plane**
 - [x] `agent.enabled`, `agent.controlPlaneBaseUrl`, `agent.credentialsSecret`, `image.repository`, `image.tag` in values.
 - [x] CRDs installed via chart template (`templates/crds.yaml`) when `crds.install=true`.
 - [x] `./hack/validate-helm-kind.sh` installs chart on kind and waits for Deployment Ready.
-- [x] Optional Flux CRDs via `INSTALL_FLUX_CRDS=true`.
+- [x] Optional Flux CRDs via `INSTALL_FLUX_CRDS=true` (contract tier — CRDs only; see [cluster-bootstrap.md](../install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile)).
 - [x] `make test` and `make lint` pass.
 - [ ] CI helm-kind job optional (commented; run manually).
 
@@ -438,7 +451,8 @@ Run everything: `make test`.
 | Live server integration test (`-tags=integration`) | `test/integration/real_control_plane_test.go` | Done (manual / optional CI) |
 | Real control plane dev docs | `docs/development/real-control-plane.md` | Done |
 | Quickstart + pull-mode server registration docs | `docs/install/quickstart.md`, `docs/connectivity/pull-mode.md` | Done |
-| Golden path: server job → ApplicationInstance + HelmRelease | kind + server docker-compose | In progress (Platform coordination) |
+| Golden path: server job → ApplicationInstance + HelmRelease (contract tier) | kind + server docker-compose | In progress (Platform coordination) |
+| Golden path: optional Flux controllers → `Ready` | `flux install` or bundled chart | Documented; optional in dev |
 | Real Pull-mode job enqueue from server UI | upstream `vworkspace-server` | Planned (server-owned) |
 | Argo Workflows / CSI / VolSync engines | `internal/engines/` | Planned |
 | mTLS and signed Pull-mode payloads | `internal/agent/` | Planned |
@@ -450,6 +464,7 @@ Run everything: `make test`.
 - [x] Operator docs and CLI use "control plane" / vWorkspace Server naming; Odoo-named compatibility aliases removed pre-1.0.
 - [x] Documented path from vWorkspace Server registration to operator agent flags without mock control plane.
 - [x] Dev scripts and `manager register` use server-issued UUID for `spec.clusterId` (not registry slug); see [real-control-plane.md](real-control-plane.md) and [vworkspace-server#9](https://github.com/vworkspace-io/vworkspace-server/issues/9).
+- [x] Golden path documents Flux **contract-only** (CRDs) vs **full reconcile** (controllers); no implied `Ready` without controllers — [cluster-bootstrap.md](../install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile).
 - [ ] End-to-end install: vWorkspace Server registers a cluster; operator deploys an app via Pull mode without the in-repo mock.
 - [ ] Published doc site on GitHub Pages.
 
@@ -460,4 +475,4 @@ See [ROADMAP.md](https://github.com/vworkspace-io/vworkspace-operator/blob/main/
 1. Wire reconciler status/events to `ReportStatus` / `EventBatcher` (condition transitions back to Odoo). **Done in Phase 2.**
 2. RBAC review against `docs/security/rbac.md` (Phase 1c carry-over). **Done in Phase 2.**
 3. Enable Velero backup e2e in CI (`E2E_INSTALL_VELERO=true`) once Velero CRD install is stable on runners.
-4. Sample `ApplicationInstance` with Flux controllers on kind (extend `hack/validate-helm-kind.sh` with `INSTALL_FLUX_CRDS=true`).
+4. Sample `ApplicationInstance` reaches `Ready` on kind with Flux controllers (`flux install` or bundled chart; `INSTALL_FLUX_CRDS=true` alone is contract-only).

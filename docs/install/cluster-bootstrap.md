@@ -1,7 +1,7 @@
 # Cluster bootstrap
 
 **Status:** Alpha
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-02
 
 This is the full bootstrap procedure for connecting a new Kubernetes cluster to an Odoo vWorkspace control plane in the default Pull-mode connectivity. It expands the six steps that appear in the source-of-truth design note into a complete procedure with the actual commands and the actual control-plane-side actions. Push-mode and GitOps-mode equivalents are noted at the end.
 
@@ -52,6 +52,20 @@ kubectl get crd applicationinstances.apps.vworkspace.io operations.ops.vworkspac
 ```
 
 At this point the operator is alive but does not yet know which cluster it is or how to reach Odoo. The next step gives it that identity.
+
+## Flux: contract-only vs full reconcile
+
+Some install paths — including the Phase 1 golden path on kind (`INSTALL_FLUX_CRDS=true` in [../install/helm.md](helm.md) and [../development/real-control-plane.md](../development/real-control-plane.md)) — apply **Flux CRDs only**. They do **not** start `helm-controller` or `source-controller` pods.
+
+| Tier | What is installed | What you can verify |
+|------|-------------------|---------------------|
+| **Contract-only** (Phase 1 dev default) | `HelmRelease` / source CRDs | Operator materializes `HelmRelease`; control-plane instance may stay `deploying`; `ApplicationInstance` may not reach `Ready` |
+| **Full reconcile** (production bundle or optional dev add-on) | CRDs + Flux controller Deployments | Flux installs charts; `HelmRelease` and `ApplicationInstance` can reach `Ready` |
+
+**CRDs present ≠ controllers running.** The API types let the operator write a `HelmRelease`; only running Flux controllers reconcile that object into chart workloads.
+
+- **Production:** the operator Helm bundle installs Flux controllers by default ([prerequisites.md](prerequisites.md#controllers-installed-by-the-operators-bundle)).
+- **Dev (optional):** after a CRD-only bootstrap, install controllers — for example with the [Flux CLI](https://fluxcd.io/flux/installation/) (`flux install`) or by switching to the full bundle in [quickstart.md](quickstart.md). See [helm.md#optional-flux-controllers-for-ready](helm.md#optional-flux-controllers-for-ready).
 
 ## Step 3: generate a one-time registration token in Odoo
 
@@ -154,13 +168,23 @@ With the cluster connected, deploy a first application from Odoo. The natural ch
 3. Confirm the namespace and the hostname.
 4. Click **Deploy**.
 
-Odoo emits an `ensure-application-instance` job that the operator pulls and translates into an `ApplicationInstance` CR. The Flux Helm Controller reconciles the `HelmRelease`. The application's URL appears in the Workspace Hub when `ApplicationInstance.status.conditions[Ready]=True`.
+Odoo emits an `ensure-application-instance` job that the operator pulls and translates into an `ApplicationInstance` CR. The operator reconciler materializes a `HelmRelease` when Flux CRDs are present.
 
-Watch the rollout from the cluster:
+**Contract-only (CRDs, no controllers):** confirm the job applied and the CRs exist:
+
+```
+kubectl get applicationinstances -A
+kubectl get helmreleases -A
+```
+
+The control-plane instance may remain `deploying`; `ApplicationInstance` may stay `Reconciling` without `Ready` — that is expected until Flux controllers are installed ([Flux: contract-only vs full reconcile](#flux-contract-only-vs-full-reconcile)).
+
+**Full reconcile (controllers running):** the Flux Helm Controller reconciles the `HelmRelease`. The application's URL appears in the Workspace Hub when `ApplicationInstance.status.conditions[Ready]=True`. Watch:
 
 ```
 kubectl get applicationinstances -A -w
 kubectl get helmreleases -A -w
+kubectl get pods -A | grep -E 'helm-controller|source-controller'
 ```
 
 The first deploy is usually the slowest because chart images are not in the cluster's image cache; subsequent deploys are faster.
@@ -186,6 +210,8 @@ The operator's `Cluster` CR still drives status posts back to the control plane 
 ## Related material
 
 - [prerequisites.md](prerequisites.md) — What needs to be true before step 1.
+- [helm.md](helm.md) — In-repo chart on kind; `INSTALL_FLUX_CRDS` vs optional Flux controllers.
 - [quickstart.md](quickstart.md) — The condensed version of steps 2–6.
+- [../development/real-control-plane.md](../development/real-control-plane.md) — Golden path with vWorkspace Server.
 - [offline-and-airgapped.md](offline-and-airgapped.md) — Step 2 and step 4 variations for air-gapped installs.
 - [../security/authentication.md](../security/authentication.md) — The credential lifecycle Odoo and the operator share.

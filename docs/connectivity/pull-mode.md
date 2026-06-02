@@ -1,7 +1,7 @@
 # Pull mode
 
 **Status:** Alpha — default connectivity mode.
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-02
 
 Pull mode is the default. The operator initiates an outbound HTTPS connection to Odoo, fetches jobs targeted at its own cluster identity, applies them to its own API server, and reports status back over the same outbound channel. Odoo never opens a socket to the cluster and never holds a kubeconfig. The cluster holds an outbound bearer token (and optionally a client certificate); Odoo holds the cluster's identity record.
 
@@ -101,8 +101,8 @@ The choice between rendered-object and intent payloads is an control-plane-side 
 
 Pulled intents become local CRs. Once an `ApplicationInstance` exists in the cluster's API server, everything downstream is identical across modes:
 
-- The operator reconciles `ApplicationInstance` and produces a `HelmRelease` (see [../concepts/reconciliation-model.md](../concepts/reconciliation-model.md)).
-- Flux Helm Controller reconciles the `HelmRelease`.
+- The operator reconciles `ApplicationInstance` and produces a `HelmRelease` when Flux CRDs are present (see [../concepts/reconciliation-model.md](../concepts/reconciliation-model.md)).
+- The Flux **Helm Controller** reconciles the `HelmRelease` into chart workloads — only if `helm-controller` (and typically `source-controller`) pods are running. Phase 1 dev paths often install **CRDs only**; that proves the Pull → apply → materialize contract but does not install charts until controllers are added ([../install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](../install/cluster-bootstrap.md#flux-contract-only-vs-full-reconcile)).
 - `Operation` CRs drive Velero, Argo Workflows, or another engine (see [../concepts/day-2-operations.md](../concepts/day-2-operations.md)).
 
 This is the property that makes Pull non-invasive: the in-cluster behavior is unchanged. The only difference is who wrote the CR.
