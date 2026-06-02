@@ -129,6 +129,45 @@ func TestApplierDeleteJob(t *testing.T) {
 	}
 }
 
+func TestApplierCreatesTargetNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1alpha1.AddToScheme(scheme)
+
+	const targetNS = "apps"
+	app := sampleApplicationInstance()
+	app.Namespace = targetNS
+	app.Spec.Release.Namespace = targetNS
+	payload, err := json.Marshal(app)
+	if err != nil {
+		t.Fatalf("marshal app: %v", err)
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	outcome, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-apply-ns",
+		Kind:      "apply",
+		Payload:   payload,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ApplyJob: %v", err)
+	}
+	if outcome.Result.Outcome != OutcomeSucceeded {
+		t.Fatalf("expected succeeded, got %s", outcome.Result.Outcome)
+	}
+
+	ns := &corev1.Namespace{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: targetNS}, ns); err != nil {
+		t.Fatalf("get namespace: %v", err)
+	}
+	if ns.Labels[labels.NamespaceGateKey] != labels.NamespaceGateValue {
+		t.Fatalf("expected %s=%s on namespace, got %q", labels.NamespaceGateKey, labels.NamespaceGateValue, ns.Labels[labels.NamespaceGateKey])
+	}
+}
+
 func TestApplierEnsureIntent(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)

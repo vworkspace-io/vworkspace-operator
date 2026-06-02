@@ -49,7 +49,7 @@ const (
 	pullLoopRegistrationTok = "e2e-registration-token"
 	vworkspaceSystemNS      = "vworkspace-system"
 	agentCredentialsSecret  = "vworkspace-agent-credentials"
-	appTestNamespace        = "team-a"
+	appTestNamespace        = "apps"
 )
 
 var (
@@ -186,9 +186,6 @@ func stopMockControlPlanePortForward() {
 func createPullLoopNamespaces() {
 	By("creating vworkspace-system namespace")
 	Expect(utils.EnsureNamespace(vworkspaceSystemNS)).To(Succeed())
-
-	By("creating application namespace")
-	Expect(utils.EnsureNamespace(appTestNamespace)).To(Succeed())
 }
 
 func teardownPullLoopNamespaces() {

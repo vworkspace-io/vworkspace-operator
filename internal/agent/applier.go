@@ -1,3 +1,6 @@
+// Package agent applies Pull-mode control plane jobs to the local API server.
+//
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create
 package agent
 
 import (
@@ -10,6 +13,7 @@ import (
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/labels"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -126,6 +130,10 @@ func (a *Applier) applyManifest(ctx context.Context, payload json.RawMessage) (*
 	}
 	a.ensureManagedLabels(obj)
 
+	if err := a.ensureTargetNamespace(ctx, obj.GetNamespace()); err != nil {
+		return nil, err
+	}
+
 	if err := a.patchApply(ctx, obj); err != nil {
 		return nil, err
 	}
@@ -196,6 +204,9 @@ func (a *Applier) applyIntent(ctx context.Context, payload json.RawMessage) (*Ap
 		}
 		app := intent.ApplicationInstance
 		a.ensureManagedLabelsOnTyped(app)
+		if err := a.ensureNamespacesForApplicationInstance(ctx, app); err != nil {
+			return nil, err
+		}
 		if err := a.patchApplyTyped(ctx, app); err != nil {
 			return nil, err
 		}
@@ -210,6 +221,9 @@ func (a *Applier) applyIntent(ctx context.Context, payload json.RawMessage) (*Ap
 		}
 		op := intent.Operation
 		a.ensureManagedLabelsOnTyped(op)
+		if err := a.ensureTargetNamespace(ctx, op.GetNamespace()); err != nil {
+			return nil, err
+		}
 		if err := a.patchApplyTyped(ctx, op); err != nil {
 			return nil, err
 		}
@@ -242,6 +256,54 @@ func (a *Applier) applyIntent(ctx context.Context, payload json.RawMessage) (*Ap
 	default:
 		return nil, fmt.Errorf("unsupported intent %q", intent.Intent)
 	}
+}
+
+func (a *Applier) ensureNamespacesForApplicationInstance(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
+	if err := a.ensureTargetNamespace(ctx, app.GetNamespace()); err != nil {
+		return err
+	}
+	releaseNS := strings.TrimSpace(app.Spec.Release.Namespace)
+	if releaseNS != "" && releaseNS != app.GetNamespace() {
+		if err := a.ensureTargetNamespace(ctx, releaseNS); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureTargetNamespace creates the namespace when missing so apply jobs succeed on a clean cluster.
+// Existing namespaces are left unchanged (idempotent).
+func (a *Applier) ensureTargetNamespace(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+
+	ns := &corev1.Namespace{}
+	if err := a.Client.Get(ctx, client.ObjectKey{Name: name}, ns); err == nil {
+		return nil
+	} else if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("get namespace %q: %w", name, err)
+	}
+
+	create := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				labels.NamespaceGateKey: labels.NamespaceGateValue,
+			},
+		},
+	}
+	if err := a.Client.Create(ctx, create); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+		if apierrors.IsForbidden(err) {
+			return fmt.Errorf("namespace %q does not exist and cannot be created (check RBAC): %w", name, err)
+		}
+		return fmt.Errorf("create namespace %q: %w", name, err)
+	}
+	return nil
 }
 
 func (a *Applier) patchApply(ctx context.Context, obj *unstructured.Unstructured) error {

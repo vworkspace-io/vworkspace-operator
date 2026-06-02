@@ -24,6 +24,15 @@ rules:
   - create
   - patch
 - apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
   - apps.vworkspace.io
   resources:
   - applicationinstances

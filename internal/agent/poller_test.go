@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -85,6 +86,7 @@ func TestAgentPollerProcessesJob(t *testing.T) {
 	}
 
 	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
 	_ = appsv1alpha1.AddToScheme(scheme)
 	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 
