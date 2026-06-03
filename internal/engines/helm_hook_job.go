@@ -89,7 +89,7 @@ func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Ope
 	applyOperationLabels(&job.Spec.Template.ObjectMeta, op)
 
 	_, err = controllerutil.CreateOrUpdate(ctx, e.Client, job, func() error {
-		if err := controllerutil.SetOwnerReference(op, job, e.Client.Scheme()); err != nil {
+		if err := setOwnerReferenceIfSameNamespace(op, job, ns, e.Client.Scheme()); err != nil {
 			return err
 		}
 		if job.Labels == nil {
@@ -100,7 +100,11 @@ func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Ope
 			job.Annotations = map[string]string{}
 		}
 		job.Annotations["helm.sh/hook"] = params.HookName
-		job.Spec.Template.Labels = map[string]string{helmHookNameLabel: params.HookName}
+		if job.Spec.Template.Labels == nil {
+			job.Spec.Template.Labels = map[string]string{}
+		}
+		job.Spec.Template.Labels[helmHookNameLabel] = params.HookName
+		applyOperationLabels(&job.Spec.Template.ObjectMeta, op)
 		job.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
 		job.Spec.Template.Spec.ServiceAccountName = params.serviceAccountName()
 		job.Spec.Template.Spec.Containers = []corev1.Container{{
@@ -115,8 +119,12 @@ func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Ope
 }
 
 func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
+	ns, err := materializedNamespace(ctx, e.Client, op)
+	if err != nil {
+		return Status{}, err
+	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
 		return Status{}, fmt.Errorf("get hook job: %w", err)
 	}
 	status := statusFromJob(job)
@@ -128,8 +136,12 @@ func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operatio
 }
 
 func (e *HelmHookJobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
+	ns, err := materializedNamespace(ctx, e.Client, op)
+	if err != nil {
+		return err
+	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 	return e.Client.Delete(ctx, job)

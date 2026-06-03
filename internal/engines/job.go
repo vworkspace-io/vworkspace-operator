@@ -76,7 +76,7 @@ func (e *JobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation, 
 	applyOperationLabels(&job.Spec.Template.ObjectMeta, op)
 
 	_, err = controllerutil.CreateOrUpdate(ctx, e.Client, job, func() error {
-		if err := controllerutil.SetOwnerReference(op, job, e.Client.Scheme()); err != nil {
+		if err := setOwnerReferenceIfSameNamespace(op, job, ns, e.Client.Scheme()); err != nil {
 			return err
 		}
 		job.Spec = batchv1.JobSpec{
@@ -100,16 +100,24 @@ func (e *JobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation, 
 }
 
 func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
+	ns, err := materializedNamespace(ctx, e.Client, op)
+	if err != nil {
+		return Status{}, err
+	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
 		return Status{}, fmt.Errorf("get job: %w", err)
 	}
 	return statusFromJob(job), nil
 }
 
 func (e *JobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
+	ns, err := materializedNamespace(ctx, e.Client, op)
+	if err != nil {
+		return err
+	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 	return e.Client.Delete(ctx, job)

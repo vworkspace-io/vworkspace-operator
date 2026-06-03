@@ -174,6 +174,7 @@ func TestJobEngineCreatesJob(t *testing.T) {
 
 func TestJobEngineStatusComplete(t *testing.T) {
 	scheme := testScheme()
+	target := testTarget("team-a")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
@@ -181,17 +182,108 @@ func TestJobEngineStatusComplete(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		}}},
 	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, target).Build()
 	engine := NewJobEngine(c)
 
 	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
 		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
 	})
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
 	if !status.Done || status.Phase != opsv1alpha1.PhaseSucceeded {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestJobEngineStatusCrossNamespace(t *testing.T) {
+	scheme := testScheme()
+	releaseNS := "org-myteam"
+	target := testTarget(releaseNS)
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: releaseNS},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, target).Build()
+	engine := NewJobEngine(c)
+
+	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+	})
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if !status.Done || status.Phase != opsv1alpha1.PhaseSucceeded {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestWorkflowEngineStatusSucceeded(t *testing.T) {
+	scheme := testScheme()
+	releaseNS := "org-myteam"
+	target := testTarget(releaseNS)
+	wf := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "argoproj.io/v1alpha1",
+			"kind":       "Workflow",
+			"metadata": map[string]any{
+				"name":      "runbook-1",
+				"namespace": releaseNS,
+			},
+			"status": map[string]any{"phase": "Succeeded"},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wf, target).Build()
+	engine := NewWorkflowEngine(c)
+
+	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "runbook-1", Namespace: "team-a"},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+	})
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if !status.Done || status.Phase != opsv1alpha1.PhaseSucceeded {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestHelmHookJobEnginePreservesOperationLabels(t *testing.T) {
+	scheme := testScheme()
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	engine := NewHelmHookJobEngine(c)
+
+	op := &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "migrate-1", Namespace: "team-a", UID: types.UID("hook-uid")},
+		Spec: opsv1alpha1.OperationSpec{
+			Type:   opsv1alpha1.OperationTypeMigration,
+			Engine: opsv1alpha1.EngineHelmHookJob,
+			Parameters: &runtime.RawExtension{Raw: []byte(`{
+				"hookName": "pre-upgrade",
+				"image": "alpine:3.20"
+			}`)},
+		},
+	}
+	target := testTarget("team-a")
+
+	if err := engine.Materialize(context.Background(), op, target); err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+
+	job := &batchv1.Job{}
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "migrate-1"}, job); err != nil {
+		t.Fatalf("expected job: %v", err)
+	}
+	if job.Spec.Template.Labels[helmHookNameLabel] != "pre-upgrade" {
+		t.Fatalf("missing hook label on pod template")
+	}
+	if job.Spec.Template.Labels[OperationLabelKey] != "hook-uid" {
+		t.Fatalf("operation label dropped from pod template: %q", job.Spec.Template.Labels[OperationLabelKey])
 	}
 }
 
@@ -246,6 +338,13 @@ func TestHelmHookJobEngineRequiresHookName(t *testing.T) {
 	}
 	if err := engine.Materialize(context.Background(), op, target); err == nil {
 		t.Fatal("expected hookName error")
+	}
+}
+
+func testTarget(releaseNamespace string) *appsv1alpha1.ApplicationInstance {
+	return &appsv1alpha1.ApplicationInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: appsv1alpha1.ReleaseSpec{Namespace: releaseNamespace}},
 	}
 }
 

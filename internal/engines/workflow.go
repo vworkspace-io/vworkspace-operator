@@ -58,7 +58,7 @@ func (e *WorkflowEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operat
 	wf.SetLabels(wfLabels)
 
 	_, err = controllerutil.CreateOrUpdate(ctx, e.Client, wf, func() error {
-		if err := controllerutil.SetOwnerReference(op, wf, e.Client.Scheme()); err != nil {
+		if err := setOwnerReferenceIfSameNamespace(op, wf, ns, e.Client.Scheme()); err != nil {
 			return err
 		}
 		if err := unstructured.SetNestedMap(wf.Object, map[string]any{"name": templateName}, "spec", "workflowTemplateRef"); err != nil {
@@ -84,9 +84,13 @@ func (e *WorkflowEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operat
 }
 
 func (e *WorkflowEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
+	ns, err := materializedNamespace(ctx, e.Client, op)
+	if err != nil {
+		return Status{}, err
+	}
 	wf := &unstructured.Unstructured{}
 	wf.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"})
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Name}, wf); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, wf); err != nil {
 		return Status{}, fmt.Errorf("get workflow: %w", err)
 	}
 	phase, _, _ := unstructured.NestedString(wf.Object, "status", "phase")
@@ -118,9 +122,13 @@ func (e *WorkflowEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) 
 }
 
 func (e *WorkflowEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
+	ns, err := materializedNamespace(ctx, e.Client, op)
+	if err != nil {
+		return err
+	}
 	wf := &unstructured.Unstructured{}
 	wf.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"})
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Name}, wf); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, wf); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 	return e.Client.Delete(ctx, wf)
