@@ -37,7 +37,7 @@ func findJobLocationByOperationLabel(ctx context.Context, c client.Client, op *o
 	case 1:
 		return list.Items[0].Namespace, list.Items[0].Name, nil
 	default:
-		return "", "", fmt.Errorf("multiple jobs labeled for operation %s", op.UID)
+		return "", "", fmt.Errorf("%w: multiple jobs labeled for operation %s", ErrWorkloadAmbiguous, op.UID)
 	}
 }
 
@@ -53,7 +53,7 @@ func findWorkflowLocationByOperationLabel(ctx context.Context, c client.Client, 
 	case 1:
 		return list.Items[0].GetNamespace(), list.Items[0].GetName(), nil
 	default:
-		return "", "", fmt.Errorf("multiple workflows labeled for operation %s", op.UID)
+		return "", "", fmt.Errorf("%w: multiple workflows labeled for operation %s", ErrWorkloadAmbiguous, op.UID)
 	}
 }
 

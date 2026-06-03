@@ -184,12 +184,20 @@ func (r *OperationReconciler) backfillEngineRefIfNeeded(op *opsv1alpha1.Operatio
 }
 
 func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *opsv1alpha1.Operation, err error) (ctrl.Result, error) {
-	if errors.Is(err, engines.ErrWorkloadOwnership) {
+	if errors.Is(err, engines.ErrWorkloadOwnership) || errors.Is(err, engines.ErrWorkloadAmbiguous) {
 		return r.failOperation(ctx, op, err.Error())
 	}
 	if errors.Is(err, engines.ErrWorkloadMissing) {
 		if op.Status.Phase == opsv1alpha1.PhaseRunning {
-			if op.Status.StartedAt == nil || time.Since(op.Status.StartedAt.Time) < 30*time.Second {
+			if op.Status.StartedAt == nil {
+				now := metav1.Now()
+				op.Status.StartedAt = &now
+				if err := r.Status().Update(ctx, op); err != nil {
+					return ctrl.Result{}, fmt.Errorf("record startedAt for workload-missing grace: %w", err)
+				}
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			if time.Since(op.Status.StartedAt.Time) < 30*time.Second {
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
 		}
