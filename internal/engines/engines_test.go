@@ -322,6 +322,20 @@ func TestMaterializedNameUniqueAcrossNamespaces(t *testing.T) {
 	}
 }
 
+func TestJobEngineCancelSkipsWhenTargetMissing(t *testing.T) {
+	scheme := testScheme()
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	engine := NewJobEngine(c)
+
+	err := engine.Cancel(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("op-uid")},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+	})
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+}
+
 func TestCreateMaterializedJobRejectsStaleJob(t *testing.T) {
 	scheme := testScheme()
 	stale := &batchv1.Job{

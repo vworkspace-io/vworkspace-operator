@@ -94,8 +94,8 @@ func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Stat
 }
 
 func (e *JobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
-	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
-	if err != nil {
+	ns, name, skip, err := resolveEngineLocationForCancel(ctx, e.Client, op)
+	if err != nil || skip {
 		return err
 	}
 	job := &batchv1.Job{}

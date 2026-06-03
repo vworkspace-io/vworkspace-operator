@@ -23,23 +23,27 @@ func materializedName(op *opsv1alpha1.Operation) string {
 	return string(op.UID)
 }
 
-func materializedNamespace(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (string, error) {
-	target := &appsv1alpha1.ApplicationInstance{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Spec.TargetRef.Name}, target); err != nil {
-		return "", fmt.Errorf("get target ApplicationInstance: %w", err)
-	}
-	return targetNamespace(target), nil
+func resolveEngineLocation(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, err error) {
+	namespace, name, _, err = resolveEngineLocationDetailed(ctx, c, op)
+	return namespace, name, err
 }
 
-func resolveEngineLocation(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, err error) {
+func resolveEngineLocationForCancel(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, skip bool, err error) {
+	return resolveEngineLocationDetailed(ctx, c, op)
+}
+
+func resolveEngineLocationDetailed(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, skip bool, err error) {
 	if ref := op.Status.EngineRef; ref != nil && ref.Namespace != "" && ref.Name != "" {
-		return ref.Namespace, ref.Name, nil
+		return ref.Namespace, ref.Name, false, nil
 	}
-	ns, err := materializedNamespace(ctx, c, op)
-	if err != nil {
-		return "", "", err
+	target := &appsv1alpha1.ApplicationInstance{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Spec.TargetRef.Name}, target); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", "", true, nil
+		}
+		return "", "", false, fmt.Errorf("get target ApplicationInstance: %w", err)
 	}
-	return ns, materializedName(op), nil
+	return targetNamespace(target), materializedName(op), false, nil
 }
 
 // NewEngineResourceRef returns the stable engine workload coordinates for an Operation.
