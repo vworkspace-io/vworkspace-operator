@@ -17,6 +17,7 @@ limitations under the License.
 package webhook
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -112,6 +113,56 @@ func validateOperationBuiltinTemplate(op *opsv1alpha1.Operation) error {
 		"no built-in operation template for type %q and engine %q (expected refs such as %s)",
 		op.Spec.Type, op.Spec.Engine, strings.Join(templates.BuiltinRefs, ", "),
 	)
+}
+
+func validateOperationParameters(op *opsv1alpha1.Operation) error {
+	var raw []byte
+	if op.Spec.Parameters != nil {
+		raw = op.Spec.Parameters.Raw
+	}
+	return templates.ValidateParameters(op.Spec.Type, op.Spec.Engine, raw)
+}
+
+func operationParametersChanged(old, new *opsv1alpha1.Operation) bool {
+	oldRaw := []byte("{}")
+	newRaw := []byte("{}")
+	if old.Spec.Parameters != nil {
+		oldRaw = old.Spec.Parameters.Raw
+	}
+	if new.Spec.Parameters != nil {
+		newRaw = new.Spec.Parameters.Raw
+	}
+	return !bytes.Equal(bytes.TrimSpace(oldRaw), bytes.TrimSpace(newRaw))
+}
+
+func validateOperationSpecImmutability(old, new *opsv1alpha1.Operation) error {
+	if old.Spec.TargetRef.APIVersion != new.Spec.TargetRef.APIVersion {
+		return fmt.Errorf("spec.targetRef.apiVersion is immutable")
+	}
+	if old.Spec.TargetRef.Kind != new.Spec.TargetRef.Kind {
+		return fmt.Errorf("spec.targetRef.kind is immutable")
+	}
+	if old.Spec.TargetRef.Name != new.Spec.TargetRef.Name {
+		return fmt.Errorf("spec.targetRef.name is immutable")
+	}
+	if old.Spec.Type != new.Spec.Type {
+		return fmt.Errorf("spec.type is immutable")
+	}
+	if old.Spec.Engine != new.Spec.Engine {
+		return fmt.Errorf("spec.engine is immutable")
+	}
+	return nil
+}
+
+func validateOperationParametersImmutability(old, new *opsv1alpha1.Operation) error {
+	if !operationParametersChanged(old, new) {
+		return nil
+	}
+	switch old.Status.Phase {
+	case "", opsv1alpha1.PhasePending:
+		return nil
+	}
+	return fmt.Errorf("spec.parameters is immutable once operation has started (phase=%s)", old.Status.Phase)
 }
 
 func validateOperationCapability(target *appsv1alpha1.ApplicationInstance, op *opsv1alpha1.Operation) error {

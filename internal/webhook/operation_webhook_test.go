@@ -138,6 +138,107 @@ func TestOperationWebhookValidateCreateRejectsMissingCapability(t *testing.T) {
 	}
 }
 
+func TestOperationWebhookValidateCreateRejectsInvalidRestoreParameters(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	op := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
+		t.Fatal("expected rejection for restore without backupName parameter")
+	}
+}
+
+func TestOperationWebhookValidateUpdateSkipsParameterRevalidationWhenUnchanged(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	old.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1","ttl":"720h"}`)}
+	newOp := old.DeepCopy()
+	newOp.Labels = map[string]string{"reviewed": "true"}
+
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err != nil {
+		t.Fatalf("expected update with unchanged legacy parameters to pass: %v", err)
+	}
+}
+
+func TestOperationWebhookValidateUpdateRejectsParameterChangeWhenRunning(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	old.Status.Phase = opsv1alpha1.PhaseRunning
+	old.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	newOp := old.DeepCopy()
+	newOp.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b2"}`)}
+
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err == nil {
+		t.Fatal("expected rejection when parameters change after operation started")
+	}
+}
+
+func TestOperationWebhookValidateUpdateAllowsParameterChangeWhilePending(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	old.Status.Phase = opsv1alpha1.PhasePending
+	old.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	newOp := old.DeepCopy()
+	newOp.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b2"}`)}
+
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err != nil {
+		t.Fatalf("expected parameter change while pending to pass: %v", err)
+	}
+}
+
+func TestOperationWebhookValidateUpdateRejectsImmutableType(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("backup-1", "team-a", "app", opsv1alpha1.OperationTypeBackup)
+	newOp := old.DeepCopy()
+	newOp.Spec.Type = opsv1alpha1.OperationTypeRestore
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err == nil {
+		t.Fatal("expected rejection for immutable spec.type change")
+	}
+}
+
 func TestOperationWebhookValidateCreateRejectsConcurrentUpgrade(t *testing.T) {
 	scheme := testScheme(t)
 	existing := sampleOperation("upgrade-1", "team-a", "app", opsv1alpha1.OperationTypeUpgrade)
