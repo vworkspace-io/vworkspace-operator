@@ -103,9 +103,45 @@ func TestOperationWebhookValidateCreateRejectsDisallowedNamespaceType(t *testing
 	}
 }
 
+func TestOperationWebhookValidateCreateRejectsUnknownTemplatePair(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	op := sampleOperation("backup-volsync", "team-a", "app", opsv1alpha1.OperationTypeBackup)
+	op.Spec.Engine = opsv1alpha1.EngineVolsync
+	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
+		t.Fatal("expected rejection for unknown type+engine template pair")
+	}
+}
+
+func TestOperationWebhookValidateCreateRejectsMissingCapability(t *testing.T) {
+	scheme := testScheme(t)
+	app := sampleApplicationInstance("team-a", "app")
+	delete(app.Annotations, "ops.vworkspace.io/backup")
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).Build()
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	op := sampleOperation("backup-1", "team-a", "app", opsv1alpha1.OperationTypeBackup)
+	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
+		t.Fatal("expected rejection for missing backup capability")
+	}
+}
+
 func TestOperationWebhookValidateCreateRejectsConcurrentUpgrade(t *testing.T) {
 	scheme := testScheme(t)
 	existing := sampleOperation("upgrade-1", "team-a", "app", opsv1alpha1.OperationTypeUpgrade)
+	existing.Spec.Engine = opsv1alpha1.EngineHelm
 	existing.Status.Phase = opsv1alpha1.PhaseRunning
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).
@@ -117,7 +153,8 @@ func TestOperationWebhookValidateCreateRejectsConcurrentUpgrade(t *testing.T) {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
 
-	op := sampleOperation("upgrade-2", "team-a", "app", opsv1alpha1.OperationTypeBackup)
+	op := sampleOperation("upgrade-2", "team-a", "app", opsv1alpha1.OperationTypeUpgrade)
+	op.Spec.Engine = opsv1alpha1.EngineHelm
 	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
 		t.Fatal("expected rejection for concurrent operation")
 	}
@@ -180,7 +217,16 @@ func TestDetectInlineSecret(t *testing.T) {
 
 func sampleApplicationInstance(namespace, name string) *appsv1alpha1.ApplicationInstance { //nolint:unparam // shared fixture helper
 	return &appsv1alpha1.ApplicationInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Annotations: map[string]string{
+				"ops.vworkspace.io/backup":    "velero",
+				"ops.vworkspace.io/restore":   "velero",
+				"ops.vworkspace.io/upgrade":   "helm",
+				"ops.vworkspace.io/migration": "helmHookJob",
+			},
+		},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
 			AppRef: appsv1alpha1.AppRef{CatalogID: "nextcloud"},
 			Chart: appsv1alpha1.ChartSpec{
@@ -199,6 +245,13 @@ func sampleApplicationInstance(namespace, name string) *appsv1alpha1.Application
 }
 
 func sampleOperation(name, namespace, target string, opType opsv1alpha1.OperationType) *opsv1alpha1.Operation { //nolint:unparam // shared fixture helper
+	engine := opsv1alpha1.EngineVelero
+	switch opType {
+	case opsv1alpha1.OperationTypeUpgrade:
+		engine = opsv1alpha1.EngineHelm
+	case opsv1alpha1.OperationTypeMigration:
+		engine = opsv1alpha1.EngineHelmHookJob
+	}
 	return &opsv1alpha1.Operation{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: opsv1alpha1.OperationSpec{
@@ -208,7 +261,7 @@ func sampleOperation(name, namespace, target string, opType opsv1alpha1.Operatio
 				Name:       target,
 			},
 			Type:   opType,
-			Engine: opsv1alpha1.EngineVelero,
+			Engine: engine,
 		},
 	}
 }

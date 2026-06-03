@@ -1,0 +1,27 @@
+apiVersion: apps.vworkspace.io/v1alpha1
+kind: ApplicationInstance
+metadata:
+  name: nextcloud-myteam
+  namespace: org-myteam
+  labels:
+    app.vworkspace.io/managed-by: control-plane
+    app.vworkspace.io/cluster-id: cluster-prod-1
+  annotations:
+    ops.vworkspace.io/backup: velero
+    ops.vworkspace.io/restore: velero
+    ops.vworkspace.io/upgrade: helm
+    ops.vworkspace.io/migration: helmHookJob
+spec:
+  appRef:
+    catalogId: nextcloud
+  chart:
+    sourceType: oci
+    url: oci://registry.example.com/charts
+    name: nextcloud
+    version: "6.6.0"
+  release:
+    name: nextcloud-myteam
+    namespace: org-myteam
+  values:
+    source: inline
+    inline: {}

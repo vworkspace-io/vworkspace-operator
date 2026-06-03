@@ -68,7 +68,14 @@ func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha
 	if err := validateNamespaceAllowedTypes(ctx, w.client, op); err != nil {
 		return err
 	}
-	if err := validateOperationTargetExists(ctx, w.client, op); err != nil {
+	if err := validateOperationBuiltinTemplate(op); err != nil {
+		return err
+	}
+	target, err := validateOperationTargetExists(ctx, w.client, op)
+	if err != nil {
+		return err
+	}
+	if err := validateOperationCapability(target, op); err != nil {
 		return err
 	}
 	return validateOperationConcurrency(ctx, w.client, op)

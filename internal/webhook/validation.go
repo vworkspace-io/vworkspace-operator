@@ -25,6 +25,7 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/operations/templates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,14 +92,47 @@ func parseAllowedTypes(raw string) map[string]struct{} {
 	return out
 }
 
-func validateOperationTargetExists(ctx context.Context, cl client.Client, op *opsv1alpha1.Operation) error {
+func validateOperationTargetExists(ctx context.Context, cl client.Client, op *opsv1alpha1.Operation) (*appsv1alpha1.ApplicationInstance, error) {
 	target := &appsv1alpha1.ApplicationInstance{}
 	key := client.ObjectKey{Namespace: op.Namespace, Name: op.Spec.TargetRef.Name}
 	if err := cl.Get(ctx, key, target); err != nil {
 		if apierrors.IsNotFound(err) {
-			return fmt.Errorf("target ApplicationInstance %q not found in namespace %q", op.Spec.TargetRef.Name, op.Namespace)
+			return nil, fmt.Errorf("target ApplicationInstance %q not found in namespace %q", op.Spec.TargetRef.Name, op.Namespace)
 		}
-		return fmt.Errorf("get target ApplicationInstance: %w", err)
+		return nil, fmt.Errorf("get target ApplicationInstance: %w", err)
+	}
+	return target, nil
+}
+
+func validateOperationBuiltinTemplate(op *opsv1alpha1.Operation) error {
+	if _, ok := templates.Lookup(op.Spec.Type, op.Spec.Engine); ok {
+		return nil
+	}
+	return fmt.Errorf(
+		"no built-in operation template for type %q and engine %q (expected refs such as %s)",
+		op.Spec.Type, op.Spec.Engine, strings.Join(templates.BuiltinRefs, ", "),
+	)
+}
+
+func validateOperationCapability(target *appsv1alpha1.ApplicationInstance, op *opsv1alpha1.Operation) error {
+	tpl, ok := templates.Lookup(op.Spec.Type, op.Spec.Engine)
+	if !ok {
+		return nil
+	}
+	key := templates.CapabilityAnnotationKey(tpl.CapabilityVerb)
+	want := string(op.Spec.Engine)
+	got, ok := target.Annotations[key]
+	if !ok || strings.TrimSpace(got) == "" {
+		return fmt.Errorf(
+			"target %q missing capability annotation %s=%q required for template %s",
+			target.Name, key, want, tpl.Ref,
+		)
+	}
+	if strings.TrimSpace(got) != want {
+		return fmt.Errorf(
+			"target %q capability %s=%q does not match operation engine %q (template %s)",
+			target.Name, key, got, want, tpl.Ref,
+		)
 	}
 	return nil
 }

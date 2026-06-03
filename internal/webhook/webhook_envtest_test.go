@@ -244,7 +244,7 @@ func TestWebhookConcurrentOperationRejected(t *testing.T) {
 		t.Fatalf("update first Operation status: %v", err)
 	}
 
-	op := sampleEnvtestOperation(ns, "upgrade-2", "app", opsv1alpha1.OperationTypeUpgrade)
+	op := sampleEnvtestOperation(ns, "upgrade-2", "app", opsv1alpha1.OperationTypeBackup)
 	err := envtestClient.Create(ctx, op)
 	if err == nil {
 		t.Fatal("expected admission rejection for concurrent operation")
@@ -288,7 +288,15 @@ func createTestNamespace(t *testing.T, ctx context.Context, name, allowedTypes s
 
 func sampleEnvtestApplicationInstance(namespace, name string) *appsv1alpha1.ApplicationInstance { //nolint:unparam // test fixture
 	return &appsv1alpha1.ApplicationInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Annotations: map[string]string{
+				"ops.vworkspace.io/backup":  "velero",
+				"ops.vworkspace.io/restore": "velero",
+				"ops.vworkspace.io/upgrade": "helm",
+			},
+		},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
 			AppRef: appsv1alpha1.AppRef{CatalogID: "nextcloud"},
 			Chart: appsv1alpha1.ChartSpec{
@@ -307,6 +315,13 @@ func sampleEnvtestApplicationInstance(namespace, name string) *appsv1alpha1.Appl
 }
 
 func sampleEnvtestOperation(namespace, name, target string, opType opsv1alpha1.OperationType) *opsv1alpha1.Operation { //nolint:unparam // test fixture
+	engine := opsv1alpha1.EngineVelero
+	switch opType {
+	case opsv1alpha1.OperationTypeUpgrade:
+		engine = opsv1alpha1.EngineHelm
+	case opsv1alpha1.OperationTypeMigration:
+		engine = opsv1alpha1.EngineHelmHookJob
+	}
 	return &opsv1alpha1.Operation{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: opsv1alpha1.OperationSpec{
@@ -316,7 +331,7 @@ func sampleEnvtestOperation(namespace, name, target string, opType opsv1alpha1.O
 				Name:       target,
 			},
 			Type:   opType,
-			Engine: opsv1alpha1.EngineVelero,
+			Engine: engine,
 		},
 	}
 }
