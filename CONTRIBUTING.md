@@ -78,9 +78,12 @@ or a team service-account key). The workflow uses the self-hosted runner;
 the default model (`composer-2.5`).
 
 The review comment header shows the **PR head commit** that was checked out (not the
-ephemeral Actions merge commit). If the agent fails, the workflow exits non-zero after
-posting a fallback comment. Large PR diffs are truncated in the header; only one prior
-review body is kept (size-capped) under *Previous review*.
+ephemeral Actions merge commit). The workflow exits non-zero when the agent fails or when
+**Findings** in the current review include configured severities (default:
+`critical`, `major`, `minor` via `REVIEW_FAIL_SEVERITIES`; set to `none` to only fail on
+agent errors). `nit` findings do not fail CI unless you add them to that list. Large PR
+diffs are truncated in the header; only one prior review body is kept (size-capped) under
+*Previous review*.
 
 **Untrusted PRs:** the job checks out the PR branch and sends the diff (and optionally
 repo context via Cursor Agent with `--trust`) to Cursor’s API. Treat this like other CI

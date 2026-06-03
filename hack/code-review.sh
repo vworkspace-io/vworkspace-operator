@@ -8,6 +8,8 @@ DIFF_MAX_BYTES=200000
 HISTORY_MAX_BYTES="${REVIEW_HISTORY_MAX_BYTES:-12000}"
 REVIEW_DIFF_TRUNCATED=0
 REVIEW_FAILED=0
+# Comma-separated severities in ## Findings that fail the workflow (set to "none" to disable).
+REVIEW_FAIL_SEVERITIES="${REVIEW_FAIL_SEVERITIES:-critical,major,minor}"
 
 die() {
   echo "::error::$*" >&2
@@ -404,6 +406,54 @@ post_or_update_comment() {
   fi
 }
 
+# Prints comma-separated blocking severities to stdout; exit 0 if any, 1 if none.
+find_blocking_findings() {
+  local review_file="$1"
+  REVIEW_FAIL_SEVERITIES="${REVIEW_FAIL_SEVERITIES}" python3 - "${review_file}" <<'PY'
+import os
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+config = os.environ.get("REVIEW_FAIL_SEVERITIES", "critical,major,minor").strip().lower()
+if not config or config == "none":
+    sys.exit(1)
+
+fail_on = {s.strip() for s in config.split(",") if s.strip()}
+match = re.search(r"^## Findings\s*\n(.*?)(?=^## Test plan\b|\Z)", text, re.MULTILINE | re.DOTALL)
+if not match:
+    sys.exit(1)
+
+body = match.group(1)
+found: list[str] = []
+for line in body.splitlines():
+    m = re.match(r"^### \[(critical|major|minor|nit)\]", line, re.IGNORECASE)
+    if m:
+        found.append(m.group(1).lower())
+        continue
+    m = re.match(r"^-\s+\*\*Severity:\*\*\s*(critical|major|minor|nit)\b", line, re.IGNORECASE)
+    if m:
+        found.append(m.group(1).lower())
+        continue
+    if re.match(r"^-\s+\*\*", line) and re.search(
+        r"\*\*(critical|major|minor|nit)\*\*\s*[—\-]", line, re.IGNORECASE
+    ):
+        found.append(re.search(r"\*\*(critical|major|minor|nit)\*\*", line, re.I).group(1).lower())
+
+if re.search(r"_no actionable findings_", body, re.IGNORECASE):
+    if not re.search(r"^### \[(critical|major|minor|nit)\]", body, re.MULTILINE | re.IGNORECASE) and not found:
+        sys.exit(1)
+
+blocking = sorted({s for s in found if s in fail_on})
+if blocking:
+    print(",".join(blocking))
+    sys.exit(0)
+sys.exit(1)
+PY
+}
+
 main() {
   require_env CURSOR_API_KEY
   require_env GITHUB_TOKEN
@@ -473,7 +523,18 @@ main() {
   rm -f "${diff_file}" "${GITHUB_WORKSPACE}/PR_DIFF.txt" \
     "${review_file}" "${review_file}.wrapped" 2>/dev/null || true
 
+  local blocking=""
+  if [ "${REVIEW_FAILED}" != "1" ]; then
+    if blocking=$(find_blocking_findings "${review_file}"); then
+      REVIEW_FAILED=1
+      echo "::error::Cursor code review reported blocking finding(s): ${blocking} (see PR comment → Findings)" >&2
+    fi
+  fi
+
   if [ "${REVIEW_FAILED}" = "1" ]; then
+    if [ -n "${blocking}" ]; then
+      die "Code review has open ${blocking} finding(s); fix or push updates (see PR comment)"
+    fi
     die "Code review agent failed or returned invalid output (see PR comment)"
   fi
 }
