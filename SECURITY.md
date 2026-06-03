@@ -52,6 +52,19 @@ Out of scope:
 - Third-party controllers that the operator integrates with (Flux, Velero, cert-manager, external-secrets). Please report those upstream.
 - Cluster-level misconfigurations not introduced by the operator's defaults.
 
+## Automated PR code review (Cursor)
+
+The [Code review](.github/workflows/code-review.yml) workflow checks out the **PR head
+ref** (not `pull_request_target` merge semantics) and runs Cursor Agent with `--trust` on
+the runner workspace. The PR unified diff is sent to Cursor’s API; the agent is instructed
+to read primarily `PR_DIFF.txt`, but malicious PR content could attempt prompt injection
+via files in the tree.
+
+- Use label `skip-review` or `[skip review]` in the title to skip untrusted or sensitive PRs.
+- Fork PRs from outside the org should be reviewed by maintainers before enabling the job
+  (or skipped) — same caution as running `make test` on untrusted branches on a shared runner.
+- `CURSOR_API_KEY` is a secret; restrict repository/org secret visibility to maintainers.
+
 ## Hardening guidance
 
 See [docs/security/](docs/security/README.md) for guidance on RBAC, secrets handling, authentication, and the project's [threat model](docs/security/threat-model.md).

@@ -77,6 +77,16 @@ or a team service-account key). The workflow uses the self-hosted runner;
 **Optional:** set workflow variable `CURSOR_REVIEW_MODEL` in the job `env` block to override
 the default model (`composer-2.5`).
 
+The review comment header shows the **PR head commit** that was checked out (not the
+ephemeral Actions merge commit). If the agent fails, the workflow exits non-zero after
+posting a fallback comment. Large PR diffs are truncated in the header; only one prior
+review body is kept (size-capped) under *Previous review*.
+
+**Untrusted PRs:** the job checks out the PR branch and sends the diff (and optionally
+repo context via Cursor Agent with `--trust`) to Cursor’s API. Treat this like other CI
+that executes PR code; use `skip-review` for fork PRs you do not want analyzed. See
+[SECURITY.md](SECURITY.md#automated-pr-code-review-cursor).
+
 ## Pull request review
 
 Once code is in tree, pull requests need:

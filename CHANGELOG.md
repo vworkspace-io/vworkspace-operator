@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 - CI: Cursor Agent automated PR code review workflow (`.github/workflows/code-review.yml`, `hack/code-review.sh`).
 
+### Changed
+
+- CI: code review uses PR head SHA in comments, caps previous-review history, fails the job on agent errors, surfaces diff truncation, and documents untrusted-PR handling in CONTRIBUTING/SECURITY.
+
 ## [0.0.6] - 2026-06-02
 
 Phase 1 joint pre-release — Pull-mode agent contract aligned with [vworkspace-server v0.0.5](https://github.com/vworkspace-io/vworkspace-server/releases/tag/v0.0.5). Golden path (contract-only and full reconcile tiers) verified at this SHA; see [hub release note](https://github.com/vworkspace-io/vworkspace/blob/main/docs/releases/v0.0.x.md).
