@@ -82,8 +82,10 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("get target: %w", err)
 	}
 
-	if blocked, reason := approvals.BlockReason(op, r.ApprovalClaimSecret); blocked {
-		return r.blockOperation(ctx, op, "AwaitingApproval", reason)
+	if approvals.NeedsApprovalCheck(op) {
+		if blocked, reason := approvals.BlockReason(op, r.ApprovalClaimSecret); blocked {
+			return r.blockOperation(ctx, op, "AwaitingApproval", reason)
+		}
 	}
 
 	if conflict, reason, err := r.hasConflictingOperation(ctx, op); err != nil {

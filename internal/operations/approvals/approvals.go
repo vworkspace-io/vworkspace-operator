@@ -54,6 +54,20 @@ func ValidateClaim(secret, claim, operationName string) error {
 	return approvalclaim.Verify(secret, claim, operationName)
 }
 
+// NeedsApprovalCheck reports whether approval should still be verified before starting.
+// Once an operation has left Pending, ExpiresAt is treated as a pre-start deadline only.
+func NeedsApprovalCheck(op *opsv1alpha1.Operation) bool {
+	if op == nil {
+		return false
+	}
+	switch op.Status.Phase {
+	case "", opsv1alpha1.PhasePending:
+		return true
+	default:
+		return false
+	}
+}
+
 // BlockReason returns whether the reconciler should block and a message for AwaitingApproval.
 func BlockReason(op *opsv1alpha1.Operation, secret string) (bool, string) {
 	if !Required(op) {
