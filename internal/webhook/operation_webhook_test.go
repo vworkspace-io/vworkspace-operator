@@ -155,6 +155,48 @@ func TestOperationWebhookValidateCreateRejectsInvalidRestoreParameters(t *testin
 	}
 }
 
+func TestOperationWebhookValidateUpdateSkipsParameterRevalidationWhenUnchanged(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	old.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1","ttl":"720h"}`)}
+	newOp := old.DeepCopy()
+	newOp.Labels = map[string]string{"reviewed": "true"}
+
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err != nil {
+		t.Fatalf("expected update with unchanged legacy parameters to pass: %v", err)
+	}
+}
+
+func TestOperationWebhookValidateUpdateRejectsParameterChange(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	old.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	newOp := old.DeepCopy()
+	newOp.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{}`)}
+
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err == nil {
+		t.Fatal("expected rejection when parameters change to invalid shape")
+	}
+}
+
 func TestOperationWebhookValidateUpdateRejectsImmutableType(t *testing.T) {
 	scheme := testScheme(t)
 	cl := fake.NewClientBuilder().WithScheme(scheme).

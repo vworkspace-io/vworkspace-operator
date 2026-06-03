@@ -47,21 +47,22 @@ func (w *OperationWebhook) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (w *OperationWebhook) ValidateCreate(ctx context.Context, op *opsv1alpha1.Operation) (admission.Warnings, error) {
-	return nil, w.validateOperation(ctx, op)
+	return nil, w.validateOperation(ctx, op, true)
 }
 
 func (w *OperationWebhook) ValidateUpdate(ctx context.Context, old, op *opsv1alpha1.Operation) (admission.Warnings, error) {
 	if err := validateOperationSpecImmutability(old, op); err != nil {
 		return nil, err
 	}
-	return nil, w.validateOperation(ctx, op)
+	validateParameters := operationParametersChanged(old, op)
+	return nil, w.validateOperation(ctx, op, validateParameters)
 }
 
 func (w *OperationWebhook) ValidateDelete(_ context.Context, _ *opsv1alpha1.Operation) (admission.Warnings, error) {
 	return nil, nil
 }
 
-func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha1.Operation) error {
+func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha1.Operation, validateParameters bool) error {
 	if err := controller.ValidateOperationSpec(op); err != nil {
 		return err
 	}
@@ -81,8 +82,10 @@ func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha
 	if err := validateOperationCapability(target, op); err != nil {
 		return err
 	}
-	if err := validateOperationParameters(op); err != nil {
-		return err
+	if validateParameters {
+		if err := validateOperationParameters(op); err != nil {
+			return err
+		}
 	}
 	return validateOperationConcurrency(ctx, w.client, op)
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package webhook
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -120,6 +121,18 @@ func validateOperationParameters(op *opsv1alpha1.Operation) error {
 		raw = op.Spec.Parameters.Raw
 	}
 	return templates.ValidateParameters(op.Spec.Type, op.Spec.Engine, raw)
+}
+
+func operationParametersChanged(old, new *opsv1alpha1.Operation) bool {
+	oldRaw := []byte("{}")
+	newRaw := []byte("{}")
+	if old.Spec.Parameters != nil {
+		oldRaw = old.Spec.Parameters.Raw
+	}
+	if new.Spec.Parameters != nil {
+		newRaw = new.Spec.Parameters.Raw
+	}
+	return !bytes.Equal(bytes.TrimSpace(oldRaw), bytes.TrimSpace(newRaw))
 }
 
 func validateOperationSpecImmutability(old, new *opsv1alpha1.Operation) error {

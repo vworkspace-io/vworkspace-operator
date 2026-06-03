@@ -25,6 +25,7 @@ var inputSchemaJSON = map[string]string{
   "additionalProperties": false,
   "properties": {
     "retention": { "type": "string" },
+    "ttl": { "type": "string" },
     "snapshotClassName": { "type": "string" },
     "storageLocation": { "type": "string" }
   }
@@ -58,7 +59,9 @@ var inputSchemaJSON = map[string]string{
   "additionalProperties": false,
   "required": ["hookName"],
   "properties": {
-    "hookName": { "type": "string", "minLength": 1 }
+    "hookName": { "type": "string", "minLength": 1 },
+    "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+    "backoffLimit": { "type": "integer", "minimum": 0 }
   }
 }`,
 	RefRunCommandJob: `{
@@ -70,7 +73,21 @@ var inputSchemaJSON = map[string]string{
     "image": { "type": "string", "minLength": 1 },
     "command": { "type": "array", "items": { "type": "string" } },
     "args": { "type": "array", "items": { "type": "string" } },
-    "activeDeadlineSeconds": { "type": "integer", "minimum": 1 }
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "value": { "type": "string" },
+          "valueFrom": { "type": "object" }
+        }
+      }
+    },
+    "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+    "backoffLimit": { "type": "integer", "minimum": 0 }
   }
 }`,
 	RefRunbookWorkflow: `{
@@ -79,7 +96,11 @@ var inputSchemaJSON = map[string]string{
   "additionalProperties": false,
   "required": ["template"],
   "properties": {
-    "template": { "type": "string", "minLength": 1 }
+    "template": { "type": "string", "minLength": 1 },
+    "targetChartVersion": { "type": "string" },
+    "snapshotClassName": { "type": "string" },
+    "timeoutSeconds": { "type": "integer", "minimum": 1 },
+    "failureAction": { "type": "string" }
   }
 }`,
 }

@@ -16,11 +16,19 @@ import (
 
 type veleroParameters struct {
 	Retention         string            `json:"retention"`
+	TTL               string            `json:"ttl"`
 	SnapshotClassName string            `json:"snapshotClassName"`
 	StorageLocation   string            `json:"storageLocation"`
 	BackupName        string            `json:"backupName"`
 	NamespaceMapping  map[string]string `json:"namespaceMapping"`
 	RestorePVs        *bool             `json:"restorePVs"`
+}
+
+func (p veleroParameters) backupTTL() string {
+	if p.Retention != "" {
+		return p.Retention
+	}
+	return p.TTL
 }
 
 // VeleroEngine materializes velero Backup and Restore resources.
@@ -73,8 +81,8 @@ func (e *VeleroEngine) materializeBackup(ctx context.Context, op *opsv1alpha1.Op
 				return err
 			}
 		}
-		if params.Retention != "" {
-			if err := unstructured.SetNestedField(backup.Object, params.Retention, "spec", "ttl"); err != nil {
+		if ttl := params.backupTTL(); ttl != "" {
+			if err := unstructured.SetNestedField(backup.Object, ttl, "spec", "ttl"); err != nil {
 				return err
 			}
 		}
