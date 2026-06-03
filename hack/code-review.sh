@@ -520,9 +520,6 @@ main() {
 
   post_or_update_comment "${pr_number}" "${review_file}"
 
-  rm -f "${diff_file}" "${GITHUB_WORKSPACE}/PR_DIFF.txt" \
-    "${review_file}" "${review_file}.wrapped" 2>/dev/null || true
-
   local blocking=""
   if [ "${REVIEW_FAILED}" != "1" ]; then
     if blocking=$(find_blocking_findings "${review_file}"); then
@@ -530,6 +527,9 @@ main() {
       echo "::error::Cursor code review reported blocking finding(s): ${blocking} (see PR comment → Findings)" >&2
     fi
   fi
+
+  rm -f "${diff_file}" "${GITHUB_WORKSPACE}/PR_DIFF.txt" \
+    "${review_file}" "${review_file}.wrapped" 2>/dev/null || true
 
   if [ "${REVIEW_FAILED}" = "1" ]; then
     if [ -n "${blocking}" ]; then
