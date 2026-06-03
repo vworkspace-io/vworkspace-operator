@@ -79,7 +79,7 @@ func (e *JobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation, 
 }
 
 func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
-	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
+	ns, name, err := resolveEngineLocationForStatus(ctx, e.Client, op, findJobLocationByOperationLabel)
 	if err != nil {
 		return Status{}, err
 	}

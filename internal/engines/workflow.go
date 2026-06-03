@@ -98,7 +98,7 @@ func (e *WorkflowEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operat
 }
 
 func (e *WorkflowEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
-	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
+	ns, name, err := resolveEngineLocationForStatus(ctx, e.Client, op, findWorkflowLocationByOperationLabel)
 	if err != nil {
 		return Status{}, err
 	}

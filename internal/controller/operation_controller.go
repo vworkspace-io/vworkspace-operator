@@ -131,6 +131,14 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		prevConditions = append([]metav1.Condition(nil), op.Status.Conditions...)
 	}
 
+	if op.Status.Phase == opsv1alpha1.PhaseRunning && op.Status.EngineRef == nil {
+		ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
+		op.Status.EngineRef = &ref
+		if err := r.Status().Update(ctx, op); err != nil {
+			return ctrl.Result{}, fmt.Errorf("backfill engineRef: %w", err)
+		}
+	}
+
 	status, err := engine.Status(ctx, op)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("engine status: %w", err)

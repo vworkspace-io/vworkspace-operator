@@ -263,6 +263,33 @@ func TestWorkflowEngineStatusSucceeded(t *testing.T) {
 	}
 }
 
+func TestJobEngineStatusUsesLabelWhenTargetMissing(t *testing.T) {
+	scheme := testScheme()
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "orphan-job", Namespace: "org-myteam",
+			Labels: map[string]string{OperationLabelKey: "label-uid"},
+		},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	engine := NewJobEngine(c)
+
+	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("label-uid")},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+	})
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if !status.Done || status.Phase != opsv1alpha1.PhaseSucceeded {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
 func TestJobEngineStatusUsesEngineRefWithoutTarget(t *testing.T) {
 	scheme := testScheme()
 	job := &batchv1.Job{

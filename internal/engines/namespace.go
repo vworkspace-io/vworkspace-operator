@@ -23,9 +23,20 @@ func materializedName(op *opsv1alpha1.Operation) string {
 	return string(op.UID)
 }
 
-func resolveEngineLocation(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, err error) {
-	namespace, name, _, err = resolveEngineLocationDetailed(ctx, c, op)
-	return namespace, name, err
+func resolveEngineLocationForStatus(
+	ctx context.Context,
+	c client.Client,
+	op *opsv1alpha1.Operation,
+	fallback func(context.Context, client.Client, *opsv1alpha1.Operation) (namespace, name string, err error),
+) (namespace, name string, err error) {
+	namespace, name, skip, err := resolveEngineLocationDetailed(ctx, c, op)
+	if err != nil {
+		return "", "", err
+	}
+	if skip {
+		return fallback(ctx, c, op)
+	}
+	return namespace, name, nil
 }
 
 func resolveEngineLocationForCancel(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, skip bool, err error) {

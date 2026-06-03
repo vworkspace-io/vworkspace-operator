@@ -26,6 +26,37 @@ func deleteJobsLabeledByOperation(ctx context.Context, c client.Client, op *opsv
 	return nil
 }
 
+func findJobLocationByOperationLabel(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, err error) {
+	list := &batchv1.JobList{}
+	if err := c.List(ctx, list, client.MatchingLabels{OperationLabelKey: string(op.UID)}); err != nil {
+		return "", "", fmt.Errorf("list jobs for operation %s: %w", op.UID, err)
+	}
+	switch len(list.Items) {
+	case 0:
+		return "", "", fmt.Errorf("no job found for operation %s", op.UID)
+	case 1:
+		return list.Items[0].Namespace, list.Items[0].Name, nil
+	default:
+		return "", "", fmt.Errorf("multiple jobs labeled for operation %s", op.UID)
+	}
+}
+
+func findWorkflowLocationByOperationLabel(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, err error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "WorkflowList"})
+	if err := c.List(ctx, list, client.MatchingLabels{OperationLabelKey: string(op.UID)}); err != nil {
+		return "", "", fmt.Errorf("list workflows for operation %s: %w", op.UID, err)
+	}
+	switch len(list.Items) {
+	case 0:
+		return "", "", fmt.Errorf("no workflow found for operation %s", op.UID)
+	case 1:
+		return list.Items[0].GetNamespace(), list.Items[0].GetName(), nil
+	default:
+		return "", "", fmt.Errorf("multiple workflows labeled for operation %s", op.UID)
+	}
+}
+
 func deleteWorkflowsLabeledByOperation(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) error {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "WorkflowList"})

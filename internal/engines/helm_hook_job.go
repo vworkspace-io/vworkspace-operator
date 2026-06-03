@@ -102,7 +102,7 @@ func (e *HelmHookJobEngine) hookStatusFromJob(op *opsv1alpha1.Operation, job *ba
 }
 
 func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
-	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
+	ns, name, err := resolveEngineLocationForStatus(ctx, e.Client, op, findJobLocationByOperationLabel)
 	if err != nil {
 		return Status{}, err
 	}
