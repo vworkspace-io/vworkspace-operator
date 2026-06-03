@@ -4,6 +4,10 @@ set -euo pipefail
 
 REVIEW_MARKER='<!-- vworkspace-agent-review:canonical:v1 -->'
 MODEL="${CURSOR_REVIEW_MODEL:-composer-2.5}"
+DIFF_MAX_BYTES=200000
+HISTORY_MAX_BYTES="${REVIEW_HISTORY_MAX_BYTES:-12000}"
+REVIEW_DIFF_TRUNCATED=0
+REVIEW_FAILED=0
 
 die() {
   echo "::error::$*" >&2
@@ -96,7 +100,7 @@ run_review() {
   prompt=$(cat <<'EOF'
 You are reviewing a pull request for vworkspace-operator (Kubebuilder / controller-runtime Go operator).
 
-The unified diff is in PR_DIFF.txt in the workspace (may be truncated). Read only that diff and repository context as needed. Do not suggest edits outside the changed lines unless a change clearly breaks callers elsewhere.
+The unified diff is in PR_DIFF.txt in the workspace (may be truncated). Read **only** PR_DIFF.txt unless you must interpret a symbol named in the diff—do not read other workspace files. Do not suggest edits outside the changed lines unless a change clearly breaks callers elsewhere.
 
 Important:
 - Review the code as it exists in this diff now. Do not report issues that the diff already fixes.
@@ -140,11 +144,12 @@ EOF
 
   local diff_bytes
   diff_bytes=$(wc -c <"${diff_file}" | tr -d ' ')
-  if [ "${diff_bytes}" -gt 200000 ]; then
-    head -c 200000 "${diff_file}" >"${GITHUB_WORKSPACE}/PR_DIFF.txt"
+  if [ "${diff_bytes}" -gt "${DIFF_MAX_BYTES}" ]; then
+    REVIEW_DIFF_TRUNCATED=1
+    head -c "${DIFF_MAX_BYTES}" "${diff_file}" >"${GITHUB_WORKSPACE}/PR_DIFF.txt"
     {
       echo ""
-      echo "(Diff truncated to 200k characters for review.)"
+      echo "(Diff truncated to ${DIFF_MAX_BYTES} characters for review.)"
     } >>"${GITHUB_WORKSPACE}/PR_DIFF.txt"
   else
     cp "${diff_file}" "${GITHUB_WORKSPACE}/PR_DIFF.txt"
@@ -167,11 +172,52 @@ EOF
     }
 }
 
+review_commit_short() {
+  if [ -n "${REVIEW_COMMIT_SHA:-}" ]; then
+    echo "${REVIEW_COMMIT_SHA:0:7}"
+    return 0
+  fi
+  if git -C "${GITHUB_WORKSPACE}" rev-parse --short=7 HEAD 2>/dev/null; then
+    return 0
+  fi
+  echo "unknown"
+}
+
 extract_commit_from_body() {
   local body="$1"
+  if [[ "${body}" =~ \*\*Commit\*\*[[:space:]]*\|[[:space:]]*\`([0-9a-f]{7,40})\` ]]; then
+    echo "${BASH_REMATCH[1]:0:7}"
+    return 0
+  fi
   if [[ "${body}" =~ \`([0-9a-f]{7,40})\` ]]; then
     echo "${BASH_REMATCH[1]:0:7}"
   fi
+}
+
+strip_body_for_history() {
+  local body="$1"
+  HISTORY_MAX_BYTES="${HISTORY_MAX_BYTES}" python3 -c '
+import os
+import sys
+
+body = sys.stdin.read()
+max_b = int(os.environ.get("HISTORY_MAX_BYTES", "12000"))
+start = body.find("## Summary")
+if start < 0:
+    sys.exit(0)
+text = body[start:]
+while text.lstrip().startswith("<details>"):
+    end = text.find("</details>")
+    if end < 0:
+        break
+    text = text[end + len("</details>") :].lstrip()
+if len(text) > max_b:
+    text = (
+        text[:max_b]
+        + "\n\n_(Previous review truncated for GitHub comment size.)_\n"
+    )
+sys.stdout.write(text)
+' <<<"${body}"
 }
 
 append_previous_review_history() {
@@ -180,15 +226,19 @@ append_previous_review_history() {
   if [ -z "${previous_body}" ]; then
     return 0
   fi
-  local prev_commit
+  local prev_commit stripped
   prev_commit=$(extract_commit_from_body "${previous_body}")
   prev_commit="${prev_commit:-unknown}"
+  stripped=$(strip_body_for_history "${previous_body}")
+  if [ -z "${stripped}" ]; then
+    return 0
+  fi
   local history_file="${wrapped_file}.history"
   {
     echo "<details>"
     echo "<summary>Previous review (commit <code>${prev_commit}</code>)</summary>"
     echo ""
-    echo "${previous_body}"
+    echo "${stripped}"
     echo ""
     echo "</details>"
     echo ""
@@ -207,6 +257,12 @@ append_previous_review_history() {
 
 build_review_header() {
   local pr_number="$1"
+  local commit_sha diff_row=""
+  commit_sha=$(review_commit_short)
+  if [ "${REVIEW_DIFF_TRUNCATED}" = "1" ]; then
+    diff_row="| **Diff** | Truncated (first ${DIFF_MAX_BYTES} bytes); findings may not cover the full PR |
+"
+  fi
   cat <<EOF
 ## Cursor code review
 
@@ -214,10 +270,10 @@ ${REVIEW_MARKER}
 
 | | |
 | --- | --- |
-| **Commit** | \`${GITHUB_SHA::7}\` |
+| **Commit** | \`${commit_sha}\` |
 | **PR** | #${pr_number} |
 | **Model** | \`${MODEL}\` |
-
+${diff_row}
 Automated review (updated on each push). To disable: add label \`skip-review\` or \`[skip review]\` in the PR title.
 
 > **For agents:** Treat only **Findings** below as open work. Items in *Previous review* are historical unless the current diff still shows the problem.
@@ -369,7 +425,9 @@ main() {
 
   write_diff "${pr_number}" "${diff_file}"
 
+  REVIEW_FAILED=0
   if ! run_review "${diff_file}" "${review_file}"; then
+    REVIEW_FAILED=1
     {
       echo "## Summary"
       echo "The review agent did not complete successfully."
@@ -389,6 +447,7 @@ main() {
   else
     normalize_review_output "${review_file}"
     if ! validate_review_output "${review_file}"; then
+      REVIEW_FAILED=1
       {
         echo "## Summary"
         echo "The review agent returned invalid output."
@@ -413,6 +472,10 @@ main() {
 
   rm -f "${diff_file}" "${GITHUB_WORKSPACE}/PR_DIFF.txt" \
     "${review_file}" "${review_file}.wrapped" 2>/dev/null || true
+
+  if [ "${REVIEW_FAILED}" = "1" ]; then
+    die "Code review agent failed or returned invalid output (see PR comment)"
+  fi
 }
 
 main "$@"
