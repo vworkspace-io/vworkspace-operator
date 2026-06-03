@@ -95,8 +95,11 @@ func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Stat
 
 func (e *JobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
 	ns, name, skip, err := resolveEngineLocationForCancel(ctx, e.Client, op)
-	if err != nil || skip {
+	if err != nil {
 		return err
+	}
+	if skip {
+		return deleteJobsLabeledByOperation(ctx, e.Client, op)
 	}
 	job := &batchv1.Job{}
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {

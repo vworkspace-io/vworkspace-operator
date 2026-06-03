@@ -8,6 +8,7 @@ import (
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -324,7 +325,13 @@ func TestMaterializedNameUniqueAcrossNamespaces(t *testing.T) {
 
 func TestJobEngineCancelSkipsWhenTargetMissing(t *testing.T) {
 	scheme := testScheme()
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	orphan := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "orphan-job", Namespace: "org-myteam",
+			Labels: map[string]string{OperationLabelKey: "op-uid"},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(orphan).Build()
 	engine := NewJobEngine(c)
 
 	err := engine.Cancel(context.Background(), &opsv1alpha1.Operation{
@@ -333,6 +340,56 @@ func TestJobEngineCancelSkipsWhenTargetMissing(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Cancel: %v", err)
+	}
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "org-myteam", Name: "orphan-job"}, &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected orphan job deleted, get err: %v", err)
+	}
+}
+
+func TestWorkflowEngineCancelSkipsDeletesLabeledWorkflow(t *testing.T) {
+	scheme := testScheme()
+	wf := &unstructured.Unstructured{}
+	wf.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"})
+	wf.SetName("orphan-wf")
+	wf.SetNamespace("org-myteam")
+	wf.SetLabels(map[string]string{OperationLabelKey: "wf-uid"})
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wf).Build()
+	engine := NewWorkflowEngine(c)
+
+	err := engine.Cancel(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("wf-uid")},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+	})
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	got := &unstructured.Unstructured{}
+	got.SetGroupVersionKind(wf.GroupVersionKind())
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "org-myteam", Name: "orphan-wf"}, got); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected orphan workflow deleted, get err: %v", err)
+	}
+}
+
+func TestHelmHookJobEngineCancelSkipsDeletesLabeledJob(t *testing.T) {
+	scheme := testScheme()
+	orphan := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "orphan-hook", Namespace: "org-myteam",
+			Labels: map[string]string{OperationLabelKey: "hook-uid", helmHookNameLabel: "pre-upgrade"},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(orphan).Build()
+	engine := NewHelmHookJobEngine(c)
+
+	err := engine.Cancel(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "migrate-1", Namespace: "team-a", UID: types.UID("hook-uid")},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+	})
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "org-myteam", Name: "orphan-hook"}, &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected orphan hook job deleted, get err: %v", err)
 	}
 }
 

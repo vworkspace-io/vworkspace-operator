@@ -140,8 +140,11 @@ func (e *WorkflowEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) 
 
 func (e *WorkflowEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
 	ns, name, skip, err := resolveEngineLocationForCancel(ctx, e.Client, op)
-	if err != nil || skip {
+	if err != nil {
 		return err
+	}
+	if skip {
+		return deleteWorkflowsLabeledByOperation(ctx, e.Client, op)
 	}
 	wf := &unstructured.Unstructured{}
 	wf.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"})
