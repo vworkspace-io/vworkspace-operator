@@ -108,6 +108,7 @@ Important:
 - Review the code as it exists in this diff now. Do not report issues that the diff already fixes.
 - Each finding must cite evidence from the diff (a symbol, hunk, or behavior you can point to). If you are unsure an issue still exists, omit it.
 - Prefer fewer, high-confidence findings over speculative ones. False positives waste author time.
+- For PRs that only change `hack/` CI scripts, `.github/workflows`, or code-review docs: do not report major/minor findings about markdown parsing heuristics unless the diff adds a failing test that proves a false positive or false negative.
 - Do not output file paths with a leading @ (that is not valid review text). Write markdown only.
 
 Focus on:
@@ -406,52 +407,13 @@ post_or_update_comment() {
   fi
 }
 
+HACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Prints comma-separated blocking severities to stdout; exit 0 if any, 1 if none.
 find_blocking_findings() {
   local review_file="$1"
-  REVIEW_FAIL_SEVERITIES="${REVIEW_FAIL_SEVERITIES}" python3 - "${review_file}" <<'PY'
-import os
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
-config = os.environ.get("REVIEW_FAIL_SEVERITIES", "critical,major,minor").strip().lower()
-if not config or config == "none":
-    sys.exit(1)
-
-fail_on = {s.strip() for s in config.split(",") if s.strip()}
-match = re.search(r"^## Findings\s*\n(.*?)(?=^## Test plan\b|\Z)", text, re.MULTILINE | re.DOTALL)
-if not match:
-    sys.exit(1)
-
-body = match.group(1)
-found: list[str] = []
-for line in body.splitlines():
-    m = re.match(r"^### \[(critical|major|minor|nit)\]", line, re.IGNORECASE)
-    if m:
-        found.append(m.group(1).lower())
-        continue
-    m = re.match(r"^-\s+\*\*Severity:\*\*\s*(critical|major|minor|nit)\b", line, re.IGNORECASE)
-    if m:
-        found.append(m.group(1).lower())
-        continue
-    if re.match(r"^-\s+\*\*", line) and re.search(
-        r"\*\*(critical|major|minor|nit)\*\*\s*[—\-]", line, re.IGNORECASE
-    ):
-        found.append(re.search(r"\*\*(critical|major|minor|nit)\*\*", line, re.I).group(1).lower())
-
-if re.search(r"_no actionable findings_", body, re.IGNORECASE):
-    if not re.search(r"^### \[(critical|major|minor|nit)\]", body, re.MULTILINE | re.IGNORECASE) and not found:
-        sys.exit(1)
-
-blocking = sorted({s for s in found if s in fail_on})
-if blocking:
-    print(",".join(blocking))
-    sys.exit(0)
-sys.exit(1)
-PY
+  REVIEW_FAIL_SEVERITIES="${REVIEW_FAIL_SEVERITIES}" \
+    python3 "${HACK_DIR}/code_review_findings.py" "${review_file}"
 }
 
 main() {

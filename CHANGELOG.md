@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 - CI: Cursor code review fails the workflow when **Findings** include `critical`, `major`, or `minor` (configurable via `REVIEW_FAIL_SEVERITIES`).
 - CI: code review uses PR head SHA in comments, caps previous-review history, fails the job on agent errors, surfaces diff truncation, and documents untrusted-PR handling in CONTRIBUTING/SECURITY.
+- CI: extracted the findings severity parser into `hack/code_review_findings.py` with unit tests (`hack/test_code_review_findings.py`, run in the verify job); the parser ignores illustrative `### [severity]` examples quoted under **Suggested fix** so it no longer fails CI on its own quoted markdown.
 
 ### Added
 

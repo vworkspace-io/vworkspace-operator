@@ -39,6 +39,10 @@ site/
 .env.*
 !.env.example
 
+# Python (hack/ CI helper scripts and their tests)
+__pycache__/
+*.pyc
+
 # Misc
 *.log
 .tmp/

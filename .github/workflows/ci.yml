@@ -27,6 +27,10 @@ jobs:
       contents: read
     name: Verify generated artifacts
     runs-on: self-hosted
+    # The repo is checked out into verify/; all run steps execute from there.
+    defaults:
+      run:
+        working-directory: verify
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -35,7 +39,6 @@ jobs:
           persist-credentials: false
 
       - name: Ensure build tools
-        working-directory: verify
         run: ./hack/ensure-build-tools.sh
 
       - name: Setup Go
@@ -44,10 +47,14 @@ jobs:
           working-directory: verify
 
       - name: Verify generated manifests
-        working-directory: verify
         run: |
           chmod +x hack/verify-generated.sh
           ./hack/verify-generated.sh
+
+      - name: Code review findings parser tests
+        run: |
+          chmod +x hack/test-code-review-findings.sh
+          ./hack/test-code-review-findings.sh
 
   test:
     permissions:
