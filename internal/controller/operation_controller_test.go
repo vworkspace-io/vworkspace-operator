@@ -211,8 +211,11 @@ func TestOperationReconcilerFailsWhenEngineWorkloadMissing(t *testing.T) {
 	const namespace = "team-a"
 	scheme := testOperationControllerScheme(t)
 	op := sampleRestoreOperation("run-1", namespace, "app")
+	op.Spec.Type = opsv1alpha1.OperationTypeRunCommand
 	op.Spec.Engine = opsv1alpha1.EngineJob
-	op.Status = opsv1alpha1.OperationStatus{Phase: opsv1alpha1.PhaseRunning}
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"image":"alpine:3.20"}`)}
+	started := metav1.NewTime(time.Now().Add(-time.Minute))
+	op.Status = opsv1alpha1.OperationStatus{Phase: opsv1alpha1.PhaseRunning, StartedAt: &started}
 	cl := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(sampleTargetApp(namespace, "app"), op).
 		WithStatusSubresource(op).

@@ -172,6 +172,10 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 func (r *OperationReconciler) backfillEngineRefIfNeeded(op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance) {
+	if op.Status.Phase == opsv1alpha1.PhaseRunning && op.Status.StartedAt == nil {
+		now := metav1.Now()
+		op.Status.StartedAt = &now
+	}
 	if op.Status.Phase != opsv1alpha1.PhaseRunning || op.Status.EngineRef != nil || !engines.SupportsEngineRef(op.Spec.Engine) {
 		return
 	}
@@ -184,8 +188,10 @@ func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *o
 		return r.failOperation(ctx, op, err.Error())
 	}
 	if errors.Is(err, engines.ErrWorkloadMissing) {
-		if op.Status.StartedAt != nil && time.Since(op.Status.StartedAt.Time) < 30*time.Second {
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		if op.Status.Phase == opsv1alpha1.PhaseRunning {
+			if op.Status.StartedAt == nil || time.Since(op.Status.StartedAt.Time) < 30*time.Second {
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
 		}
 		return r.failOperation(ctx, op, err.Error())
 	}

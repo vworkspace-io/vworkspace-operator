@@ -570,6 +570,15 @@ func TestJobEngineMaterializeIdempotent(t *testing.T) {
 	}
 }
 
+func TestValidateRuntimeParametersRequiresHelmHookFields(t *testing.T) {
+	op := &opsv1alpha1.Operation{
+		Spec: opsv1alpha1.OperationSpec{Engine: opsv1alpha1.EngineHelmHookJob},
+	}
+	if err := ValidateRuntimeParameters(op); err == nil {
+		t.Fatal("expected missing hookName/image error")
+	}
+}
+
 func TestValidateRuntimeParametersRejectsPrivilegedServiceAccount(t *testing.T) {
 	op := &opsv1alpha1.Operation{
 		Spec: opsv1alpha1.OperationSpec{
