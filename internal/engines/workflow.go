@@ -152,7 +152,10 @@ func (e *WorkflowEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) 
 	wf := &unstructured.Unstructured{}
 	wf.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"})
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, wf); err != nil {
-		return client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			return deleteWorkflowsLabeledByOperation(ctx, e.Client, op)
+		}
+		return err
 	}
 	return e.Client.Delete(ctx, wf)
 }

@@ -104,15 +104,18 @@ def parse_blocking_severities(text: str, fail_severities: str) -> list[str]:
         return []
 
     fail_on = {s.strip() for s in config.split(",") if s.strip()}
-    match = re.search(
-        r"^## Findings\s*\n(.*?)(?=^## |\Z)",
-        text,
-        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    matches = list(
+        re.finditer(
+            r"^## Findings\s*\n(.*?)(?=^## |\Z)",
+            text,
+            re.MULTILINE | re.DOTALL | re.IGNORECASE,
+        )
     )
-    if not match:
+    if not matches:
         return []
 
-    body = match.group(1)
+    # PR comments embed prior reviews in <details>; use the latest Findings block.
+    body = matches[-1].group(1)
     found = _collect_findings(body)
     found.extend(_orphan_severity_lines(body))
 

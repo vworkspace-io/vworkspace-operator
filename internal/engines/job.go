@@ -107,7 +107,10 @@ func (e *JobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error
 	}
 	job := &batchv1.Job{}
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
-		return client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			return deleteJobsLabeledByOperation(ctx, e.Client, op)
+		}
+		return err
 	}
 	return e.Client.Delete(ctx, job)
 }

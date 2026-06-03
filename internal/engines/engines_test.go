@@ -397,6 +397,34 @@ func TestWorkflowEngineCancelSkipsDeletesLabeledWorkflow(t *testing.T) {
 	}
 }
 
+func TestJobEngineCancelDeletesLabeledOrphanWhenNamedJobGone(t *testing.T) {
+	scheme := testScheme()
+	orphan := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "orphan-job", Namespace: "team-a",
+			Labels: map[string]string{OperationLabelKey: "op-uid"},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(orphan).Build()
+	engine := NewJobEngine(c)
+
+	err := engine.Cancel(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("op-uid")},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+		Status: opsv1alpha1.OperationStatus{
+			EngineRef: &opsv1alpha1.EngineResourceRef{
+				Kind: "Job", Name: "team-a--run-1", Namespace: "team-a",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "orphan-job"}, &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected labeled orphan deleted, get err: %v", err)
+	}
+}
+
 func TestHelmHookJobEngineCancelSkipsDeletesLabeledJob(t *testing.T) {
 	scheme := testScheme()
 	orphan := &batchv1.Job{
