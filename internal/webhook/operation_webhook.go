@@ -54,6 +54,9 @@ func (w *OperationWebhook) ValidateUpdate(ctx context.Context, old, op *opsv1alp
 	if err := validateOperationSpecImmutability(old, op); err != nil {
 		return nil, err
 	}
+	if err := validateOperationParametersImmutability(old, op); err != nil {
+		return nil, err
+	}
 	validateParameters := operationParametersChanged(old, op)
 	return nil, w.validateOperation(ctx, op, validateParameters)
 }

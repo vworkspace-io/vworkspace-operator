@@ -176,7 +176,7 @@ func TestOperationWebhookValidateUpdateSkipsParameterRevalidationWhenUnchanged(t
 	}
 }
 
-func TestOperationWebhookValidateUpdateRejectsParameterChange(t *testing.T) {
+func TestOperationWebhookValidateUpdateRejectsParameterChangeWhenRunning(t *testing.T) {
 	scheme := testScheme(t)
 	cl := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(sampleApplicationInstance("team-a", "app")).
@@ -188,12 +188,35 @@ func TestOperationWebhookValidateUpdateRejectsParameterChange(t *testing.T) {
 	}
 
 	old := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	old.Status.Phase = opsv1alpha1.PhaseRunning
 	old.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
 	newOp := old.DeepCopy()
-	newOp.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{}`)}
+	newOp.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b2"}`)}
 
 	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err == nil {
-		t.Fatal("expected rejection when parameters change to invalid shape")
+		t.Fatal("expected rejection when parameters change after operation started")
+	}
+}
+
+func TestOperationWebhookValidateUpdateAllowsParameterChangeWhilePending(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	old.Status.Phase = opsv1alpha1.PhasePending
+	old.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	newOp := old.DeepCopy()
+	newOp.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b2"}`)}
+
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err != nil {
+		t.Fatalf("expected parameter change while pending to pass: %v", err)
 	}
 }
 

@@ -154,6 +154,17 @@ func validateOperationSpecImmutability(old, new *opsv1alpha1.Operation) error {
 	return nil
 }
 
+func validateOperationParametersImmutability(old, new *opsv1alpha1.Operation) error {
+	if !operationParametersChanged(old, new) {
+		return nil
+	}
+	switch old.Status.Phase {
+	case "", opsv1alpha1.PhasePending:
+		return nil
+	}
+	return fmt.Errorf("spec.parameters is immutable once operation has started (phase=%s)", old.Status.Phase)
+}
+
 func validateOperationCapability(target *appsv1alpha1.ApplicationInstance, op *opsv1alpha1.Operation) error {
 	tpl, ok := templates.Lookup(op.Spec.Type, op.Spec.Engine)
 	if !ok {
