@@ -63,6 +63,9 @@ func createMaterializedJob(ctx context.Context, c client.Client, op *opsv1alpha1
 	var existing batchv1.Job
 	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &existing)
 	if err == nil {
+		if err := verifyOperationOwnership(&existing.ObjectMeta, op); err != nil {
+			return err
+		}
 		return nil
 	}
 	if !apierrors.IsNotFound(err) {

@@ -26,7 +26,7 @@ func ValidateRuntimeParameters(op *opsv1alpha1.Operation) error {
 	}
 	var params runtimeParameters
 	if err := json.Unmarshal(op.Spec.Parameters.Raw, &params); err != nil {
-		return nil
+		return fmt.Errorf("decode runtime parameters: %w", err)
 	}
 	if params.ServiceAccountName != "" && params.ServiceAccountName != DefaultOperationRunnerServiceAccount {
 		return fmt.Errorf(

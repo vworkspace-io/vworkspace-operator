@@ -87,6 +87,9 @@ func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Stat
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
 		return Status{}, fmt.Errorf("get job: %w", err)
 	}
+	if err := verifyOperationOwnership(&job.ObjectMeta, op); err != nil {
+		return Status{}, err
+	}
 	return statusFromJob(job), nil
 }
 

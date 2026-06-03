@@ -176,7 +176,10 @@ func TestJobEngineStatusComplete(t *testing.T) {
 	scheme := testScheme()
 	target := testTarget("team-a")
 	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: "team-a--run-1", Namespace: "team-a"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "team-a--run-1", Namespace: "team-a",
+			Labels: map[string]string{OperationLabelKey: "op-uid"},
+		},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
 			Type:   batchv1.JobComplete,
 			Status: corev1.ConditionTrue,
@@ -186,7 +189,7 @@ func TestJobEngineStatusComplete(t *testing.T) {
 	engine := NewJobEngine(c)
 
 	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
-		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("op-uid")},
 		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
 	})
 	if err != nil {
@@ -202,7 +205,10 @@ func TestJobEngineStatusCrossNamespace(t *testing.T) {
 	releaseNS := "org-myteam"
 	target := testTarget(releaseNS)
 	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: "team-a--run-1", Namespace: releaseNS},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "team-a--run-1", Namespace: releaseNS,
+			Labels: map[string]string{OperationLabelKey: "op-uid"},
+		},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
 			Type:   batchv1.JobComplete,
 			Status: corev1.ConditionTrue,
@@ -212,7 +218,7 @@ func TestJobEngineStatusCrossNamespace(t *testing.T) {
 	engine := NewJobEngine(c)
 
 	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
-		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("op-uid")},
 		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
 	})
 	if err != nil {
@@ -234,6 +240,9 @@ func TestWorkflowEngineStatusSucceeded(t *testing.T) {
 			"metadata": map[string]any{
 				"name":      "team-a--runbook-1",
 				"namespace": releaseNS,
+				"labels": map[string]any{
+					OperationLabelKey: "wf-uid",
+				},
 			},
 			"status": map[string]any{"phase": "Succeeded"},
 		},
@@ -242,7 +251,7 @@ func TestWorkflowEngineStatusSucceeded(t *testing.T) {
 	engine := NewWorkflowEngine(c)
 
 	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
-		ObjectMeta: metav1.ObjectMeta{Name: "runbook-1", Namespace: "team-a"},
+		ObjectMeta: metav1.ObjectMeta{Name: "runbook-1", Namespace: "team-a", UID: types.UID("wf-uid")},
 		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
 	})
 	if err != nil {
@@ -256,7 +265,10 @@ func TestWorkflowEngineStatusSucceeded(t *testing.T) {
 func TestJobEngineStatusUsesEngineRefWithoutTarget(t *testing.T) {
 	scheme := testScheme()
 	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: "team-a--run-1", Namespace: "org-myteam"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "team-a--run-1", Namespace: "org-myteam",
+			Labels: map[string]string{OperationLabelKey: "ref-uid"},
+		},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
 			Type:   batchv1.JobComplete,
 			Status: corev1.ConditionTrue,
@@ -266,7 +278,7 @@ func TestJobEngineStatusUsesEngineRefWithoutTarget(t *testing.T) {
 	engine := NewJobEngine(c)
 
 	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
-		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("ref-uid")},
 		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
 		Status: opsv1alpha1.OperationStatus{
 			EngineRef: &opsv1alpha1.EngineResourceRef{
@@ -307,6 +319,43 @@ func TestMaterializedNameUniqueAcrossNamespaces(t *testing.T) {
 	}
 	if len(list.Items) != 2 {
 		t.Fatalf("expected 2 jobs, got %d", len(list.Items))
+	}
+}
+
+func TestCreateMaterializedJobRejectsStaleJob(t *testing.T) {
+	scheme := testScheme()
+	stale := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "team-a--run-1", Namespace: "team-a",
+			Labels: map[string]string{OperationLabelKey: "old-uid"},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stale).Build()
+	engine := NewJobEngine(c)
+
+	op := &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("new-uid")},
+		Spec: opsv1alpha1.OperationSpec{
+			Type: opsv1alpha1.OperationTypeRunCommand, Engine: opsv1alpha1.EngineJob,
+			Parameters: &runtime.RawExtension{Raw: []byte(`{"image": "alpine:3.20"}`)},
+		},
+	}
+	target := testTarget("team-a")
+
+	if err := engine.Materialize(context.Background(), op, target); err == nil {
+		t.Fatal("expected stale job rejection")
+	}
+}
+
+func TestValidateRuntimeParametersRejectsMalformedJSON(t *testing.T) {
+	op := &opsv1alpha1.Operation{
+		Spec: opsv1alpha1.OperationSpec{
+			Engine:     opsv1alpha1.EngineJob,
+			Parameters: &runtime.RawExtension{Raw: []byte(`{not-json`)},
+		},
+	}
+	if err := ValidateRuntimeParameters(op); err == nil {
+		t.Fatal("expected malformed JSON error")
 	}
 }
 

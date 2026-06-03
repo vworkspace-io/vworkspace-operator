@@ -89,6 +89,18 @@ func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Ope
 	return createMaterializedJob(ctx, e.Client, op, job, ns)
 }
 
+func (e *HelmHookJobEngine) hookStatusFromJob(op *opsv1alpha1.Operation, job *batchv1.Job) (Status, error) {
+	if err := verifyOperationOwnership(&job.ObjectMeta, op); err != nil {
+		return Status{}, err
+	}
+	status := statusFromJob(job)
+	if status.Outputs == nil {
+		status.Outputs = map[string]string{}
+	}
+	status.Outputs["jobName"] = job.Name
+	return status, nil
+}
+
 func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
 	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
 	if err != nil {
@@ -98,12 +110,7 @@ func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operatio
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
 		return Status{}, fmt.Errorf("get hook job: %w", err)
 	}
-	status := statusFromJob(job)
-	if status.Outputs == nil {
-		status.Outputs = map[string]string{}
-	}
-	status.Outputs["jobName"] = job.Name
-	return status, nil
+	return e.hookStatusFromJob(op, job)
 }
 
 func (e *HelmHookJobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
