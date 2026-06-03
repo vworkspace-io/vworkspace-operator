@@ -220,6 +220,20 @@ func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *o
 	return ctrl.Result{}, fmt.Errorf("engine status: %w", err)
 }
 
+func (r *OperationReconciler) cancelEngineWorkloads(ctx context.Context, op *opsv1alpha1.Operation) {
+	log := logf.FromContext(ctx)
+	if r.Registry == nil || !r.Registry.Has(op.Spec.Engine) {
+		return
+	}
+	engine, err := r.Registry.Get(op.Spec.Engine)
+	if err != nil {
+		return
+	}
+	if err := engine.Cancel(ctx, op); err != nil {
+		log.Error(err, "cancel engine workloads on failure")
+	}
+}
+
 func (r *OperationReconciler) finalizeOperation(ctx context.Context, op *opsv1alpha1.Operation) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	if r.Registry != nil && r.Registry.Has(op.Spec.Engine) {
@@ -263,6 +277,7 @@ func (r *OperationReconciler) blockOperation(ctx context.Context, op *opsv1alpha
 }
 
 func (r *OperationReconciler) failOperation(ctx context.Context, op *opsv1alpha1.Operation, message string) (ctrl.Result, error) {
+	r.cancelEngineWorkloads(ctx, op)
 	prevConditions := append([]metav1.Condition(nil), op.Status.Conditions...)
 	now := metav1.Now()
 	op.Status.Phase = opsv1alpha1.PhaseFailed
