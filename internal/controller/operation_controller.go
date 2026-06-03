@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -131,17 +132,13 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		prevConditions = append([]metav1.Condition(nil), op.Status.Conditions...)
 	}
 
-	if op.Status.Phase == opsv1alpha1.PhaseRunning && op.Status.EngineRef == nil {
-		ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
-		op.Status.EngineRef = &ref
-		if err := r.Status().Update(ctx, op); err != nil {
-			return ctrl.Result{}, fmt.Errorf("backfill engineRef: %w", err)
-		}
+	if err := r.backfillEngineRefIfNeeded(ctx, op, target); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	status, err := engine.Status(ctx, op)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("engine status: %w", err)
+		return r.handleEngineStatusError(ctx, op, err)
 	}
 
 	if status.Done {
@@ -174,6 +171,25 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	r.reportConditions(op, prevConditions)
 	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+}
+
+func (r *OperationReconciler) backfillEngineRefIfNeeded(ctx context.Context, op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance) error {
+	if op.Status.Phase != opsv1alpha1.PhaseRunning || op.Status.EngineRef != nil || !engines.SupportsEngineRef(op.Spec.Engine) {
+		return nil
+	}
+	ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
+	op.Status.EngineRef = &ref
+	if err := r.Status().Update(ctx, op); err != nil {
+		return fmt.Errorf("backfill engineRef: %w", err)
+	}
+	return nil
+}
+
+func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *opsv1alpha1.Operation, err error) (ctrl.Result, error) {
+	if errors.Is(err, engines.ErrWorkloadMissing) {
+		return r.failOperation(ctx, op, err.Error())
+	}
+	return ctrl.Result{}, fmt.Errorf("engine status: %w", err)
 }
 
 func (r *OperationReconciler) finalizeOperation(ctx context.Context, op *opsv1alpha1.Operation) (ctrl.Result, error) {

@@ -10,6 +10,7 @@ import (
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -85,6 +86,9 @@ func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Stat
 	}
 	job := &batchv1.Job{}
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
+		if apierrors.IsNotFound(err) {
+			return Status{}, ErrWorkloadMissing
+		}
 		return Status{}, fmt.Errorf("get job: %w", err)
 	}
 	if err := verifyOperationOwnership(&job.ObjectMeta, op); err != nil {

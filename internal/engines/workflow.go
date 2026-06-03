@@ -105,6 +105,9 @@ func (e *WorkflowEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) 
 	wf := &unstructured.Unstructured{}
 	wf.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"})
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, wf); err != nil {
+		if apierrors.IsNotFound(err) {
+			return Status{}, ErrWorkloadMissing
+		}
 		return Status{}, fmt.Errorf("get workflow: %w", err)
 	}
 	if err := verifyOperationOwnership(&metav1.ObjectMeta{Labels: wf.GetLabels()}, op); err != nil {

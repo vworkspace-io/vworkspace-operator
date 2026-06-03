@@ -33,7 +33,7 @@ func findJobLocationByOperationLabel(ctx context.Context, c client.Client, op *o
 	}
 	switch len(list.Items) {
 	case 0:
-		return "", "", fmt.Errorf("no job found for operation %s", op.UID)
+		return "", "", fmt.Errorf("%w: no job for operation %s", ErrWorkloadMissing, op.UID)
 	case 1:
 		return list.Items[0].Namespace, list.Items[0].Name, nil
 	default:
@@ -49,7 +49,7 @@ func findWorkflowLocationByOperationLabel(ctx context.Context, c client.Client, 
 	}
 	switch len(list.Items) {
 	case 0:
-		return "", "", fmt.Errorf("no workflow found for operation %s", op.UID)
+		return "", "", fmt.Errorf("%w: no workflow for operation %s", ErrWorkloadMissing, op.UID)
 	case 1:
 		return list.Items[0].GetNamespace(), list.Items[0].GetName(), nil
 	default:
