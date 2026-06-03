@@ -115,6 +115,18 @@ _No actionable findings._
 """
         self.assertEqual(parse_blocking_severities(body, "major"), ["major"])
 
+    def test_heading_without_severity_bullet_still_blocks(self) -> None:
+        body = """## Findings
+### [major] Missing severity bullet
+- **File:** `internal/controller/z.go`
+- **Issue:** something risky
+
+## Test plan
+"""
+        self.assertEqual(
+            parse_blocking_severities(body, "critical,major,minor"), ["major"]
+        )
+
     def test_quoted_heading_in_suggested_fix_not_counted(self) -> None:
         body = """## Findings
 ### [minor] Real issue

@@ -50,22 +50,17 @@ def _skip_example_block(lines: list[str], start: int) -> int:
 
 
 def _collect_findings(body: str) -> list[str]:
-    """Walk Findings body; only start a new finding at a top-level ### heading."""
+    """Collect severities from top-level ### finding headings.
+
+    A top-level `### [severity]` heading blocks on its own (fail-safe), even if
+    the author omitted the `- **Severity:**` bullet. Illustrative `### [severity]`
+    blocks quoted under a finding's **Suggested fix** are skipped so the parser
+    does not fail CI on its own example markdown.
+    """
     found: list[str] = []
     lines = body.splitlines()
-    block_complete = True
     after_suggested_fix_pending = False
-    current_sev: str | None = None
-    has_sev = False
     i = 0
-
-    def flush_current() -> None:
-        nonlocal current_sev, has_sev, block_complete
-        if current_sev and has_sev:
-            found.append(current_sev)
-        current_sev = None
-        has_sev = False
-        block_complete = True
 
     while i < len(lines):
         line = lines[i]
@@ -79,31 +74,13 @@ def _collect_findings(body: str) -> list[str]:
                 after_suggested_fix_pending = False
                 continue
             after_suggested_fix_pending = False
-            if not block_complete and current_sev and has_sev:
-                flush_current()
-            if block_complete:
-                if current_sev and has_sev:
-                    found.append(current_sev)
-                current_sev = hm.group(1).lower()
-                has_sev = False
-                block_complete = False
+            found.append(hm.group(1).lower())
             i += 1
             continue
 
-        if current_sev is not None and not block_complete:
-            sm = _SEVERITY_LINE.match(line)
-            if sm and sm.group(1).lower() == current_sev:
-                has_sev = True
-            elif _SUGGESTED_FIX_LINE.match(line):
-                if has_sev:
-                    flush_current()
-                after_suggested_fix_pending = True
-            elif line.strip() == "" and has_sev:
-                block_complete = True
+        if _SUGGESTED_FIX_LINE.match(line):
+            after_suggested_fix_pending = True
         i += 1
-
-    if current_sev and has_sev:
-        found.append(current_sev)
 
     return found
 
@@ -114,11 +91,7 @@ def _orphan_severity_lines(text: str) -> list[str]:
     for line in text.splitlines():
         if _HEADING_LINE.match(line):
             break
-        m = re.match(
-            r"^-\s+\*\*Severity:\*\*\s*(critical|major|minor|nit)\b",
-            line,
-            re.IGNORECASE,
-        )
+        m = _SEVERITY_LINE.match(line)
         if m:
             found.append(m.group(1).lower())
     return found
