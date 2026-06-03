@@ -11,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const helmHookNameLabel = "ops.vworkspace.io/hook-name"
@@ -88,34 +87,7 @@ func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Ope
 	applyOperationLabels(&job.ObjectMeta, op)
 	applyOperationLabels(&job.Spec.Template.ObjectMeta, op)
 
-	_, err = controllerutil.CreateOrUpdate(ctx, e.Client, job, func() error {
-		if err := setOwnerReferenceIfSameNamespace(op, job, ns, e.Client.Scheme()); err != nil {
-			return err
-		}
-		if job.Labels == nil {
-			job.Labels = map[string]string{}
-		}
-		job.Labels[helmHookNameLabel] = params.HookName
-		if job.Annotations == nil {
-			job.Annotations = map[string]string{}
-		}
-		job.Annotations["helm.sh/hook"] = params.HookName
-		if job.Spec.Template.Labels == nil {
-			job.Spec.Template.Labels = map[string]string{}
-		}
-		job.Spec.Template.Labels[helmHookNameLabel] = params.HookName
-		applyOperationLabels(&job.Spec.Template.ObjectMeta, op)
-		job.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
-		job.Spec.Template.Spec.ServiceAccountName = params.serviceAccountName()
-		job.Spec.Template.Spec.Containers = []corev1.Container{{
-			Name:    "hook",
-			Image:   params.Image,
-			Command: params.Command,
-			Args:    params.Args,
-		}}
-		return nil
-	})
-	return err
+	return createMaterializedJob(ctx, e.Client, op, job, ns)
 }
 
 func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {

@@ -72,6 +72,10 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if !op.DeletionTimestamp.IsZero() {
+		return r.finalizeOperation(ctx, op)
+	}
+
 	if err := ValidateOperationSpec(op); err != nil {
 		return r.blockOperation(ctx, op, "ValidationFailed", err.Error())
 	}
@@ -160,6 +164,25 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	r.reportConditions(op, prevConditions)
 	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+}
+
+func (r *OperationReconciler) finalizeOperation(ctx context.Context, op *opsv1alpha1.Operation) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	if r.Registry != nil && r.Registry.Has(op.Spec.Engine) {
+		engine, err := r.Registry.Get(op.Spec.Engine)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := engine.Cancel(ctx, op); err != nil {
+			log.Error(err, "cancel engine resources failed")
+			return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("cancel engine resources: %w", err)
+		}
+	}
+	controllerutil.RemoveFinalizer(op, opsv1alpha1.OperationFinalizer)
+	if err := r.Update(ctx, op); err != nil {
+		return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *OperationReconciler) hasConflictingOperation(ctx context.Context, op *opsv1alpha1.Operation) (bool, string, error) {

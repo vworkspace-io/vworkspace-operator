@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
@@ -70,9 +71,14 @@ func (e *WorkflowEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operat
 			}
 		}
 		if len(params.WorkflowTemplateParameters) > 0 {
-			args := make([]any, 0, len(params.WorkflowTemplateParameters))
-			for name, value := range params.WorkflowTemplateParameters {
-				args = append(args, map[string]any{"name": name, "value": value})
+			names := make([]string, 0, len(params.WorkflowTemplateParameters))
+			for name := range params.WorkflowTemplateParameters {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			args := make([]any, 0, len(names))
+			for _, name := range names {
+				args = append(args, map[string]any{"name": name, "value": params.WorkflowTemplateParameters[name]})
 			}
 			if err := unstructured.SetNestedSlice(wf.Object, args, "spec", "arguments", "parameters"); err != nil {
 				return err

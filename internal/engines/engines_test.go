@@ -341,6 +341,45 @@ func TestHelmHookJobEngineRequiresHookName(t *testing.T) {
 	}
 }
 
+func TestJobEngineMaterializeIdempotent(t *testing.T) {
+	scheme := testScheme()
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	engine := NewJobEngine(c)
+
+	op := &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a", UID: types.UID("op-uid")},
+		Spec: opsv1alpha1.OperationSpec{
+			Type:   opsv1alpha1.OperationTypeRunCommand,
+			Engine: opsv1alpha1.EngineJob,
+			Parameters: &runtime.RawExtension{Raw: []byte(`{
+				"image": "alpine:3.20",
+				"env": {"B": "2", "A": "1"}
+			}`)},
+		},
+	}
+	target := testTarget("team-a")
+
+	for range 2 {
+		if err := engine.Materialize(context.Background(), op, target); err != nil {
+			t.Fatalf("Materialize: %v", err)
+		}
+	}
+}
+
+func TestValidateRuntimeParametersRejectsPrivilegedServiceAccount(t *testing.T) {
+	op := &opsv1alpha1.Operation{
+		Spec: opsv1alpha1.OperationSpec{
+			Engine: opsv1alpha1.EngineJob,
+			Parameters: &runtime.RawExtension{Raw: []byte(`{
+				"serviceAccountName": "cluster-admin"
+			}`)},
+		},
+	}
+	if err := ValidateRuntimeParameters(op); err == nil {
+		t.Fatal("expected service account validation error")
+	}
+}
+
 func testTarget(releaseNamespace string) *appsv1alpha1.ApplicationInstance {
 	return &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},

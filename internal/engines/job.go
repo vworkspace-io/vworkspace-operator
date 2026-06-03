@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
@@ -11,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const defaultJobServiceAccount = "vworkspace-operation-runner"
@@ -75,28 +75,7 @@ func (e *JobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation, 
 	applyOperationLabels(&job.ObjectMeta, op)
 	applyOperationLabels(&job.Spec.Template.ObjectMeta, op)
 
-	_, err = controllerutil.CreateOrUpdate(ctx, e.Client, job, func() error {
-		if err := setOwnerReferenceIfSameNamespace(op, job, ns, e.Client.Scheme()); err != nil {
-			return err
-		}
-		job.Spec = batchv1.JobSpec{
-			BackoffLimit:            params.BackoffLimit,
-			ActiveDeadlineSeconds:   params.ActiveDeadlineSeconds,
-			TTLSecondsAfterFinished: params.ttlSecondsAfterFinished(),
-			Template:                job.Spec.Template,
-		}
-		job.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
-		job.Spec.Template.Spec.ServiceAccountName = params.serviceAccountName()
-		job.Spec.Template.Spec.Containers = []corev1.Container{{
-			Name:    "runner",
-			Image:   params.Image,
-			Command: params.Command,
-			Args:    params.Args,
-			Env:     envFromMap(params.Env),
-		}}
-		return nil
-	})
-	return err
+	return createMaterializedJob(ctx, e.Client, op, job, ns)
 }
 
 func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
@@ -153,9 +132,14 @@ func envFromMap(env map[string]string) []corev1.EnvVar {
 	if len(env) == 0 {
 		return nil
 	}
-	out := make([]corev1.EnvVar, 0, len(env))
-	for k, v := range env {
-		out = append(out, corev1.EnvVar{Name: k, Value: v})
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]corev1.EnvVar, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, corev1.EnvVar{Name: k, Value: env[k]})
 	}
 	return out
 }

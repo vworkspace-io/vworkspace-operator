@@ -21,6 +21,7 @@ import (
 
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/controller"
+	"github.com/vworkspace-io/vworkspace-operator/internal/engines"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -97,6 +98,9 @@ func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha
 	}
 	if validateParameters {
 		if err := validateOperationParameters(op); err != nil {
+			return err
+		}
+		if err := engines.ValidateRuntimeParameters(op); err != nil {
 			return err
 		}
 	}
