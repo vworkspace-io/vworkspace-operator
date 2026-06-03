@@ -50,7 +50,10 @@ func (w *OperationWebhook) ValidateCreate(ctx context.Context, op *opsv1alpha1.O
 	return nil, w.validateOperation(ctx, op)
 }
 
-func (w *OperationWebhook) ValidateUpdate(ctx context.Context, _, op *opsv1alpha1.Operation) (admission.Warnings, error) {
+func (w *OperationWebhook) ValidateUpdate(ctx context.Context, old, op *opsv1alpha1.Operation) (admission.Warnings, error) {
+	if err := validateOperationSpecImmutability(old, op); err != nil {
+		return nil, err
+	}
 	return nil, w.validateOperation(ctx, op)
 }
 
@@ -76,6 +79,9 @@ func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha
 		return err
 	}
 	if err := validateOperationCapability(target, op); err != nil {
+		return err
+	}
+	if err := validateOperationParameters(op); err != nil {
 		return err
 	}
 	return validateOperationConcurrency(ctx, w.client, op)

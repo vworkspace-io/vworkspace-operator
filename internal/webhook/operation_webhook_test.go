@@ -138,6 +138,42 @@ func TestOperationWebhookValidateCreateRejectsMissingCapability(t *testing.T) {
 	}
 }
 
+func TestOperationWebhookValidateCreateRejectsInvalidRestoreParameters(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	op := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
+		t.Fatal("expected rejection for restore without backupName parameter")
+	}
+}
+
+func TestOperationWebhookValidateUpdateRejectsImmutableType(t *testing.T) {
+	scheme := testScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	old := sampleOperation("backup-1", "team-a", "app", opsv1alpha1.OperationTypeBackup)
+	newOp := old.DeepCopy()
+	newOp.Spec.Type = opsv1alpha1.OperationTypeRestore
+	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err == nil {
+		t.Fatal("expected rejection for immutable spec.type change")
+	}
+}
+
 func TestOperationWebhookValidateCreateRejectsConcurrentUpgrade(t *testing.T) {
 	scheme := testScheme(t)
 	existing := sampleOperation("upgrade-1", "team-a", "app", opsv1alpha1.OperationTypeUpgrade)

@@ -114,6 +114,33 @@ func validateOperationBuiltinTemplate(op *opsv1alpha1.Operation) error {
 	)
 }
 
+func validateOperationParameters(op *opsv1alpha1.Operation) error {
+	var raw []byte
+	if op.Spec.Parameters != nil {
+		raw = op.Spec.Parameters.Raw
+	}
+	return templates.ValidateParameters(op.Spec.Type, op.Spec.Engine, raw)
+}
+
+func validateOperationSpecImmutability(old, new *opsv1alpha1.Operation) error {
+	if old.Spec.TargetRef.APIVersion != new.Spec.TargetRef.APIVersion {
+		return fmt.Errorf("spec.targetRef.apiVersion is immutable")
+	}
+	if old.Spec.TargetRef.Kind != new.Spec.TargetRef.Kind {
+		return fmt.Errorf("spec.targetRef.kind is immutable")
+	}
+	if old.Spec.TargetRef.Name != new.Spec.TargetRef.Name {
+		return fmt.Errorf("spec.targetRef.name is immutable")
+	}
+	if old.Spec.Type != new.Spec.Type {
+		return fmt.Errorf("spec.type is immutable")
+	}
+	if old.Spec.Engine != new.Spec.Engine {
+		return fmt.Errorf("spec.engine is immutable")
+	}
+	return nil
+}
+
 func validateOperationCapability(target *appsv1alpha1.ApplicationInstance, op *opsv1alpha1.Operation) error {
 	tpl, ok := templates.Lookup(op.Spec.Type, op.Spec.Engine)
 	if !ok {
