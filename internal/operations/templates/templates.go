@@ -28,11 +28,12 @@ const CapabilityAnnotationPrefix = "ops.vworkspace.io/"
 
 // Template describes a built-in operation template (type, engine, capability verb, RBAC profile).
 type Template struct {
-	Ref            string
-	Type           opsv1alpha1.OperationType
-	Engine         opsv1alpha1.OperationEngine
-	CapabilityVerb string
-	RBACProfile    string
+	Ref              string
+	Type             opsv1alpha1.OperationType
+	Engine           opsv1alpha1.OperationEngine
+	CapabilityVerb   string
+	RBACProfile      string
+	RequiresApproval bool
 }
 
 // BuiltinRefs lists stable template IDs shared with the control plane catalog.
@@ -63,11 +64,12 @@ var builtin = []Template{
 		RBACProfile:    RefBackupVelero,
 	},
 	{
-		Ref:            RefRestoreVelero,
-		Type:           opsv1alpha1.OperationTypeRestore,
-		Engine:         opsv1alpha1.EngineVelero,
-		CapabilityVerb: "restore",
-		RBACProfile:    RefRestoreVelero,
+		Ref:              RefRestoreVelero,
+		Type:             opsv1alpha1.OperationTypeRestore,
+		Engine:           opsv1alpha1.EngineVelero,
+		CapabilityVerb:   "restore",
+		RBACProfile:      RefRestoreVelero,
+		RequiresApproval: true,
 	},
 	{
 		Ref:            RefUpgradeHelm,

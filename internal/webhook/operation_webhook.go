@@ -31,13 +31,23 @@ import (
 
 // OperationWebhook validates Operation resources at admission time.
 type OperationWebhook struct {
-	decoder admission.Decoder
-	client  client.Client
+	decoder             admission.Decoder
+	client              client.Client
+	approvalClaimSecret string
 }
 
-func NewOperationWebhook(scheme *runtime.Scheme, cl client.Client) (*OperationWebhook, error) {
+// OperationWebhookOptions configures Operation admission validation.
+type OperationWebhookOptions struct {
+	ApprovalClaimSecret string
+}
+
+func NewOperationWebhook(scheme *runtime.Scheme, cl client.Client, opts OperationWebhookOptions) (*OperationWebhook, error) {
 	decoder := admission.NewDecoder(scheme)
-	return &OperationWebhook{decoder: decoder, client: cl}, nil
+	return &OperationWebhook{
+		decoder:             decoder,
+		client:              cl,
+		approvalClaimSecret: opts.ApprovalClaimSecret,
+	}, nil
 }
 
 func (w *OperationWebhook) SetupWithManager(mgr ctrl.Manager) error {
@@ -89,6 +99,9 @@ func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha
 		if err := validateOperationParameters(op); err != nil {
 			return err
 		}
+	}
+	if err := validateOperationApprovalClaim(w.approvalClaimSecret, op); err != nil {
+		return err
 	}
 	return validateOperationConcurrency(ctx, w.client, op)
 }
