@@ -161,7 +161,7 @@ func TestJobEngineCreatesJob(t *testing.T) {
 	}
 
 	job := &batchv1.Job{}
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "run-1"}, job); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "team-a--run-1"}, job); err != nil {
 		t.Fatalf("expected job: %v", err)
 	}
 	if job.Spec.Template.Spec.Containers[0].Image != "alpine:3.20" {
@@ -176,7 +176,7 @@ func TestJobEngineStatusComplete(t *testing.T) {
 	scheme := testScheme()
 	target := testTarget("team-a")
 	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
+		ObjectMeta: metav1.ObjectMeta{Name: "team-a--run-1", Namespace: "team-a"},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
 			Type:   batchv1.JobComplete,
 			Status: corev1.ConditionTrue,
@@ -202,7 +202,7 @@ func TestJobEngineStatusCrossNamespace(t *testing.T) {
 	releaseNS := "org-myteam"
 	target := testTarget(releaseNS)
 	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: releaseNS},
+		ObjectMeta: metav1.ObjectMeta{Name: "team-a--run-1", Namespace: releaseNS},
 		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
 			Type:   batchv1.JobComplete,
 			Status: corev1.ConditionTrue,
@@ -232,7 +232,7 @@ func TestWorkflowEngineStatusSucceeded(t *testing.T) {
 			"apiVersion": "argoproj.io/v1alpha1",
 			"kind":       "Workflow",
 			"metadata": map[string]any{
-				"name":      "runbook-1",
+				"name":      "team-a--runbook-1",
 				"namespace": releaseNS,
 			},
 			"status": map[string]any{"phase": "Succeeded"},
@@ -250,6 +250,63 @@ func TestWorkflowEngineStatusSucceeded(t *testing.T) {
 	}
 	if !status.Done || status.Phase != opsv1alpha1.PhaseSucceeded {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestJobEngineStatusUsesEngineRefWithoutTarget(t *testing.T) {
+	scheme := testScheme()
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "team-a--run-1", Namespace: "org-myteam"},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+	engine := NewJobEngine(c)
+
+	status, err := engine.Status(context.Background(), &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: "team-a"},
+		Spec:       opsv1alpha1.OperationSpec{TargetRef: opsv1alpha1.TargetRef{Name: "app"}},
+		Status: opsv1alpha1.OperationStatus{
+			EngineRef: &opsv1alpha1.EngineResourceRef{
+				Kind: "Job", Name: "team-a--run-1", Namespace: "org-myteam",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if !status.Done || status.Phase != opsv1alpha1.PhaseSucceeded {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestMaterializedNameUniqueAcrossNamespaces(t *testing.T) {
+	scheme := testScheme()
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	engine := NewJobEngine(c)
+	params := &runtime.RawExtension{Raw: []byte(`{"image": "alpine:3.20"}`)}
+	target := testTarget("shared-release")
+
+	for _, ns := range []string{"team-a", "team-b"} {
+		op := &opsv1alpha1.Operation{
+			ObjectMeta: metav1.ObjectMeta{Name: "run-1", Namespace: ns, UID: types.UID(ns + "-uid")},
+			Spec: opsv1alpha1.OperationSpec{
+				Type: opsv1alpha1.OperationTypeRunCommand, Engine: opsv1alpha1.EngineJob, Parameters: params,
+			},
+		}
+		if err := engine.Materialize(context.Background(), op, target); err != nil {
+			t.Fatalf("Materialize %s: %v", ns, err)
+		}
+	}
+
+	list := &batchv1.JobList{}
+	if err := c.List(context.Background(), list, client.InNamespace("shared-release")); err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	if len(list.Items) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(list.Items))
 	}
 }
 
@@ -276,7 +333,7 @@ func TestHelmHookJobEnginePreservesOperationLabels(t *testing.T) {
 	}
 
 	job := &batchv1.Job{}
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "migrate-1"}, job); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "team-a--migrate-1"}, job); err != nil {
 		t.Fatalf("expected job: %v", err)
 	}
 	if job.Spec.Template.Labels[helmHookNameLabel] != "pre-upgrade" {
@@ -314,7 +371,7 @@ func TestWorkflowEngineCreatesWorkflow(t *testing.T) {
 
 	wf := &unstructured.Unstructured{}
 	wf.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"})
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "runbook-1"}, wf); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "team-a--runbook-1"}, wf); err != nil {
 		t.Fatalf("expected workflow: %v", err)
 	}
 	refName, _, _ := unstructured.NestedString(wf.Object, "spec", "workflowTemplateRef", "name")

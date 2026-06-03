@@ -13,12 +13,42 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+const maxK8sNameLen = 63
+
+func materializedName(op *opsv1alpha1.Operation) string {
+	base := fmt.Sprintf("%s--%s", op.Namespace, op.Name)
+	if len(base) <= maxK8sNameLen {
+		return base
+	}
+	return string(op.UID)
+}
+
 func materializedNamespace(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (string, error) {
 	target := &appsv1alpha1.ApplicationInstance{}
 	if err := c.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Spec.TargetRef.Name}, target); err != nil {
 		return "", fmt.Errorf("get target ApplicationInstance: %w", err)
 	}
 	return targetNamespace(target), nil
+}
+
+func resolveEngineLocation(ctx context.Context, c client.Client, op *opsv1alpha1.Operation) (namespace, name string, err error) {
+	if ref := op.Status.EngineRef; ref != nil && ref.Namespace != "" && ref.Name != "" {
+		return ref.Namespace, ref.Name, nil
+	}
+	ns, err := materializedNamespace(ctx, c, op)
+	if err != nil {
+		return "", "", err
+	}
+	return ns, materializedName(op), nil
+}
+
+// NewEngineResourceRef returns the stable engine workload coordinates for an Operation.
+func NewEngineResourceRef(op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance, kind string) opsv1alpha1.EngineResourceRef {
+	return opsv1alpha1.EngineResourceRef{
+		Kind:      kind,
+		Name:      materializedName(op),
+		Namespace: targetNamespace(target),
+	}
 }
 
 func setOwnerReferenceIfSameNamespace(op *opsv1alpha1.Operation, obj client.Object, ns string, scheme *runtime.Scheme) error {
@@ -29,14 +59,16 @@ func setOwnerReferenceIfSameNamespace(op *opsv1alpha1.Operation, obj client.Obje
 }
 
 func createMaterializedJob(ctx context.Context, c client.Client, op *opsv1alpha1.Operation, job *batchv1.Job, ns string) error {
+	name := materializedName(op)
 	var existing batchv1.Job
-	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, &existing)
+	err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, &existing)
 	if err == nil {
 		return nil
 	}
 	if !apierrors.IsNotFound(err) {
 		return fmt.Errorf("get job: %w", err)
 	}
+	job.SetName(name)
 	if err := setOwnerReferenceIfSameNamespace(op, job, ns, c.Scheme()); err != nil {
 		return err
 	}

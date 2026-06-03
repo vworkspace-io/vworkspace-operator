@@ -56,7 +56,6 @@ func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Ope
 	ns := targetNamespace(target)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      op.Name,
 			Namespace: ns,
 			Labels:    map[string]string{helmHookNameLabel: params.HookName},
 			Annotations: map[string]string{
@@ -91,12 +90,12 @@ func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Ope
 }
 
 func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
-	ns, err := materializedNamespace(ctx, e.Client, op)
+	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
 	if err != nil {
 		return Status{}, err
 	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
 		return Status{}, fmt.Errorf("get hook job: %w", err)
 	}
 	status := statusFromJob(job)
@@ -108,12 +107,12 @@ func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operatio
 }
 
 func (e *HelmHookJobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
-	ns, err := materializedNamespace(ctx, e.Client, op)
+	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
 	if err != nil {
 		return err
 	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 	return e.Client.Delete(ctx, job)

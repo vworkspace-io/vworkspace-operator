@@ -51,7 +51,7 @@ func (e *JobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation, 
 
 	ns := targetNamespace(target)
 	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: op.Name, Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            params.BackoffLimit,
 			ActiveDeadlineSeconds:   params.ActiveDeadlineSeconds,
@@ -79,24 +79,24 @@ func (e *JobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation, 
 }
 
 func (e *JobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
-	ns, err := materializedNamespace(ctx, e.Client, op)
+	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
 	if err != nil {
 		return Status{}, err
 	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
 		return Status{}, fmt.Errorf("get job: %w", err)
 	}
 	return statusFromJob(job), nil
 }
 
 func (e *JobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
-	ns, err := materializedNamespace(ctx, e.Client, op)
+	ns, name, err := resolveEngineLocation(ctx, e.Client, op)
 	if err != nil {
 		return err
 	}
 	job := &batchv1.Job{}
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: op.Name}, job); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 	return e.Client.Delete(ctx, job)

@@ -90,11 +90,19 @@ type LogsRef struct {
 	URL       string `json:"url,omitempty"`
 }
 
+// EngineResourceRef records the namespace/name of the materialized engine workload.
+type EngineResourceRef struct {
+	Kind      string `json:"kind,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
 // OperationStatus defines the observed state of Operation.
 type OperationStatus struct {
-	Phase      OperationPhase `json:"phase,omitempty"`
-	StartedAt  *metav1.Time   `json:"startedAt,omitempty"`
-	FinishedAt *metav1.Time   `json:"finishedAt,omitempty"`
+	Phase      OperationPhase     `json:"phase,omitempty"`
+	StartedAt  *metav1.Time       `json:"startedAt,omitempty"`
+	FinishedAt *metav1.Time       `json:"finishedAt,omitempty"`
+	EngineRef  *EngineResourceRef `json:"engineRef,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition   `json:"conditions,omitempty"`

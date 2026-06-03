@@ -116,6 +116,8 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			log.Error(err, "materialize operation failed")
 			return r.failOperation(ctx, op, err.Error())
 		}
+		ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
+		op.Status.EngineRef = &ref
 		now := metav1.Now()
 		op.Status.Phase = opsv1alpha1.PhaseRunning
 		op.Status.StartedAt = &now
