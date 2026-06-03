@@ -38,6 +38,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_WORKSPACE: ${{ github.workspace }}/review
           REVIEW_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          # Fail the job when Findings include these severities (comma-separated; use "none" to disable).
+          REVIEW_FAIL_SEVERITIES: critical,major,minor
         run: |
           set -euo pipefail
           if [ -z "${CURSOR_API_KEY:-}" ]; then
