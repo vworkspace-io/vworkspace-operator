@@ -142,6 +142,9 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if status.Done {
+		if status.Failed {
+			r.cancelEngineWorkloads(ctx, op)
+		}
 		finished := metav1.Now()
 		op.Status.FinishedAt = &finished
 		op.Status.Phase = status.Phase
