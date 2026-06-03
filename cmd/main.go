@@ -231,6 +231,9 @@ func main() {
 	engineRegistry := engines.NewRegistry(
 		engines.NewHelmEngine(mgr.GetClient()),
 		engines.NewVeleroEngine(mgr.GetClient()),
+		engines.NewJobEngine(mgr.GetClient()),
+		engines.NewWorkflowEngine(mgr.GetClient()),
+		engines.NewHelmHookJobEngine(mgr.GetClient()),
 	)
 	if err := (&controller.OperationReconciler{
 		Client:              mgr.GetClient(),
