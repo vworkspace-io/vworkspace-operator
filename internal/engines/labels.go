@@ -20,7 +20,7 @@ func applyOperationLabels(meta *metav1.ObjectMeta, op *opsv1alpha1.Operation) {
 
 func verifyOperationOwnership(meta *metav1.ObjectMeta, op *opsv1alpha1.Operation) error {
 	if meta == nil || meta.Labels == nil || meta.Labels[OperationLabelKey] != string(op.UID) {
-		return fmt.Errorf("existing engine workload belongs to a different operation")
+		return fmt.Errorf("%w: existing engine workload belongs to a different operation", ErrWorkloadOwnership)
 	}
 	return nil
 }
