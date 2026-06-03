@@ -206,34 +206,13 @@ func TestOperationReconcilerDoesNotRegressRunningOnExpiredClaim(t *testing.T) {
 	}
 }
 
-type missingWorkloadEngine struct {
-	name opsv1alpha1.OperationEngine
-}
-
-func (e missingWorkloadEngine) Name() opsv1alpha1.OperationEngine { return e.name }
-
-func (missingWorkloadEngine) Materialize(context.Context, *opsv1alpha1.Operation, *appsv1alpha1.ApplicationInstance) error {
-	return nil
-}
-
-func (missingWorkloadEngine) Status(context.Context, *opsv1alpha1.Operation) (engines.Status, error) {
-	return engines.Status{}, engines.ErrWorkloadMissing
-}
-
-func (missingWorkloadEngine) Cancel(context.Context, *opsv1alpha1.Operation) error { return nil }
-
-func TestOperationReconcilerSucceedsWhenEngineWorkloadReaped(t *testing.T) {
+func TestOperationReconcilerFailsWhenEngineWorkloadMissing(t *testing.T) {
 	t.Parallel()
 	const namespace = "team-a"
 	scheme := testOperationControllerScheme(t)
 	op := sampleRestoreOperation("run-1", namespace, "app")
 	op.Spec.Engine = opsv1alpha1.EngineJob
-	op.Status = opsv1alpha1.OperationStatus{
-		Phase: opsv1alpha1.PhaseRunning,
-		EngineRef: &opsv1alpha1.EngineResourceRef{
-			Kind: "Job", Name: "team-a--run-1", Namespace: namespace,
-		},
-	}
+	op.Status = opsv1alpha1.OperationStatus{Phase: opsv1alpha1.PhaseRunning}
 	cl := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(sampleTargetApp(namespace, "app"), op).
 		WithStatusSubresource(op).
@@ -241,10 +220,9 @@ func TestOperationReconcilerSucceedsWhenEngineWorkloadReaped(t *testing.T) {
 	reconciler := &OperationReconciler{
 		Client:   cl,
 		Scheme:   scheme,
-		Registry: engines.NewRegistry(missingWorkloadEngine{name: opsv1alpha1.EngineJob}),
+		Registry: engines.NewRegistry(engines.NewJobEngine(cl)),
 		Reporter: agent.NoopStatusReporter(),
 	}
-
 	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "run-1", Namespace: namespace},
 	}); err != nil {
@@ -254,8 +232,8 @@ func TestOperationReconcilerSucceedsWhenEngineWorkloadReaped(t *testing.T) {
 	if err := cl.Get(context.Background(), types.NamespacedName{Name: "run-1", Namespace: namespace}, updated); err != nil {
 		t.Fatalf("get operation: %v", err)
 	}
-	if updated.Status.Phase != opsv1alpha1.PhaseSucceeded {
-		t.Fatalf("expected Succeeded after reaped workload, got %q", updated.Status.Phase)
+	if updated.Status.Phase != opsv1alpha1.PhaseFailed {
+		t.Fatalf("expected Failed when workload missing, got %q", updated.Status.Phase)
 	}
 }
 

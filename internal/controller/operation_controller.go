@@ -168,7 +168,7 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("update in-flight status: %w", err)
 	}
 	r.reportConditions(op, prevConditions)
-	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
 func (r *OperationReconciler) backfillEngineRefIfNeeded(op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance) {
@@ -184,26 +184,12 @@ func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *o
 		return r.failOperation(ctx, op, err.Error())
 	}
 	if errors.Is(err, engines.ErrWorkloadMissing) {
-		if op.Status.EngineRef != nil {
-			return r.completeReapedEngineWorkload(ctx, op)
+		if op.Status.StartedAt != nil && time.Since(op.Status.StartedAt.Time) < 30*time.Second {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 		return r.failOperation(ctx, op, err.Error())
 	}
 	return ctrl.Result{}, fmt.Errorf("engine status: %w", err)
-}
-
-func (r *OperationReconciler) completeReapedEngineWorkload(ctx context.Context, op *opsv1alpha1.Operation) (ctrl.Result, error) {
-	prevConditions := append([]metav1.Condition(nil), op.Status.Conditions...)
-	now := metav1.Now()
-	op.Status.FinishedAt = &now
-	op.Status.Phase = opsv1alpha1.PhaseSucceeded
-	op.Status.Conditions = conditions.Set(op.Status.Conditions, opsv1alpha1.ConditionSucceeded, metav1.ConditionTrue, "EngineWorkloadReaped", "Engine workload was removed after completion")
-	op.Status.Conditions = conditions.Set(op.Status.Conditions, opsv1alpha1.ConditionRunning, metav1.ConditionFalse, "EngineNotStarted", "Engine completed")
-	if err := r.Status().Update(ctx, op); err != nil {
-		return ctrl.Result{}, fmt.Errorf("update reaped workload status: %w", err)
-	}
-	r.reportConditions(op, prevConditions)
-	return ctrl.Result{}, nil
 }
 
 func (r *OperationReconciler) finalizeOperation(ctx context.Context, op *opsv1alpha1.Operation) (ctrl.Result, error) {
