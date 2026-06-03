@@ -27,7 +27,17 @@ var inputSchemaJSON = map[string]string{
     "retention": { "type": "string" },
     "ttl": { "type": "string" },
     "snapshotClassName": { "type": "string" },
-    "storageLocation": { "type": "string" }
+    "csiSnapshotClassName": { "type": "string" },
+    "snapshotVolumes": { "type": "boolean" },
+    "storageLocation": { "type": "string" },
+    "includedResources": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "excludedResources": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
   }
 }`,
 	RefRestoreVelero: `{
@@ -41,7 +51,16 @@ var inputSchemaJSON = map[string]string{
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
-    "restorePVs": { "type": "boolean" }
+    "restorePVs": { "type": "boolean" },
+    "existingResourcePolicy": { "type": "string" },
+    "includedResources": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "excludedResources": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
   }
 }`,
 	RefUpgradeHelm: `{
@@ -87,7 +106,9 @@ var inputSchemaJSON = map[string]string{
       }
     },
     "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
-    "backoffLimit": { "type": "integer", "minimum": 0 }
+    "timeoutSeconds": { "type": "integer", "minimum": 1 },
+    "backoffLimit": { "type": "integer", "minimum": 0 },
+    "serviceAccountName": { "type": "string", "minLength": 1 }
   }
 }`,
 	RefRunbookWorkflow: `{

@@ -74,3 +74,41 @@ func TestValidateParametersMigrationHelmHookAcceptsJobTuning(t *testing.T) {
 		t.Fatalf("expected documented helm hook parameters to pass: %v", err)
 	}
 }
+
+func TestValidateParametersBackupAcceptsDocumentedVeleroExample(t *testing.T) {
+	raw := []byte(`{
+		"storageLocation": "aws-primary",
+		"snapshotVolumes": true,
+		"csiSnapshotClassName": "csi-rbd",
+		"ttl": "720h",
+		"includedResources": ["*"],
+		"excludedResources": ["events", "events.events.k8s.io"]
+	}`)
+	if err := templates.ValidateParameters(opsv1alpha1.OperationTypeBackup, opsv1alpha1.EngineVelero, raw); err != nil {
+		t.Fatalf("expected documented velero backup parameters to pass: %v", err)
+	}
+}
+
+func TestValidateParametersRestoreAcceptsDocumentedVeleroExample(t *testing.T) {
+	raw := []byte(`{
+		"backupName": "nextcloud-myteam-backup-2026-05-28",
+		"namespaceMapping": {"org-myteam": "org-myteam-staging"},
+		"restorePVs": true,
+		"existingResourcePolicy": "none",
+		"includedResources": ["*"]
+	}`)
+	if err := templates.ValidateParameters(opsv1alpha1.OperationTypeRestore, opsv1alpha1.EngineVelero, raw); err != nil {
+		t.Fatalf("expected documented velero restore parameters to pass: %v", err)
+	}
+}
+
+func TestValidateParametersRunCommandAcceptsAPIDocumentedFields(t *testing.T) {
+	raw := []byte(`{
+		"image": "ghcr.io/example/tools:1",
+		"serviceAccountName": "vworkspace-operation-runner",
+		"timeoutSeconds": 1800
+	}`)
+	if err := templates.ValidateParameters(opsv1alpha1.OperationTypeRunCommand, opsv1alpha1.EngineJob, raw); err != nil {
+		t.Fatalf("expected API-documented runCommand parameters to pass: %v", err)
+	}
+}

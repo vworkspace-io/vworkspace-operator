@@ -15,13 +15,18 @@ import (
 )
 
 type veleroParameters struct {
-	Retention         string            `json:"retention"`
-	TTL               string            `json:"ttl"`
-	SnapshotClassName string            `json:"snapshotClassName"`
-	StorageLocation   string            `json:"storageLocation"`
-	BackupName        string            `json:"backupName"`
-	NamespaceMapping  map[string]string `json:"namespaceMapping"`
-	RestorePVs        *bool             `json:"restorePVs"`
+	Retention              string            `json:"retention"`
+	TTL                    string            `json:"ttl"`
+	SnapshotClassName      string            `json:"snapshotClassName"`
+	CSISnapshotClassName   string            `json:"csiSnapshotClassName"`
+	SnapshotVolumes        *bool             `json:"snapshotVolumes"`
+	StorageLocation        string            `json:"storageLocation"`
+	IncludedResources      []string          `json:"includedResources"`
+	ExcludedResources      []string          `json:"excludedResources"`
+	BackupName             string            `json:"backupName"`
+	NamespaceMapping       map[string]string `json:"namespaceMapping"`
+	RestorePVs             *bool             `json:"restorePVs"`
+	ExistingResourcePolicy string            `json:"existingResourcePolicy"`
 }
 
 func (p veleroParameters) backupTTL() string {
@@ -29,6 +34,13 @@ func (p veleroParameters) backupTTL() string {
 		return p.Retention
 	}
 	return p.TTL
+}
+
+func (p veleroParameters) csiSnapshotClassName() string {
+	if p.CSISnapshotClassName != "" {
+		return p.CSISnapshotClassName
+	}
+	return p.SnapshotClassName
 }
 
 // VeleroEngine materializes velero Backup and Restore resources.
@@ -76,8 +88,23 @@ func (e *VeleroEngine) materializeBackup(ctx context.Context, op *opsv1alpha1.Op
 				return err
 			}
 		}
-		if params.SnapshotClassName != "" {
-			if err := unstructured.SetNestedField(backup.Object, params.SnapshotClassName, "spec", "snapshotVolumes", "snapshotClassName"); err != nil {
+		if params.SnapshotVolumes != nil {
+			if err := unstructured.SetNestedField(backup.Object, *params.SnapshotVolumes, "spec", "snapshotVolumes"); err != nil {
+				return err
+			}
+		}
+		if csiClass := params.csiSnapshotClassName(); csiClass != "" {
+			if err := unstructured.SetNestedField(backup.Object, csiClass, "spec", "csiSnapshotClassName"); err != nil {
+				return err
+			}
+		}
+		if len(params.IncludedResources) > 0 {
+			if err := unstructured.SetNestedStringSlice(backup.Object, params.IncludedResources, "spec", "includedResources"); err != nil {
+				return err
+			}
+		}
+		if len(params.ExcludedResources) > 0 {
+			if err := unstructured.SetNestedStringSlice(backup.Object, params.ExcludedResources, "spec", "excludedResources"); err != nil {
 				return err
 			}
 		}
@@ -113,6 +140,21 @@ func (e *VeleroEngine) materializeRestore(ctx context.Context, op *opsv1alpha1.O
 		}
 		if params.RestorePVs != nil {
 			if err := unstructured.SetNestedField(restore.Object, *params.RestorePVs, "spec", "restorePVs"); err != nil {
+				return err
+			}
+		}
+		if params.ExistingResourcePolicy != "" {
+			if err := unstructured.SetNestedField(restore.Object, params.ExistingResourcePolicy, "spec", "existingResourcePolicy"); err != nil {
+				return err
+			}
+		}
+		if len(params.IncludedResources) > 0 {
+			if err := unstructured.SetNestedStringSlice(restore.Object, params.IncludedResources, "spec", "includedResources"); err != nil {
+				return err
+			}
+		}
+		if len(params.ExcludedResources) > 0 {
+			if err := unstructured.SetNestedStringSlice(restore.Object, params.ExcludedResources, "spec", "excludedResources"); err != nil {
 				return err
 			}
 		}
