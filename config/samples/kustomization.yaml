@@ -1,5 +1,6 @@
 ## Append samples of your project ##
 resources:
 - apps_v1alpha1_applicationinstance.yaml
+- ops_v1alpha1_applicationinstance_capabilities.yaml
 - ops_v1alpha1_cluster.yaml
 - ops_v1alpha1_operation.yaml
