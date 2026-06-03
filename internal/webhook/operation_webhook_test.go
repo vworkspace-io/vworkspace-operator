@@ -4,9 +4,11 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/operations/approvalclaim"
 	"github.com/vworkspace-io/vworkspace-operator/internal/webhook"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +37,7 @@ func TestOperationWebhookValidateCreateAcceptsBackup(t *testing.T) {
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -52,7 +54,7 @@ func TestOperationWebhookValidateCreateRejectsUnknownType(t *testing.T) {
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestOperationWebhookValidateCreateRejectsMissingTarget(t *testing.T) {
 	scheme := testScheme(t)
 	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -92,7 +94,7 @@ func TestOperationWebhookValidateCreateRejectsDisallowedNamespaceType(t *testing
 		WithObjects(ns, sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -109,7 +111,7 @@ func TestOperationWebhookValidateCreateRejectsUnknownTemplatePair(t *testing.T) 
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -127,7 +129,7 @@ func TestOperationWebhookValidateCreateRejectsMissingCapability(t *testing.T) {
 	delete(app.Annotations, "ops.vworkspace.io/backup")
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).Build()
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -144,7 +146,7 @@ func TestOperationWebhookValidateCreateRejectsInvalidRestoreParameters(t *testin
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -161,7 +163,7 @@ func TestOperationWebhookValidateUpdateSkipsParameterRevalidationWhenUnchanged(t
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -182,7 +184,7 @@ func TestOperationWebhookValidateUpdateRejectsParameterChangeWhenRunning(t *test
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -204,7 +206,7 @@ func TestOperationWebhookValidateUpdateAllowsParameterChangeWhilePending(t *test
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -226,7 +228,7 @@ func TestOperationWebhookValidateUpdateRejectsImmutableType(t *testing.T) {
 		WithObjects(sampleApplicationInstance("team-a", "app")).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -236,6 +238,27 @@ func TestOperationWebhookValidateUpdateRejectsImmutableType(t *testing.T) {
 	newOp.Spec.Type = opsv1alpha1.OperationTypeRestore
 	if _, err := hook.ValidateUpdate(context.Background(), old, newOp); err == nil {
 		t.Fatal("expected rejection for immutable spec.type change")
+	}
+}
+
+func TestOperationWebhookValidateCreateAllowsBackupDuringUpgrade(t *testing.T) {
+	scheme := testScheme(t)
+	existing := sampleOperation("upgrade-1", "team-a", "app", opsv1alpha1.OperationTypeUpgrade)
+	existing.Spec.Engine = opsv1alpha1.EngineHelm
+	existing.Status.Phase = opsv1alpha1.PhaseRunning
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app"), existing).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	op := sampleOperation("backup-2", "team-a", "app", opsv1alpha1.OperationTypeBackup)
+	if _, err := hook.ValidateCreate(context.Background(), op); err != nil {
+		t.Fatalf("expected backup during upgrade to pass typed concurrency: %v", err)
 	}
 }
 
@@ -249,7 +272,7 @@ func TestOperationWebhookValidateCreateRejectsConcurrentUpgrade(t *testing.T) {
 		WithObjects(sampleApplicationInstance("team-a", "app"), existing).
 		Build()
 
-	hook, err := webhook.NewOperationWebhook(scheme, cl)
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
 	if err != nil {
 		t.Fatalf("NewOperationWebhook: %v", err)
 	}
@@ -258,6 +281,58 @@ func TestOperationWebhookValidateCreateRejectsConcurrentUpgrade(t *testing.T) {
 	op.Spec.Engine = opsv1alpha1.EngineHelm
 	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
 		t.Fatal("expected rejection for concurrent operation")
+	}
+}
+
+func TestOperationWebhookValidateCreateRejectsInvalidApprovalClaim(t *testing.T) {
+	scheme := testScheme(t)
+	const secret = "webhook-test-secret"
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{ApprovalClaimSecret: secret})
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	op := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	op.Spec.Approvals = &opsv1alpha1.ApprovalsSpec{
+		Required: true,
+		Claim:    "vws1.invalid.body",
+	}
+	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
+		t.Fatal("expected rejection for invalid approval claim")
+	}
+}
+
+func TestOperationWebhookValidateCreateAcceptsValidApprovalClaim(t *testing.T) {
+	scheme := testScheme(t)
+	const secret = "webhook-test-secret"
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleApplicationInstance("team-a", "app")).
+		Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{ApprovalClaimSecret: secret})
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	claim, err := approvalclaim.Issue(secret, approvalclaim.Payload{
+		Version:       1,
+		OperationName: "restore-1",
+		ExpiresAt:     time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	op := sampleOperation("restore-1", "team-a", "app", opsv1alpha1.OperationTypeRestore)
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	op.Spec.Approvals = &opsv1alpha1.ApprovalsSpec{Required: true, Claim: claim}
+	if _, err := hook.ValidateCreate(context.Background(), op); err != nil {
+		t.Fatalf("expected valid approval claim to pass: %v", err)
 	}
 }
 

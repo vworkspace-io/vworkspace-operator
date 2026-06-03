@@ -82,6 +82,7 @@ func main() {
 	var agentCredentialsSecret string
 	var agentCredentialsNamespace string
 	var enableWebhooks bool
+	var approvalClaimSecret string
 	var tlsOpts []func(*tls.Config)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to.")
@@ -115,6 +116,8 @@ func main() {
 	flag.StringVar(&agentCredentialsNamespace, "agent-credentials-namespace", os.Getenv("POD_NAMESPACE"),
 		"Namespace of the agent credentials Secret.")
 	flag.BoolVar(&enableWebhooks, "webhooks-enabled", false, "Enable validating admission webhooks.")
+	flag.StringVar(&approvalClaimSecret, "approval-claim-secret", os.Getenv("VWORKSPACE_APPROVAL_CLAIM_SECRET"),
+		"HMAC secret for verifying Operation.spec.approvals.claim (vws1 tokens from the control plane).")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -230,10 +233,11 @@ func main() {
 		engines.NewVeleroEngine(mgr.GetClient()),
 	)
 	if err := (&controller.OperationReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Registry: engineRegistry,
-		Reporter: statusReporter,
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		Registry:            engineRegistry,
+		Reporter:            statusReporter,
+		ApprovalClaimSecret: strings.TrimSpace(approvalClaimSecret),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Operation")
 		os.Exit(1)
@@ -253,7 +257,9 @@ func main() {
 	}
 
 	if enableWebhooks {
-		opWebhook, err := webhook.NewOperationWebhook(mgr.GetScheme(), mgr.GetClient())
+		opWebhook, err := webhook.NewOperationWebhook(mgr.GetScheme(), mgr.GetClient(), webhook.OperationWebhookOptions{
+			ApprovalClaimSecret: strings.TrimSpace(approvalClaimSecret),
+		})
 		if err != nil {
 			setupLog.Error(err, "unable to create operation webhook")
 			os.Exit(1)

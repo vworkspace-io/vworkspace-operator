@@ -28,8 +28,5 @@ func ValidateOperationSpec(op *opsv1alpha1.Operation) error {
 	if strings.TrimSpace(string(spec.Engine)) == "" {
 		return fmt.Errorf("spec.engine is required")
 	}
-	if spec.Approvals != nil && spec.Approvals.Required && strings.TrimSpace(spec.Approvals.Claim) == "" {
-		return fmt.Errorf("spec.approvals.claim is required when approvals.required is true")
-	}
 	return nil
 }

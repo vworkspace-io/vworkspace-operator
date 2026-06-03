@@ -112,7 +112,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	opHook, err := NewOperationWebhook(mgr.GetScheme(), mgr.GetClient())
+	opHook, err := NewOperationWebhook(mgr.GetScheme(), mgr.GetClient(), OperationWebhookOptions{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "operation webhook: %v\n", err)
 		teardownEnvtest()
@@ -244,12 +244,13 @@ func TestWebhookConcurrentOperationRejected(t *testing.T) {
 		t.Fatalf("update first Operation status: %v", err)
 	}
 
-	op := sampleEnvtestOperation(ns, "upgrade-2", "app", opsv1alpha1.OperationTypeBackup)
+	op := sampleEnvtestOperation(ns, "restore-2", "app", opsv1alpha1.OperationTypeRestore)
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
 	err := envtestClient.Create(ctx, op)
 	if err == nil {
-		t.Fatal("expected admission rejection for concurrent operation")
+		t.Fatal("expected admission rejection for concurrent restore during upgrade")
 	}
-	if !strings.Contains(err.Error(), "already has active operation") {
+	if !strings.Contains(err.Error(), "conflicts with operation") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

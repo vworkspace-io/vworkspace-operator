@@ -27,6 +27,8 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
 	"github.com/vworkspace-io/vworkspace-operator/internal/engines"
+	"github.com/vworkspace-io/vworkspace-operator/internal/operations/approvals"
+	"github.com/vworkspace-io/vworkspace-operator/internal/operations/concurrency"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,9 +41,10 @@ import (
 // OperationReconciler reconciles Operation resources.
 type OperationReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Registry *engines.Registry
-	Reporter agent.StatusReporter
+	Scheme              *runtime.Scheme
+	Registry            *engines.Registry
+	Reporter            agent.StatusReporter
+	ApprovalClaimSecret string
 }
 
 // +kubebuilder:rbac:groups=ops.vworkspace.io,resources=operations,verbs=get;list;watch;create;update;patch;delete
@@ -77,6 +80,12 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return r.blockOperation(ctx, op, "TargetNotReady", "target ApplicationInstance not found")
 		}
 		return ctrl.Result{}, fmt.Errorf("get target: %w", err)
+	}
+
+	if approvals.NeedsApprovalCheck(op) {
+		if blocked, reason := approvals.BlockReason(op, r.ApprovalClaimSecret); blocked {
+			return r.blockOperation(ctx, op, "AwaitingApproval", reason)
+		}
 	}
 
 	if conflict, reason, err := r.hasConflictingOperation(ctx, op); err != nil {
@@ -152,38 +161,14 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 func (r *OperationReconciler) hasConflictingOperation(ctx context.Context, op *opsv1alpha1.Operation) (bool, string, error) {
-	list := &opsv1alpha1.OperationList{}
-	if err := r.List(ctx, list, client.InNamespace(op.Namespace)); err != nil {
-		return false, "", fmt.Errorf("list operations: %w", err)
+	conflict, err := concurrency.FindConflict(ctx, r.Client, op)
+	if err != nil {
+		return false, "", err
 	}
-	for _, item := range list.Items {
-		if item.Name == op.Name {
-			continue
-		}
-		if item.Spec.TargetRef.Name != op.Spec.TargetRef.Name {
-			continue
-		}
-		if item.Status.Phase != opsv1alpha1.PhaseRunning && item.Status.Phase != opsv1alpha1.PhasePending {
-			continue
-		}
-		if conflicts(item.Spec.Type, op.Spec.Type) {
-			return true, fmt.Sprintf("conflicts with operation %q (%s)", item.Name, item.Spec.Type), nil
-		}
+	if conflict == nil {
+		return false, "", nil
 	}
-	return false, "", nil
-}
-
-func conflicts(existing, incoming opsv1alpha1.OperationType) bool {
-	switch incoming {
-	case opsv1alpha1.OperationTypeUpgrade:
-		return existing == opsv1alpha1.OperationTypeUpgrade
-	case opsv1alpha1.OperationTypeRestore:
-		return existing == opsv1alpha1.OperationTypeUpgrade || existing == opsv1alpha1.OperationTypeBackup
-	case opsv1alpha1.OperationTypeBackup:
-		return existing == opsv1alpha1.OperationTypeRestore
-	default:
-		return false
-	}
+	return true, concurrency.FormatConflict(conflict), nil
 }
 
 func (r *OperationReconciler) blockOperation(ctx context.Context, op *opsv1alpha1.Operation, reason, message string) (ctrl.Result, error) {

@@ -26,10 +26,11 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/operations/approvals"
+	"github.com/vworkspace-io/vworkspace-operator/internal/operations/concurrency"
 	"github.com/vworkspace-io/vworkspace-operator/internal/operations/templates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -189,39 +190,25 @@ func validateOperationCapability(target *appsv1alpha1.ApplicationInstance, op *o
 }
 
 func validateOperationConcurrency(ctx context.Context, cl client.Client, op *opsv1alpha1.Operation) error {
-	list := &opsv1alpha1.OperationList{}
-	if err := cl.List(ctx, list, client.InNamespace(op.Namespace)); err != nil {
-		return fmt.Errorf("list operations: %w", err)
+	conflict, err := concurrency.FindConflict(ctx, cl, op)
+	if err != nil {
+		return err
 	}
-	for _, item := range list.Items {
-		if item.Name == op.Name {
-			continue
-		}
-		if item.Spec.TargetRef.Name != op.Spec.TargetRef.Name {
-			continue
-		}
-		if !operationInFlight(&item) {
-			continue
-		}
-		return fmt.Errorf("target %q already has active operation %q (phase=%s)",
-			op.Spec.TargetRef.Name, item.Name, item.Status.Phase)
+	if conflict != nil {
+		return fmt.Errorf("target %q %s", op.Spec.TargetRef.Name, concurrency.FormatConflict(conflict))
 	}
 	return nil
 }
 
-func operationInFlight(op *opsv1alpha1.Operation) bool {
-	switch op.Status.Phase {
-	case opsv1alpha1.PhaseSucceeded, opsv1alpha1.PhaseFailed, opsv1alpha1.PhaseCancelled:
-		return false
-	case opsv1alpha1.PhaseRunning:
-		return true
+func validateOperationApprovalClaim(secret string, op *opsv1alpha1.Operation) error {
+	claim := approvals.Claim(op)
+	if claim == "" {
+		return nil
 	}
-	for _, c := range op.Status.Conditions {
-		if c.Type == opsv1alpha1.ConditionAccepted && c.Status == metav1.ConditionTrue {
-			return true
-		}
+	if err := approvals.ValidateClaim(secret, claim, op.Name); err != nil {
+		return fmt.Errorf("spec.approvals.claim: %w", err)
 	}
-	return false
+	return nil
 }
 
 func validateInlineValues(values appsv1alpha1.ValuesSpec) error {
