@@ -1,0 +1,48 @@
+name: Code review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  cursor-review:
+    if: |
+      !contains(github.event.pull_request.labels.*.name, 'skip-review') &&
+      !contains(github.event.pull_request.title, '[skip review]')
+    name: Cursor PR review
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # Isolated path: main CI jobs also use self-hosted and checkout to verify/test/lint/e2e.
+      # Default workspace root must not be shared or checkout races and leaves a non-repo directory.
+      - name: Clone PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: review
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Run Cursor code review
+        working-directory: review
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}/review
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY:-}" ]; then
+            echo "::error::CURSOR_API_KEY secret is not set. Add it in GitHub: Settings → Secrets and variables → Actions (repo or vworkspace-io org)."
+            exit 1
+          fi
+          export PATH="${HOME}/.local/bin:${PATH}"
+          chmod +x hack/code-review.sh
+          ./hack/code-review.sh "${{ github.event.pull_request.number }}"

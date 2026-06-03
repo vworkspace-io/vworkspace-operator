@@ -60,6 +60,23 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
 
 Scope is optional but useful, for example `feat(operation): add helmHookJob engine`.
 
+## Automated code review (Cursor)
+
+On every pull request, the [Code review](.github/workflows/code-review.yml) workflow
+runs [Cursor Agent](https://cursor.com/docs/cli) on the PR diff and posts a single
+summary comment (updated on each push; the prior review is kept in a collapsible
+*Previous review* section). Findings are meant to reflect the **current** diff only.
+
+**Setup (maintainers):** add a repository or organization secret named
+`CURSOR_API_KEY` (user key from [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations)
+or a team service-account key). The workflow uses the self-hosted runner;
+`gh` must be available on the runner (same as for manual PR work).
+
+**Skip for one PR:** add the `skip-review` label or put `[skip review]` in the PR title.
+
+**Optional:** set workflow variable `CURSOR_REVIEW_MODEL` in the job `env` block to override
+the default model (`composer-2.5`).
+
 ## Pull request review
 
 Once code is in tree, pull requests need:
