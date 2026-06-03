@@ -49,6 +49,12 @@ jobs:
           chmod +x hack/verify-generated.sh
           ./hack/verify-generated.sh
 
+      - name: Code review findings parser tests
+        working-directory: verify
+        run: |
+          chmod +x hack/test-code-review-findings.sh
+          ./hack/test-code-review-findings.sh
+
   test:
     permissions:
       contents: read
