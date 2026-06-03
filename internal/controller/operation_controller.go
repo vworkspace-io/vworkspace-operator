@@ -132,7 +132,9 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		prevConditions = append([]metav1.Condition(nil), op.Status.Conditions...)
 	}
 
-	r.backfillEngineRefIfNeeded(op, target)
+	if err := r.backfillEngineRefIfNeeded(ctx, op, target); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	status, err := engine.Status(ctx, op)
 	if err != nil {
@@ -171,16 +173,28 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
-func (r *OperationReconciler) backfillEngineRefIfNeeded(op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance) {
-	if op.Status.Phase == opsv1alpha1.PhaseRunning && op.Status.StartedAt == nil {
+func (r *OperationReconciler) backfillEngineRefIfNeeded(ctx context.Context, op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance) error {
+	if op.Status.Phase != opsv1alpha1.PhaseRunning {
+		return nil
+	}
+	patch := false
+	if op.Status.StartedAt == nil {
 		now := metav1.Now()
 		op.Status.StartedAt = &now
+		patch = true
 	}
-	if op.Status.Phase != opsv1alpha1.PhaseRunning || op.Status.EngineRef != nil || !engines.SupportsEngineRef(op.Spec.Engine) {
-		return
+	if op.Status.EngineRef == nil && engines.SupportsEngineRef(op.Spec.Engine) {
+		ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
+		op.Status.EngineRef = &ref
+		patch = true
 	}
-	ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
-	op.Status.EngineRef = &ref
+	if !patch {
+		return nil
+	}
+	if err := r.Status().Update(ctx, op); err != nil {
+		return fmt.Errorf("persist running status backfill: %w", err)
+	}
+	return nil
 }
 
 func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *opsv1alpha1.Operation, err error) (ctrl.Result, error) {
@@ -197,7 +211,7 @@ func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *o
 				}
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
-			if time.Since(op.Status.StartedAt.Time) < 30*time.Second {
+			if time.Since(op.Status.StartedAt.Time) < 60*time.Second {
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
 		}

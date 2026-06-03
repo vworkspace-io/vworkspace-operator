@@ -122,7 +122,14 @@ func (e *WorkflowEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) 
 			Done:    true,
 			Outputs: map[string]string{"workflowName": wf.GetName()},
 		}, nil
-	case "Failed", "Error", "Terminated", "Skipped":
+	case "Skipped":
+		return Status{
+			Phase:   opsv1alpha1.PhaseSucceeded,
+			Reason:  "EngineSkipped",
+			Done:    true,
+			Outputs: map[string]string{"workflowName": wf.GetName()},
+		}, nil
+	case "Failed", "Error", "Terminated":
 		message, _, _ := unstructured.NestedString(wf.Object, "status", "message")
 		return Status{
 			Phase:   opsv1alpha1.PhaseFailed,
