@@ -27,6 +27,7 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/operations/approvalclaim"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,6 +51,8 @@ var (
 	envtestCancel      context.CancelFunc
 	envtestEnvironment *envtest.Environment
 )
+
+const envtestApprovalClaimSecret = "envtest-approval-claim-secret"
 
 func TestMain(m *testing.M) {
 	logf.SetLogger(zap.New(zap.WriteTo(os.Stderr), zap.UseDevMode(true)))
@@ -112,7 +115,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	opHook, err := NewOperationWebhook(mgr.GetScheme(), mgr.GetClient(), OperationWebhookOptions{})
+	opHook, err := NewOperationWebhook(mgr.GetScheme(), mgr.GetClient(), OperationWebhookOptions{
+		ApprovalClaimSecret: envtestApprovalClaimSecret,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "operation webhook: %v\n", err)
 		teardownEnvtest()
@@ -255,6 +260,200 @@ func TestWebhookConcurrentOperationRejected(t *testing.T) {
 	}
 }
 
+func TestWebhookRejectsMissingCapability(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-capability-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	delete(app.Annotations, "ops.vworkspace.io/backup")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "backup-1", "app", opsv1alpha1.OperationTypeBackup)
+	err := envtestClient.Create(ctx, op)
+	if err == nil {
+		t.Fatal("expected admission rejection for missing backup capability")
+	}
+	if !strings.Contains(err.Error(), "capability") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookRejectsUnknownTemplatePair(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-template-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "backup-volsync", "app", opsv1alpha1.OperationTypeBackup)
+	op.Spec.Engine = opsv1alpha1.EngineVolsync
+	err := envtestClient.Create(ctx, op)
+	if err == nil {
+		t.Fatal("expected admission rejection for unknown type+engine template pair")
+	}
+	if !strings.Contains(err.Error(), "template") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookRejectsInvalidRestoreParameters(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-restore-params-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "restore-1", "app", opsv1alpha1.OperationTypeRestore)
+	err := envtestClient.Create(ctx, op)
+	if err == nil {
+		t.Fatal("expected admission rejection for restore without backupName parameter")
+	}
+	if !strings.Contains(err.Error(), "backupName") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookRejectsPrivilegedServiceAccount(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-privileged-sa-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	app.Annotations["ops.vworkspace.io/runcommand"] = "job"
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "run-1", "app", opsv1alpha1.OperationTypeRunCommand)
+	op.Spec.Engine = opsv1alpha1.EngineJob
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{
+		"image": "alpine:3.20",
+		"serviceAccountName": "cluster-admin"
+	}`)}
+	err := envtestClient.Create(ctx, op)
+	if err == nil {
+		t.Fatal("expected admission rejection for privileged service account")
+	}
+	if !strings.Contains(err.Error(), "serviceAccountName") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookRejectsInvalidApprovalClaim(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-approval-invalid-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "restore-1", "app", opsv1alpha1.OperationTypeRestore)
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	op.Spec.Approvals = &opsv1alpha1.ApprovalsSpec{
+		Required: true,
+		Claim:    "vws1.invalid.body",
+	}
+	err := envtestClient.Create(ctx, op)
+	if err == nil {
+		t.Fatal("expected admission rejection for invalid approval claim")
+	}
+	if !strings.Contains(err.Error(), "spec.approvals.claim") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWebhookAcceptsValidApprovalClaim(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-approval-valid-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	claim, err := approvalclaim.Issue(envtestApprovalClaimSecret, approvalclaim.Payload{
+		Version:       1,
+		OperationName: "restore-1",
+		ExpiresAt:     time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "restore-1", "app", opsv1alpha1.OperationTypeRestore)
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"backupName":"b1"}`)}
+	op.Spec.Approvals = &opsv1alpha1.ApprovalsSpec{Required: true, Claim: claim}
+	if err := envtestClient.Create(ctx, op); err != nil {
+		t.Fatalf("create Operation with valid approval claim: %v", err)
+	}
+}
+
+func TestWebhookAllowsBackupDuringUpgrade(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-backup-during-upgrade-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	existing := sampleEnvtestOperation(ns, "upgrade-1", "app", opsv1alpha1.OperationTypeUpgrade)
+	if err := envtestClient.Create(ctx, existing); err != nil {
+		t.Fatalf("create upgrade Operation: %v", err)
+	}
+	existing.Status.Phase = opsv1alpha1.PhaseRunning
+	if err := envtestClient.Status().Update(ctx, existing); err != nil {
+		t.Fatalf("update upgrade Operation status: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "backup-2", "app", opsv1alpha1.OperationTypeBackup)
+	if err := envtestClient.Create(ctx, op); err != nil {
+		t.Fatalf("expected backup during running upgrade to pass: %v", err)
+	}
+}
+
+func TestWebhookRejectsConcurrentUpgrade(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-concurrent-upgrade-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := sampleEnvtestApplicationInstance(ns, "app")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create ApplicationInstance: %v", err)
+	}
+
+	existing := sampleEnvtestOperation(ns, "upgrade-1", "app", opsv1alpha1.OperationTypeUpgrade)
+	if err := envtestClient.Create(ctx, existing); err != nil {
+		t.Fatalf("create first Operation: %v", err)
+	}
+	existing.Status.Phase = opsv1alpha1.PhaseRunning
+	if err := envtestClient.Status().Update(ctx, existing); err != nil {
+		t.Fatalf("update first Operation status: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "upgrade-2", "app", opsv1alpha1.OperationTypeUpgrade)
+	err := envtestClient.Create(ctx, op)
+	if err == nil {
+		t.Fatal("expected admission rejection for concurrent upgrade")
+	}
+	if !strings.Contains(err.Error(), "conflicts with operation") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestWebhookInlineSecretRejected(t *testing.T) {
 	ctx := context.Background()
 	ns := "webhook-inline-secret-" + uniqueSuffix()
@@ -293,9 +492,10 @@ func sampleEnvtestApplicationInstance(namespace, name string) *appsv1alpha1.Appl
 			Name:      name,
 			Namespace: namespace,
 			Annotations: map[string]string{
-				"ops.vworkspace.io/backup":  "velero",
-				"ops.vworkspace.io/restore": "velero",
-				"ops.vworkspace.io/upgrade": "helm",
+				"ops.vworkspace.io/backup":    "velero",
+				"ops.vworkspace.io/restore":   "velero",
+				"ops.vworkspace.io/upgrade":   "helm",
+				"ops.vworkspace.io/migration": "helmHookJob",
 			},
 		},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{

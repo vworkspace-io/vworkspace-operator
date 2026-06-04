@@ -76,6 +76,26 @@ KUBEBUILDER_ASSETS="$(./bin/setup-envtest use 1.30 -p path)" \
 
 The `-count=1` flag disables Go's test caching so a re-run actually re-runs.
 
+### Operation admission and engine envtest
+
+Hub [#9](https://github.com/vworkspace-io/vworkspace/issues/9) concurrency and admission coverage lives in `internal/webhook/webhook_envtest_test.go`. The suite starts an in-process API server with CRDs and validating webhooks (Operation and ApplicationInstance), then exercises create paths against a real admission chain:
+
+- Namespace `ops.vworkspace.io/allowed-types` policy
+- Builtin template / capability pairing on the target `ApplicationInstance`
+- Parameter schema and privileged `job` runtime guards
+- Typed concurrency (restore during upgrade, concurrent upgrades)
+- Approval claim verification when `spec.approvals.claim` is set
+
+Run only the webhook envtest package (faster iteration while changing admission):
+
+```
+make envtest
+KUBEBUILDER_ASSETS="$(./bin/setup-envtest use -p path)" \
+  go test ./internal/webhook/ -v -count=1 -run 'TestWebhook'
+```
+
+`job`, `workflow`, and `helmHookJob` engine materialization is covered by unit tests in `internal/engines/engines_test.go` using a fake client (no second envtest cluster). Kind-based engine smoke remains optional behind `make e2e` / `E2E_*` gates because it is slow and flaky on shared CI runners.
+
 ## Integration test against live vWorkspace Server
 
 Optional smoke test against a running [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) docker-compose stack. Not part of `make test` or default CI.
