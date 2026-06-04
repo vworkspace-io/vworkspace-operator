@@ -230,7 +230,7 @@ jobs:
       ${{ github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository }}
     env:
-      # Pin compatible server ref; override in workflow_dispatch (spoke 3).
+      # Pin vworkspace-server commit with matching agent API + seed protocol (bump when server contract changes).
       SERVER_REF: 9d578aecccdf9c1503c031e2035c32ad4ef59f4c
       COMPOSE_PROJECT_NAME: vws-contract-op-${{ github.run_id }}
       IMAGE_TAG: ci-contract-op-${{ github.run_id }}
@@ -325,8 +325,8 @@ jobs:
             rm -f "${ARTIFACT_DIR}/seed.log" "${ARTIFACT_DIR}/integration-test.log"
             docker compose -f ../vworkspace-server/docker-compose.yml down -v 2>/dev/null || true
             set +e
-            (cd ../vworkspace-server && ./hack/dev-integration.sh) 2>&1 | tee "${ARTIFACT_DIR}/seed.log"
-            seed_rc=${PIPESTATUS[0]}
+            (cd ../vworkspace-server && ./hack/dev-integration.sh) > "${ARTIFACT_DIR}/seed.log" 2>&1
+            seed_rc=$?
             set -e
             CLUSTER_ID="$(parse_seed '^CLUSTER_ID=')"
             REGISTRATION_TOKEN="$(parse_seed '^REGISTRATION_TOKEN=')"
