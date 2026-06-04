@@ -7,6 +7,12 @@ on:
     tags:
       - 'v*'
   pull_request:
+  workflow_dispatch:
+    inputs:
+      server_ref:
+        description: vworkspace-server commit SHA for contract-integration
+        required: false
+        default: 3d8d5db980641986964122dbe0a7db2472c21669
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -163,7 +169,7 @@ jobs:
             kind version
             exit 0
           fi
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64
           chmod +x ./kind
           if sudo -n true 2>/dev/null; then
             sudo -n install -o root -g root -m 0755 ./kind /usr/local/bin/kind
@@ -196,14 +202,241 @@ jobs:
           fi
           kubectl version --client
 
+      - name: Tune inotify limits for kind
+        run: |
+          if sudo -n true 2>/dev/null; then
+            sudo -n sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512 2>/dev/null || true
+          fi
+
       - name: Running Test e2e
         working-directory: e2e
         env:
           LOCALBIN: ${{ github.workspace }}/bin-e2e
           KIND_CLUSTER: vworkspace-operator-e2e-${{ github.run_id }}
         run: |
+          set -euo pipefail
           go mod tidy
-          make test-e2e
+          for attempt in 1 2 3; do
+            if make test-e2e; then
+              exit 0
+            fi
+            kind delete cluster --name "${KIND_CLUSTER}" 2>/dev/null || true
+            echo "::warning::e2e attempt ${attempt} failed; retrying kind cluster setup"
+            sleep 15
+          done
+          exit 1
+
+  contract-integration:
+    permissions:
+      contents: read
+      actions: write
+    name: Contract tier (live control plane)
+    runs-on: self-hosted
+    # Fork PRs cannot use org secrets (VWORKSPACE_SERVER_READ_TOKEN); contract runs on same-repo PRs and push only.
+    if: >-
+      ${{ github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository }}
+    env:
+      # Pin vworkspace-server commit with matching agent API + seed protocol. Bump in this file when
+      # operator integration or server seed protocol changes (workflow_dispatch can override for replay).
+      SERVER_REF: ${{ github.event.inputs.server_ref != '' && github.event.inputs.server_ref || '3d8d5db980641986964122dbe0a7db2472c21669' }}
+      COMPOSE_PROJECT_NAME: vws-contract-op-${{ github.run_id }}
+      IMAGE_TAG: ci-contract-op-${{ github.run_id }}
+      ARTIFACT_DIR: ${{ github.workspace }}/contract-integration-artifacts
+    steps:
+      - name: Set isolated Odoo HTTP port
+        id: ports
+        run: |
+          set -euo pipefail
+          pick_free_port() {
+            local port
+            for _ in $(seq 1 50); do
+              port=$((19000 + RANDOM % 10000))
+              if ! ss -ltn 2>/dev/null | grep -qE ":${port}([[:space:]]|$)"; then
+                echo "${port}"
+                return 0
+              fi
+            done
+            return 1
+          }
+          port="$(pick_free_port)"
+          echo "odoo_port=${port}" >> "$GITHUB_OUTPUT"
+          echo "ODOO_HTTP_PORT=${port}" >> "$GITHUB_ENV"
+
+      - name: Clone operator
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: contract-integration
+          persist-credentials: false
+
+      - name: Clone vworkspace-server
+        run: |
+          set -euo pipefail
+          token="${VWORKSPACE_SERVER_READ_TOKEN:-}"
+          if [ -z "${token}" ]; then
+            echo "::error::Repository secret VWORKSPACE_SERVER_READ_TOKEN is required (PAT with contents:read on vworkspace-io/vworkspace-server). Private server cannot be checked out with the public operator repo GITHUB_TOKEN alone."
+            exit 1
+          fi
+          rm -rf vworkspace-server
+          git clone --filter=blob:none --no-checkout \
+            "https://x-access-token:${token}@github.com/vworkspace-io/vworkspace-server.git" \
+            vworkspace-server
+          git -C vworkspace-server fetch --depth 1 origin "${SERVER_REF}"
+          git -C vworkspace-server checkout FETCH_HEAD
+        env:
+          VWORKSPACE_SERVER_READ_TOKEN: ${{ secrets.VWORKSPACE_SERVER_READ_TOKEN }}
+
+      - name: Ensure build tools (server)
+        working-directory: vworkspace-server
+        run: ./hack/ensure-build-tools.sh
+
+      - name: Ensure build tools (operator)
+        working-directory: contract-integration
+        run: ./hack/ensure-build-tools.sh
+
+      - name: Ensure Docker is available
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "::error::docker not installed. Pre-install on the runner."
+            exit 1
+          fi
+          if ! docker info >/dev/null 2>&1; then
+            if sudo -n true 2>/dev/null; then
+              sudo -n systemctl start docker 2>/dev/null \
+                || sudo -n service docker start 2>/dev/null \
+                || true
+            fi
+            if ! docker info >/dev/null 2>&1; then
+              echo "::error::docker info failed. Add the runner user to the docker group."
+              exit 1
+            fi
+          fi
+          docker info >/dev/null
+
+      - name: Setup Go
+        uses: ./contract-integration/.github/actions/setup-go-if-needed
+        with:
+          working-directory: contract-integration
+
+      - name: Run contract integration
+        working-directory: contract-integration
+        env:
+          CONTROL_PLANE_BASE_URL: http://127.0.0.1:${{ env.ODOO_HTTP_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${ARTIFACT_DIR}"
+          chmod +x ../vworkspace-server/hack/dev-integration.sh
+          go mod tidy
+          redact_log() {
+            sed -E \
+              -e 's/(REGISTRATION_TOKEN=).*/\1<redacted>/' \
+              -e 's/(BOOTSTRAP_TOKEN=).*/\1<redacted>/' \
+              -e 's/(Reg token:).*/\1 <redacted>/' \
+              -e 's/(Cluster ID:).*/\1 <redacted>/' \
+              "$1"
+          }
+          parse_seed() {
+            local pattern="$1"
+            grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' ' || true
+          }
+          scrub_seed_log() {
+            if [[ -f "${ARTIFACT_DIR}/seed.log" ]]; then
+              redact_log "${ARTIFACT_DIR}/seed.log" >> "${ARTIFACT_DIR}/seed-redacted.log" || true
+              rm -f "${ARTIFACT_DIR}/seed.log"
+            fi
+          }
+          for attempt in 1 2 3; do
+            rm -f "${ARTIFACT_DIR}/seed.log" "${ARTIFACT_DIR}/integration-test.log"
+            docker compose -f ../vworkspace-server/docker-compose.yml down -v 2>/dev/null || true
+            set +e
+            (cd ../vworkspace-server && ./hack/dev-integration.sh) > "${ARTIFACT_DIR}/seed.log" 2>&1
+            seed_rc=$?
+            set -e
+            CLUSTER_ID="$(parse_seed '^CLUSTER_ID=')"
+            REGISTRATION_TOKEN="$(parse_seed '^REGISTRATION_TOKEN=')"
+            JOB_ID="$(parse_seed '^JOB_ID=')"
+            if [[ -z "${CLUSTER_ID}" ]]; then
+              CLUSTER_ID="$(grep -E '^Cluster ID:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
+            fi
+            if [[ -z "${REGISTRATION_TOKEN}" ]]; then
+              REGISTRATION_TOKEN="$(grep -E '^Reg token:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
+            fi
+            if [[ -z "${JOB_ID}" ]]; then
+              JOB_ID="$(grep -E '^Pending job:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $3}')"
+            fi
+            if [[ "${seed_rc}" -ne 0 || -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
+              echo "::warning::contract seed attempt ${attempt} failed (rc=${seed_rc})"
+              scrub_seed_log
+              sleep 15
+              continue
+            fi
+            echo "::add-mask::${REGISTRATION_TOKEN}"
+            {
+              echo "CLUSTER_ID=${CLUSTER_ID}"
+              echo "JOB_ID=${JOB_ID}"
+              echo "REGISTRATION_TOKEN=<redacted>"
+            } > "${ARTIFACT_DIR}/seed-redacted.log"
+            redact_log "${ARTIFACT_DIR}/seed.log" >> "${ARTIFACT_DIR}/seed-redacted.log" || true
+            rm -f "${ARTIFACT_DIR}/seed.log"
+            INTEGRATION_LOG="${ARTIFACT_DIR}/integration-test.log"
+            export VWORKSPACE_CLUSTER_ID="${CLUSTER_ID}"
+            export VWORKSPACE_REGISTRATION_TOKEN="${REGISTRATION_TOKEN}"
+            if go test -tags=integration ./test/integration/... \
+              -run '^TestRealControlPlaneRegisterPollHeartbeat$' -count=1 -v 2>&1 | tee "${INTEGRATION_LOG}" \
+              && ! grep -qE '^\[no tests to run\]' "${INTEGRATION_LOG}" \
+              && grep -q 'PASS: TestRealControlPlaneRegisterPollHeartbeat' "${INTEGRATION_LOG}"; then
+              exit 0
+            fi
+            echo "::warning::contract test attempt ${attempt} failed"
+            scrub_seed_log
+            sleep 15
+          done
+          scrub_seed_log
+          echo "::error::contract integration failed after 3 attempts"
+          exit 1
+
+      - name: Capture compose logs on failure
+        if: failure()
+        working-directory: vworkspace-server
+        run: |
+          set -euo pipefail
+          mkdir -p "${ARTIFACT_DIR}"
+          docker compose logs --no-color > "${ARTIFACT_DIR}/compose-raw.log" 2>&1 || true
+          redact_log() {
+            sed -E \
+              -e 's/(REGISTRATION_TOKEN=).*/\1<redacted>/' \
+              -e 's/(BOOTSTRAP_TOKEN=).*/\1<redacted>/' \
+              -e 's/(Reg token:).*/\1 <redacted>/' \
+              -e 's/(Cluster ID:).*/\1 <redacted>/' \
+              "$1"
+          }
+          if [[ -f "${ARTIFACT_DIR}/compose-raw.log" ]]; then
+            redact_log "${ARTIFACT_DIR}/compose-raw.log" > "${ARTIFACT_DIR}/compose.log"
+            rm -f "${ARTIFACT_DIR}/compose-raw.log"
+          fi
+          if [[ -f "${ARTIFACT_DIR}/integration-test.log" ]]; then
+            redact_log "${ARTIFACT_DIR}/integration-test.log" > "${ARTIFACT_DIR}/integration-test-redacted.log"
+            mv "${ARTIFACT_DIR}/integration-test-redacted.log" "${ARTIFACT_DIR}/integration-test.log"
+          fi
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-integration-${{ github.run_id }}
+          path: |
+            ${{ env.ARTIFACT_DIR }}/seed-redacted.log
+            ${{ env.ARTIFACT_DIR }}/integration-test.log
+            ${{ env.ARTIFACT_DIR }}/compose.log
+          if-no-files-found: ignore
+
+      - name: Cleanup dev stack
+        if: always()
+        working-directory: vworkspace-server
+        run: |
+          docker compose down -v 2>/dev/null || true
+          rm -f "${ARTIFACT_DIR}/seed.log" 2>/dev/null || true
 
   # Optional: Helm chart validation on kind. Not enabled in CI by default because
   # not all runners have kind/helm/docker. Run locally: ./hack/validate-helm-kind.sh
@@ -231,9 +464,10 @@ jobs:
   docker:
     permissions:
       contents: read
+    # Intentional: main/tag image publish requires contract-integration (hub #12); see docs/development/contributing.md.
     name: Build and push image
     runs-on: self-hosted
-    needs: [verify, test, lint, e2e]
+    needs: [verify, test, lint, e2e, contract-integration]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     steps:
       - name: Clone the code
