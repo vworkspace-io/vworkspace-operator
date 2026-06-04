@@ -455,7 +455,7 @@ Run everything: `make test`.
 | Golden path: optional Flux controllers → `Ready` | `flux install` or bundled chart | Documented; optional in dev |
 | Real Pull-mode job enqueue from server UI | upstream `vworkspace-server` | Planned (server-owned) |
 | `job` / `workflow` / `helmHookJob` engines | `internal/engines/` | Done ([#47](https://github.com/vworkspace-io/vworkspace-operator/pull/47)) |
-| Engine envtest/e2e with webhooks (Hub #9 spoke 5) | `internal/webhook/`, `test/e2e/` | In progress ([#48](https://github.com/vworkspace-io/vworkspace-operator/issues/48)) |
+| Engine envtest/e2e with webhooks (Hub #9 spoke 5) | `internal/webhook/webhook_envtest_test.go`, `internal/engines/engines_test.go` | Done ([#48](https://github.com/vworkspace-io/vworkspace-operator/issues/48)) |
 | CSI / VolSync engines | `internal/engines/` | Planned |
 | mTLS and signed Pull-mode payloads | `internal/agent/` | Planned |
 | GitHub Pages doc publish | `docs/publication.md`, CI workflow | In progress (see publication.md checklist) |
