@@ -28,7 +28,7 @@ Each event in the request body matches `internal/agent.Event`:
 {
   "events": [
     {
-      "eventKey": "condition/apps.vworkspace.io/v1alpha1/ApplicationInstance/org-myteam/nextcloud-myteam/8c9e…/Ready/True/7",
+      "eventKey": "condition/apps.vworkspace.io/v1alpha1/ApplicationInstance/org-myteam/nextcloud-myteam/8c9e5a3d-2e9c-4c8a-9c0a-1e3a4b5c6d7e/Ready/True@7",
       "kind": "ConditionTransition",
       "resourceRef": {
         "apiVersion": "apps.vworkspace.io/v1alpha1",
