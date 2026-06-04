@@ -160,7 +160,7 @@ Replace namespace and deployment names for your install (`vworkspace-system` for
 ```bash
 NS=vworkspace-system
 DEPLOY=vworkspace-operator-controller-manager   # kustomize: vworkspace-operator-system / vworkspace-operator-controller-manager
-kubectl -n "${NS}" logs deploy/"${DEPLOY}" --tail=500 | jq -c 'select(.cluster_id=="<cluster-uuid>" and .level=="error")'
+kubectl -n "${NS}" logs deploy/"${DEPLOY}" --tail=500 | jq -c 'select(.cluster_id=="<Cluster.metadata.name>" and .level=="error")'
 kubectl -n "${NS}" logs deploy/"${DEPLOY}" --tail=200 | jq -c 'select(.controller=="applicationinstance" and (.msg|test("fail";"i")))'
 ```
 
