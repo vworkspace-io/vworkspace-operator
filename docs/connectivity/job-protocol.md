@@ -205,7 +205,7 @@ Post a batched set of status, condition, and audit events that are not tied to a
 **Field semantics.**
 
 - `events[]` — an array of events. The operator batches up to a configurable size threshold (default 100) and time threshold (default one second), whichever is reached first. Empty batches are not sent.
-- `kind` — the event kind. Standard kinds include `ConditionTransition` (a condition on an owned resource changed), `ClusterHeartbeat` (a periodic snapshot of the operator's own `Cluster` status), `Audit` (a notable action, e.g. an `Operation` was admitted or rejected), `BufferOverflow` (the operator's outbound buffer dropped events during a disconnect).
+- `kind` — the event kind. Implemented kinds include `ConditionTransition` (a condition on an owned resource changed), direct audit kinds from `ReportAudit` (e.g. `CredentialRotated`, and operation lifecycle kinds ingested by server `vws_audit`), and `ClusterHeartbeat` (periodic `Cluster` status snapshot; not a durable audit entry). See [../operate/audit-events.md](../operate/audit-events.md) for the full taxonomy and server ingest rules.
 - `resourceRef` — the object the event is about. UID is included where possible to disambiguate recreated objects.
 
 **Success response: `204 No Content`.**
