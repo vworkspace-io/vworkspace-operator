@@ -232,12 +232,19 @@ jobs:
           persist-credentials: false
 
       - name: Clone vworkspace-server
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: vworkspace-io/vworkspace-server
-          ref: ${{ env.SERVER_REF }}
-          path: vworkspace-server
-          persist-credentials: false
+        run: |
+          set -euo pipefail
+          token="${VWORKSPACE_SERVER_READ_TOKEN:-}"
+          if [ -z "${token}" ]; then
+            echo "::error::Repository secret VWORKSPACE_SERVER_READ_TOKEN is required (PAT with contents:read on vworkspace-io/vworkspace-server). Private server cannot be checked out with the public operator repo GITHUB_TOKEN alone."
+            exit 1
+          fi
+          git clone --depth 1 \
+            "https://x-access-token:${token}@github.com/vworkspace-io/vworkspace-server.git" \
+            vworkspace-server
+          git -C vworkspace-server checkout "${SERVER_REF}"
+        env:
+          VWORKSPACE_SERVER_READ_TOKEN: ${{ secrets.VWORKSPACE_SERVER_READ_TOKEN }}
 
       - name: Ensure build tools (server)
         working-directory: vworkspace-server
