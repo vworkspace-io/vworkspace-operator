@@ -64,6 +64,7 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
 | `agent.pollIntervalSeconds` | `30` | Long-poll interval |
 | `rbac.create` | `true` | ClusterRole and ClusterRoleBinding |
 | `serviceAccount.create` | `true` | Dedicated ServiceAccount |
+| `manager.metricsBindAddress` | `0` (off) | Set to `:8443` to expose HTTPS `/metrics` (see [observability.md](../operate/observability.md#prometheus-scrape)) |
 
 See [charts/vworkspace-operator/values.yaml](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/values.yaml) for manager flags, resources, and scheduling.
 

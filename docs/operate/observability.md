@@ -1,7 +1,7 @@
 # Observability
 
 **Status:** Alpha
-**Last Updated:** 2026-06-04
+**Last Updated:** 2026-06-04 (hub #6 spoke 1 — scrape + catalog)
 
 `vworkspace-operator` emits the signals an operator (the person) needs to answer "is this cluster healthy and what happened on it recently". The four surfaces are Prometheus metrics, structured JSON logs, Kubernetes events on every condition transition, and an audit-event stream posted to the control plane's `POST /api/agent/events`. Each is documented below with the concrete metric names, log fields, and endpoints.
 
@@ -9,36 +9,97 @@ The principle is "the cluster is the source of truth for what is happening; vWor
 
 ## Prometheus metrics
 
-The operator exposes metrics on `:8080/metrics` (the controller-runtime default). All metrics are labeled with `controller`, `result` (where applicable), and operator-specific labels described below.
+### Endpoints
 
-### Operator-specific metrics
+| Install path | Metrics bind address | Path | TLS |
+|--------------|----------------------|------|-----|
+| Kustomize (`make deploy`) | `:8443` via `config/default/manager_metrics_patch.yaml` | `/metrics` | HTTPS (controller-runtime secure metrics; RBAC-filtered) |
+| Helm chart (default) | `0` (disabled) | — | — |
+| Helm (enable) | `--set manager.metricsBindAddress=:8443` | `/metrics` | HTTPS when non-zero bind address |
 
-| Metric                                                  | Type      | Labels                                                                                          | Meaning                                                                                                                          |
-|---------------------------------------------------------|-----------|-------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| `vworkspace_operator_reconcile_total`                   | Counter   | `controller=<applicationinstance|operation|cluster>`, `result=<requeue|success|error>`           | Reconciles per controller and outcome.                                                                                            |
-| `vworkspace_operator_reconcile_duration_seconds`        | Histogram | `controller`                                                                                    | Reconcile wall time. Buckets: 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s.                                       |
-| `vworkspace_operator_operation_total`                   | Counter   | `type=<Backup|Restore|Upgrade|Migration|RunCommand|Runbook>`, `engine=<velero|workflow|job|helm|helmHookJob|volsync|snapshot>`, `outcome=<succeeded|failed|cancelled|blocked>` | Operation completions, useful for SLO calculations per verb and per engine.                                                       |
-| `vworkspace_operator_pull_job_lag_seconds`              | Gauge     | (none)                                                                                          | Age (seconds) of the oldest job the operator has fetched but not yet applied. A persistent non-zero gauge indicates a stuck loop. |
-| `vworkspace_operator_connectivity_state`                | Gauge     | `mode=<pull|push|gitops>`                                                                       | `1` connected, `0` reconnecting, `-1` disconnected. The same signal feeds `Cluster.status.conditions[Connected]`.                  |
-| `vworkspace_operator_applied_jobs_total`                | Counter   | (none)                                                                                          | Pull-mode jobs applied successfully (`internal/agent/metrics.go`).                                                                  |
-| `vworkspace_operator_event_buffer_occupancy`            | Gauge     | (none)                                                                                          | Current depth of the outbound event buffer (Pull mode). Updated by `internal/agent/events.go` on enqueue, flush, and requeue. |
-| `vworkspace_operator_managed_namespaces`                | Gauge     | (none)                                                                                          | Count of namespaces carrying `app.vworkspace.io/managed-by=vworkspace`.                                                            |
-| `vworkspace_operator_credential_age_seconds`            | Gauge     | (none)                                                                                          | Age of the current bootstrap credential in seconds since the credentials Secret was last updated or rotated (`internal/agent/metrics.go`, updated on load/persist/rotation). |
+Health probes stay on `:8081` (`/healthz`, `/readyz`). Do not confuse probe port `8081` with the metrics listener.
 
-### Standard controller-runtime metrics
+When `metrics-bind-address` is `0`, the process does not listen for scrapes. Production clusters should enable metrics and scrape via Prometheus Operator or an equivalent agent.
 
-The controller-runtime library contributes the usual workqueue, controller, and webhook metrics: `controller_runtime_reconcile_total`, `controller_runtime_reconcile_errors_total`, `controller_runtime_reconcile_time_seconds`, `workqueue_depth`, `workqueue_adds_total`, `workqueue_retries_total`, `workqueue_work_duration_seconds`, `rest_client_requests_total`, etc. We do not override these names; standard tooling and dashboards work unchanged.
+### Operator metrics (`vworkspace_operator_*`)
+
+Registered in `internal/agent/metrics.go` (Pull-mode agent and credential signals):
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `vworkspace_operator_pull_job_lag_seconds` | Gauge | (none) | Age (seconds) of the oldest Pull-mode job fetched but not yet applied. Persistent non-zero values suggest a stuck applier loop. |
+| `vworkspace_operator_connectivity_state` | Gauge | `mode=<pull\|push\|gitops>` | `1` connected, `0` reconnecting, `-1` disconnected. Feeds `Cluster.status.conditions[Connected]`. |
+| `vworkspace_operator_applied_jobs_total` | Counter | (none) | Pull-mode jobs applied successfully. |
+| `vworkspace_operator_event_buffer_occupancy` | Gauge | (none) | Outbound event buffer depth (Pull mode). Updated on enqueue, flush, and requeue (`internal/agent/events.go`). |
+| `vworkspace_operator_credential_age_seconds` | Gauge | (none) | Seconds since the bootstrap credentials Secret was last updated or rotated. |
+
+**Planned (later hub #6 spokes):** `vworkspace_operator_operation_total`, `vworkspace_operator_managed_namespaces`, and dedicated reconcile outcome counters. Until then, use controller-runtime metrics below for reconcile latency and errors.
+
+### Controller-runtime metrics (reconcile and workqueue)
+
+The manager registers the standard controller-runtime registry. Use these names in Grafana/Prometheus (controller names are lowercased CRD kinds):
+
+| Metric | Type | Labels | Use |
+|--------|------|--------|-----|
+| `controller_runtime_reconcile_total` | Counter | `controller`, `result` | Reconcile volume and outcome per controller. |
+| `controller_runtime_reconcile_errors_total` | Counter | `controller` | Non-success reconciles. |
+| `controller_runtime_reconcile_time_seconds` | Histogram | `controller` | Reconcile wall time (use for latency SLOs). |
+| `workqueue_depth` | Gauge | `name` | Backlog per workqueue. |
+| `workqueue_adds_total`, `workqueue_retries_total` | Counter | `name` | Queue churn. |
+| `rest_client_requests_total` | Counter | `code`, `method` | Kubernetes API pressure. |
+
+We do not rename these series; kube-prometheus, Grafana mixins, and upstream dashboards work unchanged.
+
+### Prometheus scrape
+
+#### Kustomize + Prometheus Operator
+
+1. Confirm metrics are enabled (default overlay already patches `--metrics-bind-address=:8443` and adds `controller-manager-metrics-service` on port `8443`).
+2. Install [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator) in the cluster (or use an existing kube-prometheus stack).
+3. In `config/default/kustomization.yaml`, uncomment the `[PROMETHEUS]` line to include `../prometheus` (ServiceMonitor `controller-manager-metrics-monitor`).
+4. For production TLS on the metrics Service, follow the `[METRICS-WITH-CERTS]` / `[CERTMANAGER]` comments in the same file and `config/prometheus/monitor_tls_patch.yaml`.
+5. Apply: `make deploy IMG=<your-operator-image>`.
+
+The ServiceMonitor scrapes `https` on Service port `https` → pod `8443`, path `/metrics`, with the pod service account token (see `config/prometheus/monitor.yaml`).
+
+#### Helm
+
+```bash
+helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system \
+  --set manager.metricsBindAddress=:8443
+```
+
+Add a `ServiceMonitor` (or PodMonitor) in your platform repo that selects the Helm Service labels for the manager Deployment. Match endpoint scheme `https`, port name `https` (if you add a metrics Service), and bearer token auth — same contract as the kustomize scaffold.
+
+#### Manual verification (no Prometheus Operator)
+
+```bash
+# Port-forward the metrics Service (kustomize name after prefix: vworkspace-operator-controller-manager-metrics-service)
+kubectl -n vworkspace-operator-system port-forward svc/vworkspace-operator-controller-manager-metrics-service 8443:8443
+
+# Token for the manager ServiceAccount (namespace from your install)
+TOKEN=$(kubectl -n vworkspace-operator-system create token vworkspace-operator-controller-manager)
+
+curl -sk --header "Authorization: Bearer ${TOKEN}" https://127.0.0.1:8443/metrics | grep -E '^vworkspace_operator_|^controller_runtime_reconcile'
+```
+
+Expect `vworkspace_operator_*` series when Pull-mode agent is enabled; connectivity and buffer gauges matter most for control-plane-linked clusters.
+
+#### RBAC
+
+Secure metrics use controller-runtime's authentication/authorization filter. Prometheus needs a `ClusterRole` that can `GET /metrics` non-resource URL and a `ClusterRoleBinding` to the scrape ServiceAccount (the e2e suite creates `metrics-reader` / `metrics-binding` for this pattern — see `test/e2e/e2e_test.go`).
 
 ### Recommended SLOs (starting point)
 
-| SLO                                                              | Target                                                                                                                 |
-|------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
-| 99% of `reconcile`s complete in under 1s for `applicationinstance`. | `histogram_quantile(0.99, sum by (le) (rate(vworkspace_operator_reconcile_duration_seconds_bucket{controller="applicationinstance"}[5m]))) < 1` |
-| 99% of `Backup` operations succeed within 30 minutes (catalog default). | Track via `vworkspace_operator_operation_total{type="Backup",outcome="succeeded"} / sum(vworkspace_operator_operation_total{type="Backup"})`. |
-| Pull-job lag stays under 60s.                                    | `vworkspace_operator_pull_job_lag_seconds < 60`.                                                                       |
-| Connectivity state is `1` (connected) over the last 5 minutes.   | `avg_over_time(vworkspace_operator_connectivity_state[5m]) > 0.99`.                                                    |
+| SLO | PromQL / rule (starting point) |
+|-----|--------------------------------|
+| 99% of `ApplicationInstance` reconciles complete in under 1s | `histogram_quantile(0.99, sum by (le) (rate(controller_runtime_reconcile_time_seconds_bucket{controller="applicationinstance"}[5m]))) < 1` |
+| 99% of `Backup` operations succeed within 30 minutes | Track via Operation CR phase / `OperationSucceeded` events until `vworkspace_operator_operation_total` exists; catalog default is 30m wall clock. |
+| Pull-job lag stays under 60s | `vworkspace_operator_pull_job_lag_seconds < 60` |
+| Connectivity is healthy over 5m (Pull mode) | `avg_over_time(vworkspace_operator_connectivity_state{mode="pull"}[5m]) > 0.99` |
 
-The SLOs are starting points; an organization is expected to tune them to its own targets.
+Tune thresholds per organization. Connectivity and pull-job lag SLOs apply when `agent.enabled=true`; GitOps-only clusters rely more on `controller_runtime_*` and Kubernetes events.
 
 ## Structured logs
 

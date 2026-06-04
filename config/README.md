@@ -11,7 +11,7 @@ Kustomize manifests for installing the vworkspace-operator and its CRDs.
 | `rbac/` | Generated `ClusterRole` / bindings for the manager ServiceAccount. |
 | `manager/` | Operator `Deployment` (manager container, probes, flags). |
 | `default/` | Top-level install overlay consumed by `make deploy`. |
-| `prometheus/` | Optional `ServiceMonitor` scaffold (disabled in default kustomization). |
+| `prometheus/` | Optional `ServiceMonitor` scaffold (disabled in default kustomization). Enable per [docs/operate/observability.md](../docs/operate/observability.md#prometheus-scrape). |
 | `network-policy/` | Metrics network policy scaffold. |
 | `samples/` | Example CRs for docs and manual testing. |
 
