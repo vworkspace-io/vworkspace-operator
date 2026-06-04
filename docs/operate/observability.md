@@ -137,16 +137,16 @@ Sensitive values (chart-value secrets, the operator's own bootstrap credential) 
 
 ### Loki / Grafana (LogQL)
 
-Assume the collector ships container stdout as JSON (one object per line). Promtail, Grafana Alloy, or Fluent Bit can promote `cluster_id`, `org_id`, `controller`, and `level` to labels for faster filters; the queries below work with `| json` on the line body when labels are not promoted.
+Assume the collector ships container stdout as JSON (one object per line). Promtail, Grafana Alloy, or Fluent Bit can promote `cluster_id`, `org_id`, `controller`, and `level` to labels for faster filters; the queries below work with `| json` on the line body when labels are not promoted. LogQL `msg=~` filters use RE2 (case-sensitive); examples use lowercase `msg` strings from the operator.
 
 Replace namespace and deployment names for your install (`vworkspace-system` for Helm; kustomize `make deploy` uses `vworkspace-operator-system` and deployment `vworkspace-operator-controller-manager`).
 
 | Goal | LogQL (starting point) |
 |------|------------------------|
 | Errors for one cluster | `{namespace="vworkspace-system"} \| json \| cluster_id="<Cluster.metadata.name>" \| level="error"` |
-| ApplicationInstance reconcile failures | `{namespace="vworkspace-system"} \| json \| controller="applicationinstance" \| msg=~"(?i)reconcile.*fail\|failed"` |
-| Operation blocked or failed | `{namespace="vworkspace-system"} \| json \| controller="operation" \| msg=~"(?i)blocked\|failed"` |
-| Connectivity / control-plane warnings | `{namespace="vworkspace-system"} \| json \| level="warn" \| msg=~"(?i)connectivity\|control plane\|unreachable"` |
+| ApplicationInstance reconcile failures | `{namespace="vworkspace-system"} \| json \| controller="applicationinstance" \| level="error"` |
+| Operation blocked or failed | `{namespace="vworkspace-system"} \| json \| controller="operation" \| level="error"` (Blocked status: `kubectl describe operation` / `OperationBlocked` events) |
+| Connectivity / control-plane errors | `{namespace="vworkspace-system"} \| json \| controller="cluster" \| level="error" \| msg=~"(heartbeat\|registration\|rotation\|credential\|configure)"` |
 | Audit batch flush (correlate with buffer metric) | `{namespace="vworkspace-system"} \| json \| msg=~"audit-event"` |
 | One reconcile trace | `{namespace="vworkspace-system"} \| json \| reconcileID="<id from a single log line>"` |
 | One Operation lifecycle | `{namespace="vworkspace-system"} \| json \| operation_id="<Operation.metadata.uid>"` |
