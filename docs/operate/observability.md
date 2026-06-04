@@ -70,16 +70,21 @@ helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
   --set manager.metricsBindAddress=:8443
 ```
 
-Add a `ServiceMonitor` (or PodMonitor) in your platform repo that selects the Helm Service labels for the manager Deployment. Match endpoint scheme `https`, port name `https` (if you add a metrics Service), and bearer token auth — same contract as the kustomize scaffold.
+The chart does not ship a metrics `Service` by default. Either add one in your platform repo (port `8443`, name `https`) or scrape via `PodMonitor` on the manager pod. Match endpoint scheme `https`, port `8443`, and bearer token auth — same contract as the kustomize scaffold.
 
 #### Manual verification (no Prometheus Operator)
 
 ```bash
-# Port-forward the metrics Service (kustomize name after prefix: vworkspace-operator-controller-manager-metrics-service)
-kubectl -n vworkspace-operator-system port-forward svc/vworkspace-operator-controller-manager-metrics-service 8443:8443
+NS=vworkspace-operator-system   # Helm: vworkspace-system (or your release namespace)
+SA=vworkspace-operator-controller-manager
+TOKEN=$(kubectl -n "${NS}" create token "${SA}")
 
-# Token for the manager ServiceAccount (namespace from your install)
-TOKEN=$(kubectl -n vworkspace-operator-system create token vworkspace-operator-controller-manager)
+# Kustomize (make deploy): metrics Service exists after namePrefix
+kubectl -n "${NS}" port-forward svc/vworkspace-operator-controller-manager-metrics-service 8443:8443
+
+# Helm (metrics enabled, no metrics Service): port-forward the manager pod instead
+# POD=$(kubectl -n "${NS}" get pod -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}')
+# kubectl -n "${NS}" port-forward pod/"${POD}" 8443:8443
 
 curl -sk --header "Authorization: Bearer ${TOKEN}" https://127.0.0.1:8443/metrics | grep -E '^vworkspace_operator_|^controller_runtime_reconcile'
 ```
@@ -88,7 +93,9 @@ Expect `vworkspace_operator_*` series when Pull-mode agent is enabled; connectiv
 
 #### RBAC
 
-Secure metrics use controller-runtime's authentication/authorization filter. Prometheus needs a `ClusterRole` that can `GET /metrics` non-resource URL and a `ClusterRoleBinding` to the scrape ServiceAccount (the e2e suite creates `metrics-reader` / `metrics-binding` for this pattern — see `test/e2e/e2e_test.go`).
+Secure metrics use controller-runtime's authentication/authorization filter. Prometheus needs a `ClusterRole` that can `GET /metrics` non-resource URL and a `ClusterRoleBinding` to the scrape ServiceAccount.
+
+After `make deploy`, Kustomize applies `namePrefix: vworkspace-operator-` (`config/default/kustomization.yaml`), so the deployed ClusterRole is **`vworkspace-operator-metrics-reader`** (source manifest `metrics-reader` in `config/rbac/metrics_reader_role.yaml`). Bindings must reference that prefixed name — e.g. e2e creates `vworkspace-operator-metrics-binding` with `--clusterrole=vworkspace-operator-metrics-reader` (`test/e2e/e2e_test.go`).
 
 ### Recommended SLOs (starting point)
 
