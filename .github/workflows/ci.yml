@@ -282,9 +282,22 @@ jobs:
           mkdir -p "${ARTIFACT_DIR}"
           chmod +x hack/dev-integration.sh
           ./hack/dev-integration.sh 2>&1 | tee "${ARTIFACT_DIR}/seed.log"
-          CLUSTER_ID="$(grep -E '^CLUSTER_ID=' "${ARTIFACT_DIR}/seed.log" | tail -1 | cut -d= -f2-)"
-          REGISTRATION_TOKEN="$(grep -E '^REGISTRATION_TOKEN=' "${ARTIFACT_DIR}/seed.log" | tail -1 | cut -d= -f2-)"
-          JOB_ID="$(grep -E '^JOB_ID=' "${ARTIFACT_DIR}/seed.log" | tail -1 | cut -d= -f2-)"
+          parse_seed() {
+            local key="$1" pattern="$2"
+            grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" | tail -1 | cut -d= -f2- | tr -d ' '
+          }
+          CLUSTER_ID="$(parse_seed CLUSTER_ID '^CLUSTER_ID=')"
+          REGISTRATION_TOKEN="$(parse_seed REGISTRATION_TOKEN '^REGISTRATION_TOKEN=')"
+          JOB_ID="$(parse_seed JOB_ID '^JOB_ID=')"
+          if [[ -z "${CLUSTER_ID}" ]]; then
+            CLUSTER_ID="$(grep -E '^Cluster ID:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
+          fi
+          if [[ -z "${REGISTRATION_TOKEN}" ]]; then
+            REGISTRATION_TOKEN="$(grep -E '^Reg token:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
+          fi
+          if [[ -z "${JOB_ID}" ]]; then
+            JOB_ID="$(grep -E '^Pending job:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $3}')"
+          fi
           if [[ -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
             echo "::error::seed output missing CLUSTER_ID or REGISTRATION_TOKEN"
             exit 1
