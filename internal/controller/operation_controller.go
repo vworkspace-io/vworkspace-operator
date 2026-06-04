@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -53,6 +54,8 @@ type OperationReconciler struct {
 // +kubebuilder:rbac:groups=apps.vworkspace.io,resources=applicationinstances,verbs=get;list;watch
 // +kubebuilder:rbac:groups=velero.io,resources=backups;restores,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=argoproj.io,resources=workflows,verbs=get;list;watch;create;update;patch;delete
 
 func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues("operation", req.Name, "namespace", req.Namespace)
@@ -68,6 +71,10 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
 		}
 		return ctrl.Result{Requeue: true}, nil
+	}
+
+	if !op.DeletionTimestamp.IsZero() {
+		return r.finalizeOperation(ctx, op)
 	}
 
 	if err := ValidateOperationSpec(op); err != nil {
@@ -110,6 +117,8 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			log.Error(err, "materialize operation failed")
 			return r.failOperation(ctx, op, err.Error())
 		}
+		ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
+		op.Status.EngineRef = &ref
 		now := metav1.Now()
 		op.Status.Phase = opsv1alpha1.PhaseRunning
 		op.Status.StartedAt = &now
@@ -123,9 +132,13 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		prevConditions = append([]metav1.Condition(nil), op.Status.Conditions...)
 	}
 
+	if err := r.backfillEngineRefIfNeeded(ctx, op, target); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	status, err := engine.Status(ctx, op)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("engine status: %w", err)
+		return r.handleEngineStatusError(ctx, op, err)
 	}
 
 	if status.Done {
@@ -157,7 +170,73 @@ func (r *OperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("update in-flight status: %w", err)
 	}
 	r.reportConditions(op, prevConditions)
-	return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+func (r *OperationReconciler) backfillEngineRefIfNeeded(ctx context.Context, op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance) error {
+	if op.Status.Phase != opsv1alpha1.PhaseRunning {
+		return nil
+	}
+	patch := false
+	if op.Status.StartedAt == nil {
+		now := metav1.Now()
+		op.Status.StartedAt = &now
+		patch = true
+	}
+	if op.Status.EngineRef == nil && engines.SupportsEngineRef(op.Spec.Engine) {
+		ref := engines.NewEngineResourceRef(op, target, engines.EngineResourceKind(op.Spec.Engine))
+		op.Status.EngineRef = &ref
+		patch = true
+	}
+	if !patch {
+		return nil
+	}
+	if err := r.Status().Update(ctx, op); err != nil {
+		return fmt.Errorf("persist running status backfill: %w", err)
+	}
+	return nil
+}
+
+func (r *OperationReconciler) handleEngineStatusError(ctx context.Context, op *opsv1alpha1.Operation, err error) (ctrl.Result, error) {
+	if errors.Is(err, engines.ErrWorkloadOwnership) || errors.Is(err, engines.ErrWorkloadAmbiguous) {
+		return r.failOperation(ctx, op, err.Error())
+	}
+	if errors.Is(err, engines.ErrWorkloadMissing) {
+		if op.Status.Phase == opsv1alpha1.PhaseRunning {
+			if op.Status.StartedAt == nil {
+				now := metav1.Now()
+				op.Status.StartedAt = &now
+				if err := r.Status().Update(ctx, op); err != nil {
+					return ctrl.Result{}, fmt.Errorf("record startedAt for workload-missing grace: %w", err)
+				}
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			if time.Since(op.Status.StartedAt.Time) < 60*time.Second {
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+		}
+		return r.failOperation(ctx, op, err.Error())
+	}
+	return ctrl.Result{}, fmt.Errorf("engine status: %w", err)
+}
+
+func (r *OperationReconciler) finalizeOperation(ctx context.Context, op *opsv1alpha1.Operation) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	if r.Registry != nil && r.Registry.Has(op.Spec.Engine) {
+		engine, err := r.Registry.Get(op.Spec.Engine)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := engine.Cancel(ctx, op); err != nil {
+			log.Error(err, "cancel engine resources failed")
+			return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("cancel engine resources: %w", err)
+		}
+	}
+	controllerutil.RemoveFinalizer(op, opsv1alpha1.OperationFinalizer)
+	if err := r.Update(ctx, op); err != nil {
+		return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *OperationReconciler) hasConflictingOperation(ctx context.Context, op *opsv1alpha1.Operation) (bool, string, error) {

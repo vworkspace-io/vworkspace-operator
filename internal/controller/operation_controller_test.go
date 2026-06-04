@@ -26,10 +26,13 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/internal/engines"
 	"github.com/vworkspace-io/vworkspace-operator/internal/operations/approvalclaim"
+	batchv1 "k8s.io/api/batch/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -57,6 +60,9 @@ func testOperationControllerScheme(t *testing.T) *runtime.Scheme {
 	}
 	if err := appsv1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatalf("apps scheme: %v", err)
+	}
+	if err := batchv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("batch scheme: %v", err)
 	}
 	return scheme
 }
@@ -197,6 +203,94 @@ func TestOperationReconcilerDoesNotRegressRunningOnExpiredClaim(t *testing.T) {
 	blocked := findCondition(updated.Status.Conditions, opsv1alpha1.ConditionBlocked)
 	if blocked != nil && blocked.Status == metav1.ConditionTrue && blocked.Reason == "AwaitingApproval" {
 		t.Fatal("expected running operation not to regress to AwaitingApproval on expired claim")
+	}
+}
+
+func TestOperationReconcilerFailsWhenEngineWorkloadMissing(t *testing.T) {
+	t.Parallel()
+	const namespace = "team-a"
+	scheme := testOperationControllerScheme(t)
+	op := sampleRestoreOperation("run-1", namespace, "app")
+	op.Spec.Type = opsv1alpha1.OperationTypeRunCommand
+	op.Spec.Engine = opsv1alpha1.EngineJob
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"image":"alpine:3.20"}`)}
+	started := metav1.NewTime(time.Now().Add(-time.Minute))
+	op.Status = opsv1alpha1.OperationStatus{Phase: opsv1alpha1.PhaseRunning, StartedAt: &started}
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(sampleTargetApp(namespace, "app"), op).
+		WithStatusSubresource(op).
+		Build()
+	reconciler := &OperationReconciler{
+		Client:   cl,
+		Scheme:   scheme,
+		Registry: engines.NewRegistry(engines.NewJobEngine(cl)),
+		Reporter: agent.NoopStatusReporter(),
+	}
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "run-1", Namespace: namespace},
+	}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	updated := &opsv1alpha1.Operation{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "run-1", Namespace: namespace}, updated); err != nil {
+		t.Fatalf("get operation: %v", err)
+	}
+	if updated.Status.Phase != opsv1alpha1.PhaseFailed {
+		t.Fatalf("expected Failed when workload missing, got %q", updated.Status.Phase)
+	}
+}
+
+func TestOperationReconcilerFinalizeDeletesLabeledJob(t *testing.T) {
+	t.Parallel()
+	const namespace = "team-a"
+	now := metav1.Now()
+	scheme := testOperationControllerScheme(t)
+	op := &opsv1alpha1.Operation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "run-1",
+			Namespace:         namespace,
+			UID:               types.UID("op-uid"),
+			DeletionTimestamp: &now,
+			Finalizers:        []string{opsv1alpha1.OperationFinalizer},
+		},
+		Spec: opsv1alpha1.OperationSpec{
+			TargetRef: opsv1alpha1.TargetRef{Name: "app"},
+			Engine:    opsv1alpha1.EngineJob,
+		},
+	}
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "orphan-job", Namespace: namespace,
+			Labels: map[string]string{engines.OperationLabelKey: "op-uid"},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(op, job).Build()
+	reconciler := &OperationReconciler{
+		Client:   cl,
+		Scheme:   scheme,
+		Registry: engines.NewRegistry(engines.NewJobEngine(cl)),
+		Reporter: agent.NoopStatusReporter(),
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "run-1", Namespace: namespace},
+	}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if err := cl.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: "orphan-job"}, &batchv1.Job{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected labeled job deleted, get err: %v", err)
+	}
+	updated := &opsv1alpha1.Operation{}
+	err := cl.Get(context.Background(), types.NamespacedName{Name: "run-1", Namespace: namespace}, updated)
+	if err == nil {
+		if len(updated.Finalizers) != 0 {
+			t.Fatalf("expected finalizer removed, got %v", updated.Finalizers)
+		}
+		return
+	}
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("get operation: %v", err)
 	}
 }
 

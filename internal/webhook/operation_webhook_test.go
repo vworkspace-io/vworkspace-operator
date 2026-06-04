@@ -140,6 +140,28 @@ func TestOperationWebhookValidateCreateRejectsMissingCapability(t *testing.T) {
 	}
 }
 
+func TestOperationWebhookValidateCreateRejectsPrivilegedServiceAccount(t *testing.T) {
+	scheme := testScheme(t)
+	app := sampleApplicationInstance("team-a", "app")
+	app.Annotations["ops.vworkspace.io/runcommand"] = "job"
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).Build()
+
+	hook, err := webhook.NewOperationWebhook(scheme, cl, webhook.OperationWebhookOptions{})
+	if err != nil {
+		t.Fatalf("NewOperationWebhook: %v", err)
+	}
+
+	op := sampleOperation("run-1", "team-a", "app", opsv1alpha1.OperationTypeRunCommand)
+	op.Spec.Engine = opsv1alpha1.EngineJob
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{
+		"image": "alpine:3.20",
+		"serviceAccountName": "cluster-admin"
+	}`)}
+	if _, err := hook.ValidateCreate(context.Background(), op); err == nil {
+		t.Fatal("expected rejection for privileged service account")
+	}
+}
+
 func TestOperationWebhookValidateCreateRejectsInvalidRestoreParameters(t *testing.T) {
 	scheme := testScheme(t)
 	cl := fake.NewClientBuilder().WithScheme(scheme).

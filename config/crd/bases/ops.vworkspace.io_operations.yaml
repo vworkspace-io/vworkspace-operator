@@ -168,6 +168,17 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              engineRef:
+                description: EngineResourceRef records the namespace/name of the materialized
+                  engine workload.
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                type: object
               finishedAt:
                 format: date-time
                 type: string

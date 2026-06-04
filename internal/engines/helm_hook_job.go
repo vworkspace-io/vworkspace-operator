@@ -1,0 +1,164 @@
+package engines
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
+	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const helmHookNameLabel = "ops.vworkspace.io/hook-name"
+
+type helmHookJobParameters struct {
+	HookName                string   `json:"hookName"`
+	Image                   string   `json:"image"`
+	Command                 []string `json:"command"`
+	Args                    []string `json:"args"`
+	ServiceAccountName      string   `json:"serviceAccountName"`
+	BackoffLimit            *int32   `json:"backoffLimit"`
+	ActiveDeadlineSeconds   *int64   `json:"activeDeadlineSeconds"`
+	TTLSecondsAfterFinished *int32   `json:"ttlSecondsAfterFinished"`
+}
+
+// HelmHookJobEngine materializes chart hook Jobs on demand.
+// Full hook-template resolution from HelmRelease manifests is deferred; callers
+// must supply image/command until manifest discovery lands in a follow-up.
+type HelmHookJobEngine struct {
+	Client client.Client
+}
+
+func NewHelmHookJobEngine(c client.Client) *HelmHookJobEngine {
+	return &HelmHookJobEngine{Client: c}
+}
+
+func (e *HelmHookJobEngine) Name() opsv1alpha1.OperationEngine {
+	return opsv1alpha1.EngineHelmHookJob
+}
+
+func (e *HelmHookJobEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance) error {
+	params, err := parseHelmHookJobParameters(op)
+	if err != nil {
+		return err
+	}
+	if params.HookName == "" {
+		return fmt.Errorf("parameters.hookName is required")
+	}
+	if params.Image == "" {
+		return fmt.Errorf("parameters.image is required until hook template resolution is implemented")
+	}
+
+	ns := targetNamespace(target)
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ns,
+			Labels:    map[string]string{helmHookNameLabel: params.HookName},
+			Annotations: map[string]string{
+				"helm.sh/hook": params.HookName,
+			},
+		},
+		Spec: batchv1.JobSpec{
+			BackoffLimit:            params.BackoffLimit,
+			ActiveDeadlineSeconds:   params.ActiveDeadlineSeconds,
+			TTLSecondsAfterFinished: params.ttlSecondsAfterFinished(),
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{helmHookNameLabel: params.HookName},
+				},
+				Spec: corev1.PodSpec{
+					RestartPolicy:      corev1.RestartPolicyNever,
+					ServiceAccountName: params.serviceAccountName(),
+					Containers: []corev1.Container{{
+						Name:    "hook",
+						Image:   params.Image,
+						Command: params.Command,
+						Args:    params.Args,
+					}},
+				},
+			},
+		},
+	}
+	applyOperationLabels(&job.ObjectMeta, op)
+	applyOperationLabels(&job.Spec.Template.ObjectMeta, op)
+
+	return createMaterializedJob(ctx, e.Client, op, job, ns)
+}
+
+func (e *HelmHookJobEngine) hookStatusFromJob(op *opsv1alpha1.Operation, job *batchv1.Job) (Status, error) {
+	if err := verifyOperationOwnership(&job.ObjectMeta, op); err != nil {
+		return Status{}, err
+	}
+	status := statusFromJob(job)
+	if status.Outputs == nil {
+		status.Outputs = map[string]string{}
+	}
+	status.Outputs["jobName"] = job.Name
+	return status, nil
+}
+
+func (e *HelmHookJobEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (Status, error) {
+	ns, name, err := resolveEngineLocationForStatus(ctx, e.Client, op, findJobLocationByOperationLabel)
+	if err != nil {
+		return Status{}, err
+	}
+	job := &batchv1.Job{}
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
+		if apierrors.IsNotFound(err) {
+			return Status{}, ErrWorkloadMissing
+		}
+		return Status{}, fmt.Errorf("get hook job: %w", err)
+	}
+	return e.hookStatusFromJob(op, job)
+}
+
+func (e *HelmHookJobEngine) Cancel(ctx context.Context, op *opsv1alpha1.Operation) error {
+	ns, name, skip, err := resolveEngineLocationForCancel(ctx, e.Client, op)
+	if err != nil {
+		return err
+	}
+	if skip {
+		return deleteJobsLabeledByOperation(ctx, e.Client, op)
+	}
+	job := &batchv1.Job{}
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: name}, job); err != nil {
+		if apierrors.IsNotFound(err) {
+			return deleteJobsLabeledByOperation(ctx, e.Client, op)
+		}
+		return err
+	}
+	return e.Client.Delete(ctx, job)
+}
+
+func parseHelmHookJobParameters(op *opsv1alpha1.Operation) (helmHookJobParameters, error) {
+	params := helmHookJobParameters{}
+	if op.Spec.Parameters == nil {
+		return params, nil
+	}
+	if err := json.Unmarshal(op.Spec.Parameters.Raw, &params); err != nil {
+		return params, fmt.Errorf("decode helmHookJob parameters: %w", err)
+	}
+	return params, nil
+}
+
+func (p helmHookJobParameters) serviceAccountName() string {
+	if p.ServiceAccountName != "" {
+		return p.ServiceAccountName
+	}
+	return defaultJobServiceAccount
+}
+
+func (p helmHookJobParameters) ttlSecondsAfterFinished() *int32 {
+	if p.TTLSecondsAfterFinished != nil {
+		return p.TTLSecondsAfterFinished
+	}
+	ttl := int32(86400)
+	return &ttl
+}
+
+var _ Engine = (*HelmHookJobEngine)(nil)

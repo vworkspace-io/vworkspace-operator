@@ -6,6 +6,7 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/engines"
 )
 
 func ValidateOperationSpec(op *opsv1alpha1.Operation) error {
@@ -28,5 +29,5 @@ func ValidateOperationSpec(op *opsv1alpha1.Operation) error {
 	if strings.TrimSpace(string(spec.Engine)) == "" {
 		return fmt.Errorf("spec.engine is required")
 	}
-	return nil
+	return engines.ValidateRuntimeParameters(op)
 }

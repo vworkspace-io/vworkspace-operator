@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- Operation engines: `job`, `workflow`, and `helmHookJob` runtime materialization and status polling in the operation reconciler (Hub #9 spoke 4).
 - Operation admission: typed concurrency conflict matrix (shared with reconciler) and `vws1` approval-claim HMAC verification via `--approval-claim-secret` / `VWORKSPACE_APPROVAL_CLAIM_SECRET` (aligned with server `vws_operations.approval_claim_secret`).
 - Built-in `restore.velero` template marks `RequiresApproval`; reconciler blocks with `AwaitingApproval` until a valid claim is present.
 - CI: Cursor Agent automated PR code review workflow (`.github/workflows/code-review.yml`, `hack/code-review.sh`).
