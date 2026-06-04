@@ -1,7 +1,7 @@
 # Troubleshooting
 
 **Status:** Alpha
-**Last Updated:** 2026-06-02
+**Last Updated:** 2026-06-04
 
 This document maps common failure modes to the conditions and reasons the operator publishes, with the `kubectl` commands to investigate each. The patterns are organized by where the symptom shows up: the `Cluster` CR, an `ApplicationInstance`, or an `Operation`. The deeper diagnostic surfaces — structured logs, metrics, the `HelmRelease`, the engine-specific child resource — are covered as supporting evidence.
 
@@ -72,6 +72,24 @@ kubectl describe deploy -n velero velero
 **Meaning.** Connectivity has been failing for the configured grace period (default 5 minutes). The operator is not pulling new jobs; the cluster continues to reconcile the last known desired state.
 
 **Investigate and resolve.** Same as `Connected=False/ControlPlaneUnreachable` above. The `Disconnected` condition is sticky to make the failure visible in dashboards; it clears once `Connected=True` has held for the recovery threshold (default 1 minute).
+
+### `Cluster.status.conditions[BufferOverflow]=True`, reason `EventBufferFull`
+
+**Meaning.** The outbound Pull-mode audit event buffer (default capacity 1000) dropped one or more events because the control plane was unreachable or not accepting `POST /api/agent/events` fast enough. Dropped events are not durable audit rows on the server; the organization's Discuss timeline may be missing entries for that window.
+
+**Investigate.**
+
+```
+kubectl get cluster -n vworkspace-system <name> -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason} {.message}{"\n"}{end}' | grep BufferOverflow
+kubectl logs -n vworkspace-system deploy/vworkspace-app-operator --tail=200 | grep -iE '(event|buffer|overflow|PostEvents)'
+# If Prometheus is available:
+# vworkspace_operator_event_buffer_occupancy
+# vworkspace_operator_connectivity_state{mode="pull"}
+```
+
+See [observability.md](observability.md#event-volume-and-backpressure) and [audit-events.md](audit-events.md#transport-and-batching).
+
+**Resolve.** Fix control-plane reachability (same path as `Connected=False`). No operator restart is required once posts succeed; the batcher drains and `BufferOverflow` flips to `False` with `reason=BufferDrained`. Expect possible gaps in Odoo audit/Discuss until the next high-signal condition transition on affected resources.
 
 ## `ApplicationInstance` symptoms
 

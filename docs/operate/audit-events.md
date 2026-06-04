@@ -151,7 +151,7 @@ Code references: `internal/agent/events.go` (`ConditionTransitionEvent`), `inter
 
 ## Related material
 
-- [observability.md](observability.md) — Metrics, structured logs, Kubernetes events, buffer gauge.
+- [observability.md](observability.md) — Metrics, structured logs, Kubernetes events; [event volume and backpressure](observability.md#event-volume-and-backpressure).
 - [../connectivity/job-protocol.md](../connectivity/job-protocol.md) — Full `POST /api/agent/events` section.
 - [../connectivity/pull-mode.md](../connectivity/pull-mode.md) — When the agent reporter is enabled and offline behavior.
 - Server: [addons/vws_audit/readme/AGENT_EVENT_KINDS.rst](https://github.com/vworkspace-io/vworkspace-server/blob/main/addons/vws_audit/readme/AGENT_EVENT_KINDS.rst) — Ingest rules and deferred items.

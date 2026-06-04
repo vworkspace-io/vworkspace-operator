@@ -96,6 +96,23 @@ At a glance: reconcilers enqueue events via `StatusReporter`; the batcher flushe
 
 Durable audit entries and high-signal Discuss posts are created on the server from ingested agent events; control-plane user actions (approve, deploy) are separate `log_user_action` rows. The human operator and the AI assistant share one organization timeline in Discuss.
 
+## Event volume and backpressure
+
+Pull-mode clusters can emit many `ConditionTransition` events during churn (Helm upgrades, operation lifecycles, connectivity flaps). The operator bounds outbound volume so a slow or unavailable control plane cannot exhaust memory on the cluster.
+
+| Signal | What to watch |
+|--------|----------------|
+| `vworkspace_operator_event_buffer_occupancy` | Sustained values near the buffer capacity (default 1000) while `vworkspace_operator_connectivity_state{mode="pull"}` is `0` or `-1` — events are queuing faster than they flush. |
+| `vworkspace_operator_connectivity_state` | Drops to `0` (reconnecting) or `-1` (disconnected) during outages; audit posts stall until the link recovers. |
+| `Cluster.status.conditions[BufferOverflow]` | `True` with `reason=EventBufferFull` — the buffer dropped oldest events; the Discuss/audit timeline may have gaps until reconnect. |
+
+**Starting alerts (tune per org):**
+
+- `vworkspace_operator_event_buffer_occupancy > 800` for 5m while connectivity is not `1`.
+- `max_over_time((cluster_status_bufferoverflow == 1)[1h])` or equivalent on the `BufferOverflow` condition via your `Cluster` status exporter.
+
+**Recovery.** Restore connectivity to `Cluster.spec.controlPlaneBaseUrl` (see [troubleshooting.md](troubleshooting.md#clusterstatusconditionsbufferoverflowtrue-reason-eventbufferfull)). The batcher drains on successful `POST /api/agent/events`; `BufferOverflow` clears with `reason=BufferDrained`. Dropped events are not replayed — high-signal outcomes may reappear on the next condition transition. Server-side ingest and Discuss rules: [audit-events.md](audit-events.md); hub coordination: [vworkspace Phase 2 observability epic](https://github.com/vworkspace-io/vworkspace/issues/6).
+
 ## Health endpoints
 
 The operator exposes two endpoints on `:8081`:
