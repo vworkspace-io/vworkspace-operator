@@ -240,7 +240,8 @@ jobs:
       - name: Set isolated Odoo HTTP port
         id: ports
         run: |
-          port=$((19000 + (${GITHUB_RUN_ID} % 10000) + ${GITHUB_RUN_ATTEMPT}))
+          set -euo pipefail
+          port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')"
           echo "odoo_port=${port}" >> "$GITHUB_OUTPUT"
           echo "ODOO_HTTP_PORT=${port}" >> "$GITHUB_ENV"
 
@@ -321,6 +322,12 @@ jobs:
             local pattern="$1"
             grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' ' || true
           }
+          scrub_seed_log() {
+            if [[ -f "${ARTIFACT_DIR}/seed.log" ]]; then
+              redact_log "${ARTIFACT_DIR}/seed.log" >> "${ARTIFACT_DIR}/seed-redacted.log" || true
+              rm -f "${ARTIFACT_DIR}/seed.log"
+            fi
+          }
           for attempt in 1 2 3; do
             rm -f "${ARTIFACT_DIR}/seed.log" "${ARTIFACT_DIR}/integration-test.log"
             docker compose -f ../vworkspace-server/docker-compose.yml down -v 2>/dev/null || true
@@ -342,6 +349,7 @@ jobs:
             fi
             if [[ "${seed_rc}" -ne 0 || -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
               echo "::warning::contract seed attempt ${attempt} failed (rc=${seed_rc})"
+              scrub_seed_log
               sleep 15
               continue
             fi
@@ -363,8 +371,10 @@ jobs:
               exit 0
             fi
             echo "::warning::contract test attempt ${attempt} failed"
+            scrub_seed_log
             sleep 15
           done
+          scrub_seed_log
           echo "::error::contract integration failed after 3 attempts"
           exit 1
 
