@@ -239,10 +239,11 @@ jobs:
             echo "::error::Repository secret VWORKSPACE_SERVER_READ_TOKEN is required (PAT with contents:read on vworkspace-io/vworkspace-server). Private server cannot be checked out with the public operator repo GITHUB_TOKEN alone."
             exit 1
           fi
-          git clone --depth 1 \
+          git clone --filter=blob:none --no-checkout \
             "https://x-access-token:${token}@github.com/vworkspace-io/vworkspace-server.git" \
             vworkspace-server
-          git -C vworkspace-server checkout "${SERVER_REF}"
+          git -C vworkspace-server fetch --depth 1 origin "${SERVER_REF}"
+          git -C vworkspace-server checkout FETCH_HEAD
         env:
           VWORKSPACE_SERVER_READ_TOKEN: ${{ secrets.VWORKSPACE_SERVER_READ_TOKEN }}
 
@@ -281,10 +282,16 @@ jobs:
           set -euo pipefail
           mkdir -p "${ARTIFACT_DIR}"
           chmod +x hack/dev-integration.sh
+          set +e
           ./hack/dev-integration.sh 2>&1 | tee "${ARTIFACT_DIR}/seed.log"
+          seed_rc=${PIPESTATUS[0]}
+          set -e
+          if [[ "${seed_rc}" -ne 0 ]]; then
+            echo "::warning::dev-integration.sh exited ${seed_rc}; continuing if seed.log has cluster credentials"
+          fi
           parse_seed() {
-            local key="$1" pattern="$2"
-            grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" | tail -1 | cut -d= -f2- | tr -d ' '
+            local pattern="$1"
+            grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' ' || true
           }
           CLUSTER_ID="$(parse_seed CLUSTER_ID '^CLUSTER_ID=')"
           REGISTRATION_TOKEN="$(parse_seed REGISTRATION_TOKEN '^REGISTRATION_TOKEN=')"
@@ -299,8 +306,11 @@ jobs:
             JOB_ID="$(grep -E '^Pending job:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $3}')"
           fi
           if [[ -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
-            echo "::error::seed output missing CLUSTER_ID or REGISTRATION_TOKEN"
+            echo "::error::seed output missing CLUSTER_ID or REGISTRATION_TOKEN (dev-integration exit=${seed_rc})"
             exit 1
+          fi
+          if [[ "${seed_rc}" -ne 0 ]]; then
+            echo "::warning::dev-integration.sh exited ${seed_rc} but seed credentials were parsed"
           fi
           echo "::add-mask::${REGISTRATION_TOKEN}"
           echo "cluster_id=${CLUSTER_ID}" >> "$GITHUB_OUTPUT"
@@ -345,7 +355,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: contract-integration-${{ github.run_id }}
-          path: ${{ env.ARTIFACT_DIR }}/
+          path: |
+            ${{ env.ARTIFACT_DIR }}/seed-redacted.log
+            ${{ env.ARTIFACT_DIR }}/integration-test.log
+            ${{ env.ARTIFACT_DIR }}/compose.log
           if-no-files-found: ignore
 
       - name: Cleanup dev stack
