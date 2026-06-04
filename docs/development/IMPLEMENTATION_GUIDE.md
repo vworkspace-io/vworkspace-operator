@@ -454,7 +454,9 @@ Run everything: `make test`.
 | Golden path: server job → ApplicationInstance + HelmRelease (contract tier) | kind + server docker-compose | In progress (Platform coordination) |
 | Golden path: optional Flux controllers → `Ready` | `flux install` or bundled chart | Documented; optional in dev |
 | Real Pull-mode job enqueue from server UI | upstream `vworkspace-server` | Planned (server-owned) |
-| Argo Workflows / CSI / VolSync engines | `internal/engines/` | Planned |
+| `job` / `workflow` / `helmHookJob` engines | `internal/engines/` | Done ([#47](https://github.com/vworkspace-io/vworkspace-operator/pull/47)) |
+| Engine envtest/e2e with webhooks (Hub #9 spoke 5) | `internal/webhook/`, `test/e2e/` | In progress ([#48](https://github.com/vworkspace-io/vworkspace-operator/issues/48)) |
+| CSI / VolSync engines | `internal/engines/` | Planned |
 | mTLS and signed Pull-mode payloads | `internal/agent/` | Planned |
 | GitHub Pages doc publish | `docs/publication.md`, CI workflow | In progress (see publication.md checklist) |
 | Public `v0.2` release | tags, signed images | Planned |
