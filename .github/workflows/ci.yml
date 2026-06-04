@@ -464,6 +464,7 @@ jobs:
   docker:
     permissions:
       contents: read
+    # Intentional: main/tag image publish requires contract-integration (hub #12); see docs/development/contributing.md.
     name: Build and push image
     runs-on: self-hosted
     needs: [verify, test, lint, e2e, contract-integration]

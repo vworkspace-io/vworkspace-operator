@@ -168,6 +168,11 @@ The project's CI runs on every PR. The gating checks are:
 - `make lint` (i.e., `golangci-lint run`) passes.
 - `make test` passes (unit + envtest).
 - `make e2e` passes (in a separate, larger workflow run).
+- **Contract tier** (`contract-integration` on self-hosted runners): clones a pinned `vworkspace-server` commit (`SERVER_REF` in `.github/workflows/ci.yml`), seeds a live stack, and runs `TestRealControlPlaneRegisterPollHeartbeat`. Bump `SERVER_REF` in the same PR when operator integration or server seed protocol changes. Maintainers can override the pin via **Actions → CI → Run workflow** (`workflow_dispatch`).
+
+**Fork PRs** do not run `contract-integration` (the job needs org secret `VWORKSPACE_SERVER_READ_TOKEN`). Forks still run verify, unit, lint, and e2e; contract validation happens after merge to `main` or via maintainer `workflow_dispatch`.
+
+**Image publish** on `push` to `main` or version tags waits for contract-integration in addition to the checks above.
 
 If any check fails, the PR is blocked. CI does not pre-commit changes for you; rerun the generation locally and push.
 
