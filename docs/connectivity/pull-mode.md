@@ -123,7 +123,7 @@ When `--agent-enabled=true`, `cmd/main.go` starts a shared `EventBatcher` gorout
 2. For each changed condition, `StatusReporter` enqueues a `ConditionTransition` event with `resourceRef`, condition type/reason/message, timestamp, and `eventKey`.
 3. The batcher flushes to `POST /api/agent/events` on the configured control plane base URL.
 
-Cluster credential rotation (`spec.rotateCredentials: true`) calls `POST /api/agent/credentials/rotate`, updates `Secret/vworkspace-agent-credentials`, clears the spec flag, and posts a `CredentialRotated` audit event.
+Cluster credential rotation (`spec.rotateCredentials: true`) calls `POST /api/agent/credentials/rotate`, updates `Secret/vworkspace-agent-credentials`, clears the spec flag, and posts a `CredentialRotated` direct audit event ([../operate/audit-events.md](../operate/audit-events.md)).
 
 When the agent is disabled (`--agent-enabled=false`), reconcilers use a no-op reporter; in-cluster reconciliation continues unchanged.
 

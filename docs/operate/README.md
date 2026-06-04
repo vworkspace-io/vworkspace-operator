@@ -1,7 +1,7 @@
 # Operate
 
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-04
 
 This chapter is the day-to-day operation reference for `vworkspace-operator` once it is installed and connected to an vWorkspace Server control plane. It covers what the operator emits (metrics, structured logs, Kubernetes events, audit events to Odoo, the `Cluster` CR's status surface), how the operator itself is upgraded, how to troubleshoot common failure modes, and a worked runbook for the most-requested day-2 task: backup and restore.
 
@@ -10,9 +10,10 @@ The chapter is meant to be readable in any order. A new operator usually reads o
 ## Read in order
 
 1. [observability.md](observability.md) — Prometheus metrics, structured log fields, Kubernetes events on every condition transition, audit events posted to Odoo, the `/healthz` and `/readyz` endpoints, and the `Cluster` CR's role as the cluster's overall health surface.
-2. [upgrades.md](upgrades.md) — Upgrading the operator itself. Channels (`stable`, `candidate`, `edge`), per-cluster version pinning, staged rollouts, conversion webhooks for CRD evolution, Flux rollback for failure recovery, compatibility-matrix template.
-3. [troubleshooting.md](troubleshooting.md) — Common failure modes mapped to conditions and reasons, with the `kubectl` commands to investigate each.
-4. [backup-restore-runbook.md](backup-restore-runbook.md) — A complete worked example: request a backup via `Operation`, watch its status, verify the Velero `Backup`, restore into a fresh namespace, validate.
+2. [audit-events.md](audit-events.md) — Agent event kinds (`ConditionTransition`, direct kinds), wire shape, and alignment with server `vws_audit` ingest and Discuss.
+3. [upgrades.md](upgrades.md) — Upgrading the operator itself. Channels (`stable`, `candidate`, `edge`), per-cluster version pinning, staged rollouts, conversion webhooks for CRD evolution, Flux rollback for failure recovery, compatibility-matrix template.
+4. [troubleshooting.md](troubleshooting.md) — Common failure modes mapped to conditions and reasons, with the `kubectl` commands to investigate each.
+5. [backup-restore-runbook.md](backup-restore-runbook.md) — A complete worked example: request a backup via `Operation`, watch its status, verify the Velero `Backup`, restore into a fresh namespace, validate.
 
 ## What "operating" means here
 

@@ -89,6 +89,7 @@ nav:
   - Operate:
       - operate/README.md
       - Observability: operate/observability.md
+      - Audit events: operate/audit-events.md
       - Upgrades: operate/upgrades.md
       - Backup runbook: operate/backup-restore-runbook.md
       - Troubleshooting: operate/troubleshooting.md

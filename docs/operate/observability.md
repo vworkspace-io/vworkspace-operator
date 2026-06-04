@@ -1,7 +1,7 @@
 # Observability
 
 **Status:** Alpha
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-04
 
 `vworkspace-operator` emits the signals an operator (the person) needs to answer "is this cluster healthy and what happened on it recently". The four surfaces are Prometheus metrics, structured JSON logs, Kubernetes events on every condition transition, and an audit-event stream posted to the control plane's `POST /api/agent/events`. Each is documented below with the concrete metric names, log fields, and endpoints.
 
@@ -90,26 +90,11 @@ Events are namespace-local for `ApplicationInstance` and `Operation`; the `Clust
 
 ## Audit events to Odoo
 
-Significant events are also posted to the control plane's `POST /api/agent/events` over the operator's outbound channel (Pull mode) or written through the API server (Push mode). The audit payload is:
+Significant cluster-side outcomes are also posted to the control plane's `POST /api/agent/events` (Pull mode) as batched `ConditionTransition` and direct audit kinds. The wire shape, kind taxonomy, idempotency keys, and alignment with server `vws_audit` ingest are documented in [audit-events.md](audit-events.md).
 
-```json
-{
-  "cluster_id": "cluster-prod-1",
-  "org_id": "myteam",
-  "occurred_at": "2026-05-28T10:07:13Z",
-  "namespace": "org-myteam",
-  "application_instance": "nextcloud-myteam",
-  "operation_id": "6b62...",
-  "kind": "OperationSucceeded",
-  "reason": "VeleroBackupCompleted",
-  "message": "velero.io/Backup completed; 412 items, 18.4 GiB",
-  "operator_version": "v0.4.2"
-}
-```
+At a glance: reconcilers enqueue events via `StatusReporter`; the batcher flushes every second or at 100 events. Stable `eventKey` values deduplicate replay. When the link to the control plane is down, events queue in a bounded buffer (`vworkspace_operator_event_buffer_occupancy`) and flush on reconnect. Buffer overflow sets `Cluster.status.conditions[BufferOverflow=True]` (see [audit-events.md](audit-events.md#connectivity-and-heartbeat-not-durable-audit)).
 
-Audit events are idempotent (stable keys per cluster_id + kind + operation_id) and coalesced into batches: every second, or when the buffer reaches a size threshold, whichever comes first. When the link to the control plane is down, events are queued in a bounded local buffer (`vworkspace_operator_event_buffer_occupancy`) and flushed on reconnect. Buffer overflow is itself reported as a `Cluster.status` condition and a `ClusterEventBufferOverflow` event.
-
-In Odoo, the AI assistant in Discuss subscribes to the audit stream for the cluster's organization. The human operator and the AI assistant share one timeline.
+Durable audit entries and high-signal Discuss posts are created on the server from ingested agent events; control-plane user actions (approve, deploy) are separate `log_user_action` rows. The human operator and the AI assistant share one organization timeline in Discuss.
 
 ## Health endpoints
 
@@ -156,6 +141,7 @@ Add to these the Odoo Discuss timeline for the organization, and the human opera
 
 ## Related material
 
+- [audit-events.md](audit-events.md) — Agent event kinds, `eventKey` rules, and `vws_audit` ingest alignment.
 - [troubleshooting.md](troubleshooting.md) — How to follow each of these signals to a root cause.
 - [upgrades.md](upgrades.md) — Version-skew rules visible via `Cluster.status.operatorVersion`.
 - [../security/threat-model.md](../security/threat-model.md) — Why structured logs redact secrets.
