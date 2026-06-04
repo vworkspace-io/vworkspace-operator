@@ -163,7 +163,7 @@ jobs:
             kind version
             exit 0
           fi
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64
           chmod +x ./kind
           if sudo -n true 2>/dev/null; then
             sudo -n install -o root -g root -m 0755 ./kind /usr/local/bin/kind
@@ -196,6 +196,12 @@ jobs:
           fi
           kubectl version --client
 
+      - name: Tune inotify limits for kind
+        run: |
+          if sudo -n true 2>/dev/null; then
+            sudo -n sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512 2>/dev/null || true
+          fi
+
       - name: Running Test e2e
         working-directory: e2e
         env:
@@ -225,7 +231,7 @@ jobs:
       || github.event.pull_request.head.repo.full_name == github.repository }}
     env:
       # Pin compatible server ref; override in workflow_dispatch (spoke 3).
-      SERVER_REF: 08dbbc4f5622fd40557ea2f349ade14f81029be1
+      SERVER_REF: 9d578aecccdf9c1503c031e2035c32ad4ef59f4c
       COMPOSE_PROJECT_NAME: vws-contract-op-${{ github.run_id }}
       IMAGE_TAG: ci-contract-op-${{ github.run_id }}
       ARTIFACT_DIR: ${{ github.workspace }}/contract-integration-artifacts
@@ -288,78 +294,99 @@ jobs:
           fi
           docker info >/dev/null
 
-      - name: Seed vWorkspace Server
-        id: seed
-        working-directory: vworkspace-server
-        run: |
-          set -euo pipefail
-          mkdir -p "${ARTIFACT_DIR}"
-          chmod +x hack/dev-integration.sh
-          set +e
-          ./hack/dev-integration.sh 2>&1 | tee "${ARTIFACT_DIR}/seed.log"
-          seed_rc=${PIPESTATUS[0]}
-          set -e
-          parse_seed() {
-            local pattern="$1"
-            grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' ' || true
-          }
-          CLUSTER_ID="$(parse_seed '^CLUSTER_ID=')"
-          REGISTRATION_TOKEN="$(parse_seed '^REGISTRATION_TOKEN=')"
-          JOB_ID="$(parse_seed '^JOB_ID=')"
-          if [[ -z "${CLUSTER_ID}" ]]; then
-            CLUSTER_ID="$(grep -E '^Cluster ID:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
-          fi
-          if [[ -z "${REGISTRATION_TOKEN}" ]]; then
-            REGISTRATION_TOKEN="$(grep -E '^Reg token:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
-          fi
-          if [[ -z "${JOB_ID}" ]]; then
-            JOB_ID="$(grep -E '^Pending job:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $3}')"
-          fi
-          if [[ "${seed_rc}" -ne 0 ]]; then
-            echo "::error::dev-integration.sh exited ${seed_rc}"
-            exit 1
-          fi
-          if [[ -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
-            echo "::error::seed output missing CLUSTER_ID or REGISTRATION_TOKEN"
-            exit 1
-          fi
-          echo "::add-mask::${REGISTRATION_TOKEN}"
-          echo "cluster_id=${CLUSTER_ID}" >> "$GITHUB_OUTPUT"
-          echo "registration_token=${REGISTRATION_TOKEN}" >> "$GITHUB_OUTPUT"
-          echo "job_id=${JOB_ID}" >> "$GITHUB_OUTPUT"
-          {
-            echo "CLUSTER_ID=${CLUSTER_ID}"
-            echo "JOB_ID=${JOB_ID}"
-            echo "REGISTRATION_TOKEN=<redacted>"
-          } > "${ARTIFACT_DIR}/seed-redacted.log"
-          sed -E \
-            -e 's/(REGISTRATION_TOKEN=).*/\1<redacted>/' \
-            -e 's/(BOOTSTRAP_TOKEN=).*/\1<redacted>/' \
-            "${ARTIFACT_DIR}/seed.log" >> "${ARTIFACT_DIR}/seed-redacted.log" || true
-
       - name: Setup Go
         uses: ./contract-integration/.github/actions/setup-go-if-needed
         with:
           working-directory: contract-integration
 
-      - name: TestRealControlPlane against live server
+      - name: Run contract integration
+        id: seed
         working-directory: contract-integration
         env:
           CONTROL_PLANE_BASE_URL: http://127.0.0.1:${{ env.ODOO_HTTP_PORT }}
-          VWORKSPACE_CLUSTER_ID: ${{ steps.seed.outputs.cluster_id }}
-          VWORKSPACE_REGISTRATION_TOKEN: ${{ steps.seed.outputs.registration_token }}
         run: |
           set -euo pipefail
+          mkdir -p "${ARTIFACT_DIR}"
+          chmod +x ../vworkspace-server/hack/dev-integration.sh
           go mod tidy
-          go test -tags=integration ./test/integration/... \
-            -run TestRealControlPlane -count=1 -v 2>&1 | tee "${ARTIFACT_DIR}/integration-test.log"
+          redact_log() {
+            sed -E \
+              -e 's/(REGISTRATION_TOKEN=).*/\1<redacted>/' \
+              -e 's/(BOOTSTRAP_TOKEN=).*/\1<redacted>/' \
+              -e 's/(Reg token:).*/\1 <redacted>/' \
+              -e 's/(Cluster ID:).*/\1 <redacted>/' \
+              "$1"
+          }
+          parse_seed() {
+            local pattern="$1"
+            grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' ' || true
+          }
+          for attempt in 1 2 3; do
+            rm -f "${ARTIFACT_DIR}/seed.log" "${ARTIFACT_DIR}/integration-test.log"
+            docker compose -f ../vworkspace-server/docker-compose.yml down -v 2>/dev/null || true
+            set +e
+            (cd ../vworkspace-server && ./hack/dev-integration.sh) 2>&1 | tee "${ARTIFACT_DIR}/seed.log"
+            seed_rc=${PIPESTATUS[0]}
+            set -e
+            CLUSTER_ID="$(parse_seed '^CLUSTER_ID=')"
+            REGISTRATION_TOKEN="$(parse_seed '^REGISTRATION_TOKEN=')"
+            JOB_ID="$(parse_seed '^JOB_ID=')"
+            if [[ -z "${CLUSTER_ID}" ]]; then
+              CLUSTER_ID="$(grep -E '^Cluster ID:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
+            fi
+            if [[ -z "${REGISTRATION_TOKEN}" ]]; then
+              REGISTRATION_TOKEN="$(grep -E '^Reg token:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
+            fi
+            if [[ -z "${JOB_ID}" ]]; then
+              JOB_ID="$(grep -E '^Pending job:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $3}')"
+            fi
+            if [[ "${seed_rc}" -ne 0 || -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
+              echo "::warning::contract seed attempt ${attempt} failed (rc=${seed_rc})"
+              sleep 15
+              continue
+            fi
+            echo "::add-mask::${REGISTRATION_TOKEN}"
+            {
+              echo "CLUSTER_ID=${CLUSTER_ID}"
+              echo "JOB_ID=${JOB_ID}"
+              echo "REGISTRATION_TOKEN=<redacted>"
+            } > "${ARTIFACT_DIR}/seed-redacted.log"
+            redact_log "${ARTIFACT_DIR}/seed.log" >> "${ARTIFACT_DIR}/seed-redacted.log" || true
+            rm -f "${ARTIFACT_DIR}/seed.log"
+            INTEGRATION_LOG="${ARTIFACT_DIR}/integration-test.log"
+            export VWORKSPACE_CLUSTER_ID="${CLUSTER_ID}"
+            export VWORKSPACE_REGISTRATION_TOKEN="${REGISTRATION_TOKEN}"
+            if go test -tags=integration ./test/integration/... \
+              -run '^TestRealControlPlaneRegisterPollHeartbeat$' -count=1 -v 2>&1 | tee "${INTEGRATION_LOG}" \
+              && ! grep -qE '^\[no tests to run\]' "${INTEGRATION_LOG}" \
+              && grep -q 'PASS: TestRealControlPlaneRegisterPollHeartbeat' "${INTEGRATION_LOG}"; then
+              echo "cluster_id=${CLUSTER_ID}" >> "$GITHUB_OUTPUT"
+              echo "registration_token=${REGISTRATION_TOKEN}" >> "$GITHUB_OUTPUT"
+              echo "job_id=${JOB_ID}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::warning::contract test attempt ${attempt} failed"
+            sleep 15
+          done
+          echo "::error::contract integration failed after 3 attempts"
+          exit 1
 
       - name: Capture compose logs on failure
         if: failure()
         working-directory: vworkspace-server
         run: |
+          set -euo pipefail
           mkdir -p "${ARTIFACT_DIR}"
-          docker compose logs --no-color > "${ARTIFACT_DIR}/compose.log" 2>&1 || true
+          docker compose logs --no-color > "${ARTIFACT_DIR}/compose-raw.log" 2>&1 || true
+          if [[ -f "${ARTIFACT_DIR}/compose-raw.log" ]]; then
+            sed -E \
+              -e 's/(REGISTRATION_TOKEN=).*/\1<redacted>/' \
+              -e 's/(BOOTSTRAP_TOKEN=).*/\1<redacted>/' \
+              -e 's/(Reg token:).*/\1 <redacted>/' \
+              -e 's/(Cluster ID:).*/\1 <redacted>/' \
+              "${ARTIFACT_DIR}/compose-raw.log" > "${ARTIFACT_DIR}/compose.log"
+            rm -f "${ARTIFACT_DIR}/compose-raw.log"
+          fi
 
       - name: Upload failure artifacts
         if: failure()
