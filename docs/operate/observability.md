@@ -120,8 +120,8 @@ The operator's logger is the controller-runtime logger (zap under the hood), con
 | `cluster_id`           | string | The cluster's identity (`Cluster.metadata.name`). Always set.                                                                   |
 | `org_id`               | string | The owning organization identity. Always set.                                                                                   |
 | `namespace`            | string | The namespace the reconcile is operating in. Set on namespaced reconciles.                                                     |
-| `application_instance` | string | `ApplicationInstance` name. Set in the ApplicationInstance reconciler.                                                          |
-| `operation_id`         | string | `Operation.metadata.uid`. Set in the Operation reconciler.                                                                     |
+| `applicationinstance`  | string | `ApplicationInstance.metadata.name`. Set in the ApplicationInstance reconciler.                                               |
+| `operation`            | string | `Operation.metadata.name`. Set in the Operation reconciler.                                                                      |
 | `operator_version`     | string | The operator binary's version (semver, e.g., `v0.4.2`). Always set.                                                            |
 | `controller`           | string | Which controller emitted the line (`applicationinstance`, `operation`, `cluster`).                                              |
 | `reconcileID`          | string | Per-reconcile correlation id.                                                                                                  |
@@ -133,7 +133,7 @@ Log levels in practice:
 - `error`: non-retryable failures, panics caught by controller-runtime, credential rotation failures.
 - `debug`: per-step reconciliation traces; off by default. Enabled with `--zap-log-level=debug`.
 
-Sensitive values (chart-value secrets, the operator's own bootstrap credential) are redacted ([../security/secrets-handling.md](../security/secrets-handling.md)). The structured shape lets `kubectl logs ... | jq` and any log-aggregation backend slice and dice by cluster, org, namespace, application instance, or operation id without parsing strings.
+Sensitive values (chart-value secrets, the operator's own bootstrap credential) are redacted ([../security/secrets-handling.md](../security/secrets-handling.md)). The structured shape lets `kubectl logs ... | jq` and any log-aggregation backend slice and dice by cluster, org, namespace, application instance name, or operation name without parsing strings.
 
 ### Loki / Grafana (LogQL)
 
@@ -147,13 +147,13 @@ Replace namespace and deployment names for your install (`vworkspace-system` for
 | ApplicationInstance reconcile failures | `{namespace="vworkspace-system"} \| json \| controller="applicationinstance" \| level="error"` |
 | Operation blocked or failed | `{namespace="vworkspace-system"} \| json \| controller="operation" \| level="error"` (Blocked status: `kubectl describe operation` / `OperationBlocked` events) |
 | Connectivity / control-plane errors | `{namespace="vworkspace-system"} \| json \| controller="cluster" \| level="error" \| msg=~"(heartbeat\|registration\|rotation\|credential\|configure)"` |
-| Audit batch flush (correlate with buffer metric) | `{namespace="vworkspace-system"} \| json \| msg=~"audit-event"` |
+| Audit batch flush failures (correlate with buffer metric) | `{namespace="vworkspace-system"} \| json \| msg=~"post events failed"` |
 | One reconcile trace | `{namespace="vworkspace-system"} \| json \| reconcileID="<id from a single log line>"` |
-| One Operation lifecycle | `{namespace="vworkspace-system"} \| json \| operation_id="<Operation.metadata.uid>"` |
+| One Operation lifecycle | `{namespace="vworkspace-system"} \| json \| operation="<Operation.metadata.name>"` |
 
 **Pair with Prometheus.** When `vworkspace_operator_connectivity_state{mode="pull"} < 1` or `vworkspace_operator_event_buffer_occupancy` rises, open Grafana Explore on Loki with the connectivity/audit queries above for the same time range. When `controller_runtime_reconcile_errors_total` increases for `controller="applicationinstance"`, filter `controller="applicationinstance"` and `level="error"` in Loki.
 
-**Grafana dashboard panels (optional).** Log panels beside existing metric rows: error rate by `cluster_id` (`count_over_time({...} \| json \| level="error" [5m])`), and a logs panel filtered on `application_instance` when drilling down from an `ApplicationInstance` metrics spike.
+**Grafana dashboard panels (optional).** Log panels beside existing metric rows: error rate by `cluster_id` (`count_over_time({...} \| json \| level="error" [5m])`), and a logs panel filtered on `applicationinstance="<name>"` when drilling down from an `ApplicationInstance` metrics spike.
 
 **Without Loki (dev / prod-like kind).**
 
