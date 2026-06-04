@@ -216,9 +216,15 @@ jobs:
       SERVER_REF: 08dbbc4f5622fd40557ea2f349ade14f81029be1
       COMPOSE_PROJECT_NAME: vws-contract-op-${{ github.run_id }}
       IMAGE_TAG: ci-contract-op-${{ github.run_id }}
-      ODOO_HTTP_PORT: ${{ 19000 + (github.run_id % 1000) }}
       ARTIFACT_DIR: ${{ github.workspace }}/contract-integration-artifacts
     steps:
+      - name: Set isolated Odoo HTTP port
+        id: ports
+        run: |
+          port=$((19000 + (${GITHUB_RUN_ID} % 1000)))
+          echo "odoo_port=${port}" >> "$GITHUB_OUTPUT"
+          echo "ODOO_HTTP_PORT=${port}" >> "$GITHUB_ENV"
+
       - name: Clone operator
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
