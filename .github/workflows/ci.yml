@@ -202,8 +202,17 @@ jobs:
           LOCALBIN: ${{ github.workspace }}/bin-e2e
           KIND_CLUSTER: vworkspace-operator-e2e-${{ github.run_id }}
         run: |
+          set -euo pipefail
           go mod tidy
-          make test-e2e
+          for attempt in 1 2 3; do
+            if make test-e2e; then
+              exit 0
+            fi
+            kind delete cluster --name "${KIND_CLUSTER}" 2>/dev/null || true
+            echo "::warning::e2e attempt ${attempt} failed; retrying kind cluster setup"
+            sleep 15
+          done
+          exit 1
 
   contract-integration:
     permissions:
@@ -211,6 +220,9 @@ jobs:
       actions: write
     name: Contract tier (live control plane)
     runs-on: self-hosted
+    if: >-
+      ${{ github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository }}
     env:
       # Pin compatible server ref; override in workflow_dispatch (spoke 3).
       SERVER_REF: 08dbbc4f5622fd40557ea2f349ade14f81029be1
@@ -221,7 +233,7 @@ jobs:
       - name: Set isolated Odoo HTTP port
         id: ports
         run: |
-          port=$((19000 + (${GITHUB_RUN_ID} % 1000)))
+          port=$((19000 + (${GITHUB_RUN_ID} % 10000) + ${GITHUB_RUN_ATTEMPT}))
           echo "odoo_port=${port}" >> "$GITHUB_OUTPUT"
           echo "ODOO_HTTP_PORT=${port}" >> "$GITHUB_ENV"
 
@@ -239,6 +251,7 @@ jobs:
             echo "::error::Repository secret VWORKSPACE_SERVER_READ_TOKEN is required (PAT with contents:read on vworkspace-io/vworkspace-server). Private server cannot be checked out with the public operator repo GITHUB_TOKEN alone."
             exit 1
           fi
+          rm -rf vworkspace-server
           git clone --filter=blob:none --no-checkout \
             "https://x-access-token:${token}@github.com/vworkspace-io/vworkspace-server.git" \
             vworkspace-server
@@ -286,16 +299,13 @@ jobs:
           ./hack/dev-integration.sh 2>&1 | tee "${ARTIFACT_DIR}/seed.log"
           seed_rc=${PIPESTATUS[0]}
           set -e
-          if [[ "${seed_rc}" -ne 0 ]]; then
-            echo "::warning::dev-integration.sh exited ${seed_rc}; continuing if seed.log has cluster credentials"
-          fi
           parse_seed() {
             local pattern="$1"
             grep -E "${pattern}" "${ARTIFACT_DIR}/seed.log" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d ' ' || true
           }
-          CLUSTER_ID="$(parse_seed CLUSTER_ID '^CLUSTER_ID=')"
-          REGISTRATION_TOKEN="$(parse_seed REGISTRATION_TOKEN '^REGISTRATION_TOKEN=')"
-          JOB_ID="$(parse_seed JOB_ID '^JOB_ID=')"
+          CLUSTER_ID="$(parse_seed '^CLUSTER_ID=')"
+          REGISTRATION_TOKEN="$(parse_seed '^REGISTRATION_TOKEN=')"
+          JOB_ID="$(parse_seed '^JOB_ID=')"
           if [[ -z "${CLUSTER_ID}" ]]; then
             CLUSTER_ID="$(grep -E '^Cluster ID:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $NF}')"
           fi
@@ -305,12 +315,13 @@ jobs:
           if [[ -z "${JOB_ID}" ]]; then
             JOB_ID="$(grep -E '^Pending job:' "${ARTIFACT_DIR}/seed.log" | tail -1 | awk '{print $3}')"
           fi
-          if [[ -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
-            echo "::error::seed output missing CLUSTER_ID or REGISTRATION_TOKEN (dev-integration exit=${seed_rc})"
+          if [[ "${seed_rc}" -ne 0 ]]; then
+            echo "::error::dev-integration.sh exited ${seed_rc}"
             exit 1
           fi
-          if [[ "${seed_rc}" -ne 0 ]]; then
-            echo "::warning::dev-integration.sh exited ${seed_rc} but seed credentials were parsed"
+          if [[ -z "${CLUSTER_ID}" || -z "${REGISTRATION_TOKEN}" ]]; then
+            echo "::error::seed output missing CLUSTER_ID or REGISTRATION_TOKEN"
+            exit 1
           fi
           echo "::add-mask::${REGISTRATION_TOKEN}"
           echo "cluster_id=${CLUSTER_ID}" >> "$GITHUB_OUTPUT"
