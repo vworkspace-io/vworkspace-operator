@@ -7,6 +7,12 @@ on:
     tags:
       - 'v*'
   pull_request:
+  workflow_dispatch:
+    inputs:
+      server_ref:
+        description: vworkspace-server commit SHA for contract-integration
+        required: false
+        default: 9d578aecccdf9c1503c031e2035c32ad4ef59f4c
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -231,8 +237,9 @@ jobs:
       ${{ github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository }}
     env:
-      # Pin vworkspace-server commit with matching agent API + seed protocol (bump when server contract changes).
-      SERVER_REF: 9d578aecccdf9c1503c031e2035c32ad4ef59f4c
+      # Pin vworkspace-server commit with matching agent API + seed protocol. Bump in this file when
+      # operator integration or server seed protocol changes (workflow_dispatch can override for replay).
+      SERVER_REF: ${{ github.event.inputs.server_ref != '' && github.event.inputs.server_ref || '9d578aecccdf9c1503c031e2035c32ad4ef59f4c' }}
       COMPOSE_PROJECT_NAME: vws-contract-op-${{ github.run_id }}
       IMAGE_TAG: ci-contract-op-${{ github.run_id }}
       ARTIFACT_DIR: ${{ github.workspace }}/contract-integration-artifacts
@@ -241,7 +248,18 @@ jobs:
         id: ports
         run: |
           set -euo pipefail
-          port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')"
+          pick_free_port() {
+            local port
+            for _ in $(seq 1 50); do
+              port=$((19000 + RANDOM % 10000))
+              if ! ss -ltn 2>/dev/null | grep -qE ":${port}([[:space:]]|$)"; then
+                echo "${port}"
+                return 0
+              fi
+            done
+            return 1
+          }
+          port="$(pick_free_port)"
           echo "odoo_port=${port}" >> "$GITHUB_OUTPUT"
           echo "ODOO_HTTP_PORT=${port}" >> "$GITHUB_ENV"
 
@@ -418,6 +436,7 @@ jobs:
         working-directory: vworkspace-server
         run: |
           docker compose down -v 2>/dev/null || true
+          rm -f "${ARTIFACT_DIR}/seed.log" 2>/dev/null || true
 
   # Optional: Helm chart validation on kind. Not enabled in CI by default because
   # not all runners have kind/helm/docker. Run locally: ./hack/validate-helm-kind.sh
