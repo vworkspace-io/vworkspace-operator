@@ -239,6 +239,14 @@ func TestClusterReconcilerAdoptsExistingRegistration(t *testing.T) {
 			ControlPlaneEndpoint:       server.URL,
 			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{Name: "cluster-local-registration"},
 		},
+		// Proven prior registration: this operator already consumed a token.
+		Status: opsv1alpha1.ClusterStatus{
+			CredentialStatus: &opsv1alpha1.ClusterCredentialStatus{
+				SecretName:                agent.DefaultCredentialsSecret,
+				SecretNamespace:           "vworkspace-system",
+				RegistrationTokenConsumed: true,
+			},
+		},
 	}
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, tokenSecret, credsSecret).WithStatusSubresource(cluster).Build()
@@ -273,6 +281,51 @@ func TestClusterReconcilerAdoptsExistingRegistration(t *testing.T) {
 	}
 	if updated.Status.Phase != opsv1alpha1.ClusterPhaseConnected {
 		t.Fatalf("expected phase Connected after adoption, got %q", updated.Status.Phase)
+	}
+}
+
+func TestClusterReconcilerBrokenTokenRefKeepsRegisteredClusterConnected(t *testing.T) {
+	server := newEventsServer(t)
+	defer server.Close()
+
+	scheme := newClusterTestScheme(t)
+	credsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: agent.DefaultCredentialsSecret, Namespace: "vworkspace-system"},
+		Data: map[string][]byte{
+			agent.SecretKeyControlPlaneBaseURL: []byte(server.URL),
+			agent.SecretKeyClusterID:           []byte("cluster-local"),
+			agent.SecretKeyToken:               []byte("bootstrap-token"),
+		},
+	}
+	cluster := &opsv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-local"},
+		Spec: opsv1alpha1.ClusterSpec{
+			ControlPlaneEndpoint:       server.URL,
+			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{Name: "does-not-exist"},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, credsSecret).WithStatusSubresource(cluster).Build()
+	httpClient, err := agent.NewHTTPClient(agent.Config{BaseURL: server.URL, ClusterID: "cluster-local", Token: "bootstrap-token"})
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	reconciler := &ClusterReconciler{
+		Client:            cl,
+		Scheme:            scheme,
+		AgentClient:       httpClient,
+		CredentialsSecret: agent.DefaultCredentialsSecret,
+		OperatorNamespace: "vworkspace-system",
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	updated := &opsv1alpha1.Cluster{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if updated.Status.Phase != opsv1alpha1.ClusterPhaseConnected {
+		t.Fatalf("expected registered cluster to stay Connected despite broken token ref, got %q", updated.Status.Phase)
 	}
 }
 

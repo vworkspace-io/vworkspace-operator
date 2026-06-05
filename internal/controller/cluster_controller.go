@@ -60,8 +60,6 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch
 
 func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx).WithValues("cluster", req.Name)
-
 	cluster := &opsv1alpha1.Cluster{}
 	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -80,81 +78,115 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	prevConditions := append([]metav1.Condition(nil), cluster.Status.Conditions...)
+	if res, stop, err := r.reconcileRegistration(ctx, req, cluster, secretName, namespace); stop || err != nil {
+		return res, err
+	}
+	if res, stop, err := r.reconcileRotation(ctx, req, cluster, secretName, namespace); stop || err != nil {
+		return res, err
+	}
+	return r.reconcileHeartbeat(ctx, cluster, secretName, namespace)
+}
+
+// reconcileRegistration resolves the registration token, adopts an already-registered
+// cluster, or exchanges a new token for bootstrap credentials. A true stop value means
+// the caller should return (res, err) immediately.
+func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.Request, cluster *opsv1alpha1.Cluster, secretName, namespace string) (ctrl.Result, bool, error) {
+	log := logf.FromContext(ctx).WithValues("cluster", req.Name)
+	prev := append([]metav1.Condition(nil), cluster.Status.Conditions...)
 
 	token, tokenSource, err := r.resolveRegistrationToken(ctx, cluster, namespace)
 	if err != nil {
-		log.Error(err, "resolve registration token")
-		cluster.Status.Phase = opsv1alpha1.ClusterPhasePending
-		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "TokenSecretMissing", err.Error())
-		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "RegistrationPending", "registration token is not yet resolvable")
-		r.syncBufferOverflowCondition(cluster)
-		if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
-			return ctrl.Result{}, fmt.Errorf("update pending status: %w", statusErr)
+		// A broken registrationTokenSecretRef must not knock an already-registered
+		// cluster offline. If bootstrap credentials already exist, log and fall
+		// through to the heartbeat path instead of forcing Pending.
+		if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr != nil {
+			log.Error(err, "resolve registration token")
+			cluster.Status.Phase = opsv1alpha1.ClusterPhasePending
+			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "TokenSecretMissing", err.Error())
+			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "RegistrationPending", "registration token is not yet resolvable")
+			r.syncBufferOverflowCondition(cluster)
+			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
+				return ctrl.Result{}, true, fmt.Errorf("update pending status: %w", statusErr)
+			}
+			r.reportConditions(cluster, prev)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, true, nil
 		}
-		r.reportConditions(cluster, prevConditions)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		log.Error(err, "resolve registration token; continuing with existing credentials")
+		token, tokenSource = "", ""
 	}
 
-	needRegister := token != "" && tokenFingerprint(token) != cluster.Status.ObservedToken
+	if token == "" || tokenFingerprint(token) == cluster.Status.ObservedToken {
+		return ctrl.Result{}, false, nil
+	}
 
-	// Adoption: a cluster registered before observedToken existed has empty
-	// observedToken but already holds a bootstrap credentials Secret. Seed the
-	// fingerprint from the current token without re-exchanging the (already
-	// consumed) one-time token, so it does not spuriously flip to Error.
-	if needRegister && cluster.Status.ObservedToken == "" {
+	// Adoption: a cluster this operator already registered (RegistrationTokenConsumed)
+	// has an empty observedToken after upgrade but still holds bootstrap credentials.
+	// Seed the fingerprint without re-exchanging the consumed one-time token, so it
+	// does not spuriously flip to Error. Gated on a proven prior registration so a
+	// genuinely new token (no prior registration recorded) still triggers exchange.
+	if cluster.Status.ObservedToken == "" && registrationConsumed(cluster) {
 		if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr == nil {
 			if err := r.adoptExistingRegistration(ctx, cluster, tokenFingerprint(token), secretName, namespace); err != nil {
-				return ctrl.Result{}, err
+				return ctrl.Result{}, true, err
 			}
 			if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("reload cluster after adoption: %w", err)
+				return ctrl.Result{}, true, fmt.Errorf("reload cluster after adoption: %w", err)
 			}
-			prevConditions = append([]metav1.Condition(nil), cluster.Status.Conditions...)
-			needRegister = false
+			return ctrl.Result{}, false, nil
 		}
 	}
 
-	if needRegister {
-		if tokenSource == tokenSourceInline && r.Recorder != nil {
-			r.Recorder.Event(cluster, corev1.EventTypeWarning, "DeprecatedField",
-				"spec.registrationToken is deprecated; store the token in a Secret and use spec.registrationTokenSecretRef")
-		}
-		if err := r.registerCluster(ctx, cluster, token, tokenSource, secretName, namespace); err != nil {
-			log.Error(err, "cluster registration failed")
-			cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
-			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RegistrationFailed", err.Error())
-			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "RegistrationPending", "registration token exchange failed")
-			r.syncBufferOverflowCondition(cluster)
-			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("update registration failure status: %w", statusErr)
-			}
-			r.reportConditions(cluster, prevConditions)
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("reload cluster after registration: %w", err)
-		}
-		prevConditions = append([]metav1.Condition(nil), cluster.Status.Conditions...)
+	if tokenSource == tokenSourceInline && r.Recorder != nil {
+		r.Recorder.Event(cluster, corev1.EventTypeWarning, "DeprecatedField",
+			"spec.registrationToken is deprecated; store the token in a Secret and use spec.registrationTokenSecretRef")
 	}
+	if err := r.registerCluster(ctx, cluster, token, tokenSource, secretName, namespace); err != nil {
+		log.Error(err, "cluster registration failed")
+		cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RegistrationFailed", err.Error())
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "RegistrationPending", "registration token exchange failed")
+		r.syncBufferOverflowCondition(cluster)
+		if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
+			return ctrl.Result{}, true, fmt.Errorf("update registration failure status: %w", statusErr)
+		}
+		r.reportConditions(cluster, prev)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, true, nil
+	}
+	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
+		return ctrl.Result{}, true, fmt.Errorf("reload cluster after registration: %w", err)
+	}
+	return ctrl.Result{}, false, nil
+}
 
-	if cluster.Spec.RotateCredentials {
-		if err := r.rotateCredentials(ctx, cluster, secretName, namespace); err != nil {
-			log.Error(err, "credential rotation failed")
-			cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
-			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RotationFailed", err.Error())
-			r.syncBufferOverflowCondition(cluster)
-			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
-				return ctrl.Result{}, fmt.Errorf("update rotation failure status: %w", statusErr)
-			}
-			r.reportConditions(cluster, prevConditions)
-			return ctrl.Result{RequeueAfter: time.Minute}, nil
-		}
-		if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("reload cluster after rotation: %w", err)
-		}
-		prevConditions = append([]metav1.Condition(nil), cluster.Status.Conditions...)
+// reconcileRotation performs an imperative credential rotation when requested.
+func (r *ClusterReconciler) reconcileRotation(ctx context.Context, req ctrl.Request, cluster *opsv1alpha1.Cluster, secretName, namespace string) (ctrl.Result, bool, error) {
+	if !cluster.Spec.RotateCredentials {
+		return ctrl.Result{}, false, nil
 	}
+	log := logf.FromContext(ctx).WithValues("cluster", req.Name)
+	prev := append([]metav1.Condition(nil), cluster.Status.Conditions...)
+	if err := r.rotateCredentials(ctx, cluster, secretName, namespace); err != nil {
+		log.Error(err, "credential rotation failed")
+		cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RotationFailed", err.Error())
+		r.syncBufferOverflowCondition(cluster)
+		if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
+			return ctrl.Result{}, true, fmt.Errorf("update rotation failure status: %w", statusErr)
+		}
+		r.reportConditions(cluster, prev)
+		return ctrl.Result{RequeueAfter: time.Minute}, true, nil
+	}
+	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
+		return ctrl.Result{}, true, fmt.Errorf("reload cluster after rotation: %w", err)
+	}
+	return ctrl.Result{}, false, nil
+}
+
+// reconcileHeartbeat round-trips to the control plane with the stored credentials and
+// records the resulting connectivity phase/conditions.
+func (r *ClusterReconciler) reconcileHeartbeat(ctx context.Context, cluster *opsv1alpha1.Cluster, secretName, namespace string) (ctrl.Result, error) {
+	log := logf.FromContext(ctx).WithValues("cluster", cluster.Name)
+	prev := append([]metav1.Condition(nil), cluster.Status.Conditions...)
 
 	clientForHeartbeat := r.AgentClient
 	if clientForHeartbeat == nil {
@@ -179,7 +211,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if err := r.Status().Update(ctx, cluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update disconnected status: %w", err)
 		}
-		r.reportConditions(cluster, prevConditions)
+		r.reportConditions(cluster, prev)
 		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
@@ -205,7 +237,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.Status().Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update cluster status: %w", err)
 	}
-	r.reportConditions(cluster, prevConditions)
+	r.reportConditions(cluster, prev)
 	return ctrl.Result{RequeueAfter: time.Minute}, nil
 }
 
@@ -429,6 +461,12 @@ func controlPlaneEndpoint(cluster *opsv1alpha1.Cluster) string {
 		return endpoint
 	}
 	return strings.TrimSpace(cluster.Spec.ControlPlaneBaseURL)
+}
+
+// registrationConsumed reports whether this operator already exchanged a
+// registration token for the cluster (a proven prior registration).
+func registrationConsumed(cluster *opsv1alpha1.Cluster) bool {
+	return cluster.Status.CredentialStatus != nil && cluster.Status.CredentialStatus.RegistrationTokenConsumed
 }
 
 // tokenFingerprint returns a short, non-reversible fingerprint of a registration
