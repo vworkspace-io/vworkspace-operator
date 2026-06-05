@@ -1,11 +1,11 @@
 # Helm install guide
 
 **Status:** Alpha
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-05
 
 This document is the full reference for installing `vworkspace-operator` with the in-repo Helm chart at `charts/vworkspace-operator/`. For the shortest path, start with [quickstart.md](quickstart.md) Option A.
 
-The chart installs **only** the operator controller, its CRDs, and RBAC. Flux, Velero, cert-manager, and other prerequisites remain separate — see [prerequisites.md](prerequisites.md).
+**Default values** install the operator controller, CRDs, and RBAC only. Optional **bundle v1** flags (`flux.enabled`, `velero.enabled`) add Flux controllers and Velero + MinIO for Session 3 dogfooding — see [Bundle v1 (Session 3)](#bundle-v1-session-3) and `values-kind.yaml`.
 
 ## Prerequisites
 
@@ -66,7 +66,32 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
 | `serviceAccount.create` | `true` | Dedicated ServiceAccount |
 | `manager.metricsBindAddress` | `0` (off) | Set to `:8443` to expose HTTPS `/metrics` (see [observability.md](../operate/observability.md#prometheus-scrape)) |
 
-See [charts/vworkspace-operator/values.yaml](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/values.yaml) for manager flags, resources, and scheduling.
+See [charts/vworkspace-operator/values.yaml](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/values.yaml) for manager flags, resources, scheduling, and bundle keys (`flux`, `velero`).
+
+## Bundle v1 (Session 3)
+
+Hub design: [session-3-helm-path-design.md](https://github.com/vworkspace-io/vworkspace/blob/main/docs/dogfooding/session-3-helm-path-design.md).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `flux.enabled` | `false` | Install helm-controller + source-controller into `flux-system` |
+| `flux.installed` | `true` | Set `false` when Flux already exists (skip chart install) |
+| `velero.enabled` | `false` | Install Velero server + CRDs |
+| `velero.minio.enabled` | `false` | In-cluster MinIO + BSL for kind (matches server [BACKUP_E2E.md](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/development/BACKUP_E2E.md)) |
+| `velero.installed` | `true` | Set `false` when Velero already exists |
+| `certManager.enabled` | `false` | Placeholder — not bundled in v1 |
+| `externalSecrets.enabled` | `false` | Placeholder — not bundled in v1 |
+
+**Kind / dogfood profile** — single install with metrics, Flux, Velero, and MinIO:
+
+```bash
+helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system --create-namespace \
+  -f charts/vworkspace-operator/values-kind.yaml \
+  --set agent.controlPlaneBaseUrl="${CONTROL_PLANE_BASE_URL}"
+```
+
+Pin the operator image at run time: `--set image.tag=<sha-tag>`.
 
 ## CRD installation
 
@@ -82,15 +107,18 @@ kubectl apply -f charts/vworkspace-operator/files/crds/
 
 After `helm install`, the operator is running but not yet connected to Odoo.
 
-1. **Register** — exchange a one-time token for bootstrap credentials ([cluster-bootstrap.md](cluster-bootstrap.md)):
+1. **Register in-cluster** — exchange a one-time token for bootstrap credentials ([cluster-bootstrap.md](cluster-bootstrap.md)); no host `go run`:
 
    ```bash
    kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
      /manager register \
        --token=<one-time-token> \
-       --control-plane-endpoint=https://workspace.example.org \
-       --cluster-name=cluster-prod-1
+       --control-plane-endpoint="${CONTROL_PLANE_BASE_URL}" \
+       --cluster-name=cluster-local \
+       --cluster-id="${CLUSTER_ID}"
    ```
+
+   Alternative: apply a `Cluster` CR with `spec.registrationToken` (same as quickstart Step 2).
 
    Registration creates `Secret/vworkspace-agent-credentials` in the release namespace.
 
@@ -146,7 +174,8 @@ Environment variables:
 |----------|---------|---------|
 | `KIND_CLUSTER` | `vworkspace-operator-helm-validate` | kind cluster name |
 | `USE_PUBLISHED_IMAGE` | `0` | Set to `1` to pull `latest` from Docker Hub instead of building locally |
-| `INSTALL_FLUX_CRDS` | `false` | Apply Flux **CRDs only** (contract tier — no controller pods). See [optional Flux controllers](#optional-flux-controllers-for-ready). |
+| `VALIDATE_BUNDLE` | `false` | Set to `true` to install with `values-kind.yaml` (Flux + Velero + MinIO + metrics) |
+| `INSTALL_FLUX_CRDS` | `false` | Apply Flux **CRDs only** (contract tier — no controller pods). Ignored when `VALIDATE_BUNDLE=true`. |
 | `DELETE_CLUSTER` | `true` | Delete kind cluster when the script created it |
 
 Or via Makefile:
@@ -161,6 +190,12 @@ Contract tier (CRDs only, matches e2e and Phase 1 golden path):
 INSTALL_FLUX_CRDS=true ./hack/validate-helm-kind.sh
 ```
 
+Session 3 bundle tier (Flux controllers + Velero + MinIO; pulls published operator image):
+
+```bash
+VALIDATE_BUNDLE=true ./hack/validate-helm-kind.sh
+```
+
 ## Optional Flux controllers for Ready
 
 `INSTALL_FLUX_CRDS=true` installs the API types the operator needs to create `HelmRelease` resources. It does **not** install `helm-controller` or `source-controller`. Without those Deployments, `HelmRelease` objects are not reconciled and `ApplicationInstance` will not reach `Ready` — see [cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](cluster-bootstrap.md#flux-contract-only-vs-full-reconcile).
@@ -173,7 +208,15 @@ flux check --pre
 flux install
 ```
 
-Or install the production operator bundle (bundled Flux controllers) per [prerequisites.md](prerequisites.md#controllers-installed-by-the-operators-bundle) and [quickstart.md](quickstart.md) Option B.
+Or install Flux via the Helm bundle:
+
+```bash
+helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system --reuse-values \
+  --set flux.enabled=true
+```
+
+Or use `values-kind.yaml` for the full Session 3 profile ([Bundle v1](#bundle-v1-session-3)).
 
 Verify controllers:
 

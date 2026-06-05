@@ -1,7 +1,7 @@
 # Prerequisites
 
 **Status:** Alpha
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-05
 
 This document is the prerequisites checklist for installing `vworkspace-operator`. Most items are properties of the cluster you already run; a few have opinionated recommendations for the cases that warrant them.
 
@@ -33,16 +33,20 @@ For single-node clusters with no cloud storage, `local-path` (from Rancher's `lo
 
 ## Controllers installed by the operator's bundle
 
-The Helm bundle installs the following controllers if they are not already present. Where you already run them (some operators standardize on cluster-wide versions), pass the chart values that point at your existing install rather than installing again.
+**Default chart values** install only the vworkspace-operator Deployment, CRDs, and RBAC. Flux, Velero, cert-manager, and external-secrets are **not** installed unless you enable bundle flags — see [helm.md](helm.md#bundle-v1-session-3).
 
-| Controller             | Why                                                                                              | Bundle default          | Override                                              |
-|------------------------|--------------------------------------------------------------------------------------------------|-------------------------|-------------------------------------------------------|
-| cert-manager           | TLS for ingresses and chart-internal services.                                                    | Installed by the chart. | `certManager.installed=false` and provide your install.  |
-| external-secrets       | Sync chart-values credentials from Vault / cloud secret stores.                                   | Installed by the chart. | `externalSecrets.installed=false`.                       |
-| Flux Helm Controller and Source Controller | The default Helm engine ([ADR 0002](../adr/0002-helm-first-via-flux-helmrelease.md)). | Installed by the chart. | `flux.installed=false`.                                  |
-| Velero                 | Backup and restore primitives ([engines/velero.md](../operations/engines/velero.md)).             | Installed by the chart. | `velero.installed=false`.                                |
+**Bundle v1** (Session 3 dogfood; `values-kind.yaml` or explicit `--set`):
 
-Argo Workflows is **not** installed by the chart; the chart installs it only if you set `argoWorkflows.installed=true`. Operation templates that require Argo Workflows will be admitted but block (`Blocked=True/EngineNotInstalled`) until it is present.
+| Controller | Chart flag | v1 status | Override when already present |
+|------------|------------|-----------|-------------------------------|
+| Flux helm-controller + source-controller | `flux.enabled=true` | Bundled (pinned flux2 v2.4.0 subset) | `flux.installed=false` |
+| Velero + in-cluster MinIO (kind lab) | `velero.enabled=true`, `velero.minio.enabled=true` | Bundled (Velero v1.15.0 + MinIO) | `velero.installed=false` |
+| cert-manager | `certManager.enabled` | **Not bundled v1** | Bring your own |
+| external-secrets | `externalSecrets.enabled` | **Not bundled v1** | Bring your own |
+
+Argo Workflows is **not** installed by the chart. Operation templates that require Argo Workflows will be admitted but block (`Blocked=True/EngineNotInstalled`) until it is present.
+
+For production clusters that already run cluster-wide Flux or Velero, set `*.installed=false` and point the operator at your existing install rather than duplicating controllers.
 
 ## Ingress controller
 
@@ -50,7 +54,7 @@ You provide the ingress controller of your choice (Nginx Ingress Controller, Tra
 
 Two notes:
 
-- The chart enables cert-manager by default, so charts that request a TLS certificate will resolve through cert-manager. If you use a different certificate workflow (your own ACME client, a corporate PKI), set `certManager.installed=false` and bring your own.
+- cert-manager is **not** in bundle v1. Charts that request TLS certificates need cert-manager installed separately, or use inline/dev secrets on kind.
 - For air-gapped or single-node installs, k3s ships Traefik by default; if you run with `--disable=traefik` and bring Nginx, take note in [kubernetes-distros.md](kubernetes-distros.md).
 
 ## Egress
@@ -81,12 +85,11 @@ The bundle adds the following pods to the cluster (approximate steady-state, exc
 
 | Pod                                  | Replicas | CPU request | Memory request | Notes                              |
 |--------------------------------------|----------|-------------|----------------|-------------------------------------|
-| `vworkspace-app-operator`            | 1        | 100m        | 128Mi          | Leader-elected; only one active.    |
-| `helm-controller`                    | 1        | 100m        | 64Mi           | Flux.                                |
-| `source-controller`                  | 1        | 50m         | 64Mi           | Flux.                                |
-| `cert-manager` + `cert-manager-webhook` + `cert-manager-cainjector` | 1 each | ~100m total | ~150Mi total | Standard cert-manager footprint.    |
-| `external-secrets`                   | 1        | 50m         | 64Mi           |                                     |
-| `velero`                             | 1        | 100m        | 128Mi          | Plus node agents if file-system backup is enabled. |
+| `vworkspace-operator`                | 1        | 10m         | 64Mi           | Leader-elected manager.             |
+| `helm-controller` (optional bundle)  | 1        | 100m        | 64Mi           | Flux — when `flux.enabled=true`.    |
+| `source-controller` (optional)     | 1        | 50m         | 64Mi           | Flux — when `flux.enabled=true`.    |
+| `velero` (optional bundle)           | 1        | 100m        | 128Mi          | When `velero.enabled=true`.         |
+| `minio` (optional, kind lab)         | 1        | —           | —              | When `velero.minio.enabled=true`.   |
 
 A 2 vCPU / 4 GiB RAM single-node cluster is sufficient to install the operator and the bundle's controllers. Application workloads are on top of this footprint.
 

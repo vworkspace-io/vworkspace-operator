@@ -1,0 +1,3 @@
+{{- if and .Values.flux.enabled .Values.flux.installed }}
+{{- .Files.Get "files/flux/install.yaml" }}
+{{- end }}

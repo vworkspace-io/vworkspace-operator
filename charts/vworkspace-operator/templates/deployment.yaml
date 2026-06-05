@@ -49,6 +49,11 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+            {{- if ne .Values.manager.metricsBindAddress "0" }}
+            - name: metrics
+              containerPort: {{ include "vworkspace-operator.metricsPort" . }}
+              protocol: TCP
+            {{- end }}
             {{- if .Values.webhooks.enabled }}
             - name: webhook-server
               containerPort: 9443
