@@ -261,6 +261,7 @@ func main() {
 		OperatorNamespace: credNamespace,
 		Reporter:          statusReporter,
 		EventBatcher:      eventBatcher,
+		Recorder:          mgr.GetEventRecorderFor("cluster-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
 		os.Exit(1)

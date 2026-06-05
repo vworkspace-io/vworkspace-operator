@@ -28,22 +28,87 @@ const (
 	ConditionBufferOverflow     = "BufferOverflow"
 )
 
+const (
+	// ClusterFinalizer guards Cluster deletion so the reconciler can run cleanup
+	// (best-effort credential teardown) before the object and its owned Secrets are removed.
+	ClusterFinalizer = "ops.vworkspace.io/cluster-cleanup"
+
+	// DefaultRegistrationTokenKey is the Secret data key read when
+	// registrationTokenSecretRef.key is omitted.
+	DefaultRegistrationTokenKey = "registrationToken"
+)
+
+// Cluster lifecycle phases reported in status.phase. They are a coarse,
+// human-facing summary derived from conditions and the deletion timestamp.
+const (
+	ClusterPhasePending      = "Pending"
+	ClusterPhaseRegistering  = "Registering"
+	ClusterPhaseConnected    = "Connected"
+	ClusterPhaseDisconnected = "Disconnected"
+	ClusterPhaseError        = "Error"
+	ClusterPhaseTerminating  = "Terminating"
+)
+
 // ClusterSpec defines operator cluster identity configuration.
 type ClusterSpec struct {
-	// ClusterID is the stable identity registered with the control plane.
+	// ClusterID is the server-issued stable identity. Optional on first registration
+	// (the server returns it); required for re-registration of a known cluster.
 	// +optional
 	ClusterID string `json:"clusterId,omitempty"`
+	// ControlPlaneEndpoint is the HTTPS base URL of vWorkspace Server (Pull-mode).
+	// Preferred over the deprecated controlPlaneBaseUrl alias.
+	// +kubebuilder:validation:Pattern=`^https?://`
+	// +optional
+	ControlPlaneEndpoint string `json:"controlPlaneEndpoint,omitempty"`
 	// ControlPlaneBaseURL is the HTTPS base URL for Pull-mode connectivity to vWorkspace Server.
+	// Deprecated: use controlPlaneEndpoint; retained as an alias for one minor release.
 	// +optional
 	ControlPlaneBaseURL string `json:"controlPlaneBaseUrl,omitempty"`
+	// RegistrationTokenSecretRef points at a Secret (in the operator namespace) holding the
+	// one-time registration token. Preferred over the deprecated inline registrationToken.
+	// +optional
+	RegistrationTokenSecretRef *SecretKeyRef `json:"registrationTokenSecretRef,omitempty"`
 	// RegistrationToken is a one-time token exchanged for a long-lived credential.
 	// Cleared from the spec after successful registration.
+	// Deprecated: store the token in a Secret and use registrationTokenSecretRef instead.
 	// +optional
 	RegistrationToken string `json:"registrationToken,omitempty"`
+	// Capabilities is a forward-looking placeholder for declaring which managed add-ons
+	// (flux, velero, …) the operator should reconcile. RESERVED and not reconciled yet.
+	// +optional
+	Capabilities *ClusterCapabilities `json:"capabilities,omitempty"`
 	// RotateCredentials requests an immediate bootstrap credential rotation via the control plane.
 	// Cleared from the spec after a successful rotation.
 	// +optional
 	RotateCredentials bool `json:"rotateCredentials,omitempty"`
+}
+
+// SecretKeyRef identifies one key in a Secret. The Secret is resolved within the
+// operator namespace only; cross-namespace references are not supported.
+type SecretKeyRef struct {
+	// Name is the Secret name in the operator namespace.
+	Name string `json:"name"`
+	// Key is the Secret data key holding the value. Defaults to "registrationToken".
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// SecretReference points at a Secret materialized by the operator.
+type SecretReference struct {
+	// Name is the Secret name.
+	Name string `json:"name"`
+	// Namespace is the Secret namespace.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// ClusterCapabilities is a RESERVED placeholder for declarative add-on management.
+// It is not reconciled in this release (see cluster-bootstrap-v2 design, Non-goals).
+type ClusterCapabilities struct {
+	// +optional
+	Flux *bool `json:"flux,omitempty"`
+	// +optional
+	Velero *bool `json:"velero,omitempty"`
 }
 
 // ClusterCredentialStatus reports bootstrap credential materialization.
@@ -61,6 +126,10 @@ type ClusterCredentialStatus struct {
 
 // ClusterStatus defines observed cluster connectivity posture.
 type ClusterStatus struct {
+	// Phase is a coarse, human-facing lifecycle summary derived from conditions.
+	// One of: Pending, Registering, Connected, Disconnected, Error, Terminating.
+	// +optional
+	Phase string `json:"phase,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -70,11 +139,19 @@ type ClusterStatus struct {
 	// CredentialStatus reports where bootstrap credentials are stored.
 	// +optional
 	CredentialStatus *ClusterCredentialStatus `json:"credentialStatus,omitempty"`
+	// CredentialsSecretRef is where the bootstrap credential was materialized.
+	// +optional
+	CredentialsSecretRef *SecretReference `json:"credentialsSecretRef,omitempty"`
+	// ObservedToken is a fingerprint (sha256 prefix) of the last registration token consumed.
+	// A spec/Secret token whose fingerprint differs triggers re-registration.
+	// +optional
+	ObservedToken string `json:"observedToken,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=cluster
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Connected",type=string,JSONPath=`.status.conditions[?(@.type=="Connected")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

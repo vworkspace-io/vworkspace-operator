@@ -17,6 +17,9 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Connected")].status
       name: Connected
       type: string
@@ -48,19 +51,53 @@ spec:
           spec:
             description: ClusterSpec defines operator cluster identity configuration.
             properties:
+              capabilities:
+                description: |-
+                  Capabilities is a forward-looking placeholder for declaring which managed add-ons
+                  (flux, velero, …) the operator should reconcile. RESERVED and not reconciled yet.
+                properties:
+                  flux:
+                    type: boolean
+                  velero:
+                    type: boolean
+                type: object
               clusterId:
-                description: ClusterID is the stable identity registered with the
-                  control plane.
+                description: |-
+                  ClusterID is the server-issued stable identity. Optional on first registration
+                  (the server returns it); required for re-registration of a known cluster.
                 type: string
               controlPlaneBaseUrl:
-                description: ControlPlaneBaseURL is the HTTPS base URL for Pull-mode
-                  connectivity to vWorkspace Server.
+                description: |-
+                  ControlPlaneBaseURL is the HTTPS base URL for Pull-mode connectivity to vWorkspace Server.
+                  Deprecated: use controlPlaneEndpoint; retained as an alias for one minor release.
+                type: string
+              controlPlaneEndpoint:
+                description: |-
+                  ControlPlaneEndpoint is the HTTPS base URL of vWorkspace Server (Pull-mode).
+                  Preferred over the deprecated controlPlaneBaseUrl alias.
+                pattern: ^https?://
                 type: string
               registrationToken:
                 description: |-
                   RegistrationToken is a one-time token exchanged for a long-lived credential.
                   Cleared from the spec after successful registration.
+                  Deprecated: store the token in a Secret and use registrationTokenSecretRef instead.
                 type: string
+              registrationTokenSecretRef:
+                description: |-
+                  RegistrationTokenSecretRef points at a Secret (in the operator namespace) holding the
+                  one-time registration token. Preferred over the deprecated inline registrationToken.
+                properties:
+                  key:
+                    description: Key is the Secret data key holding the value. Defaults
+                      to "registrationToken".
+                    type: string
+                  name:
+                    description: Name is the Secret name in the operator namespace.
+                    type: string
+                required:
+                - name
+                type: object
               rotateCredentials:
                 description: |-
                   RotateCredentials requests an immediate bootstrap credential rotation via the control plane.
@@ -151,10 +188,33 @@ spec:
                       Secret.
                     type: string
                 type: object
+              credentialsSecretRef:
+                description: CredentialsSecretRef is where the bootstrap credential
+                  was materialized.
+                properties:
+                  name:
+                    description: Name is the Secret name.
+                    type: string
+                  namespace:
+                    description: Namespace is the Secret namespace.
+                    type: string
+                required:
+                - name
+                type: object
               lastHeartbeat:
                 description: LastHeartbeat is updated when a recent round-trip to
                   the control plane succeeded.
                 format: date-time
+                type: string
+              observedToken:
+                description: |-
+                  ObservedToken is a fingerprint (sha256 prefix) of the last registration token consumed.
+                  A spec/Secret token whose fingerprint differs triggers re-registration.
+                type: string
+              phase:
+                description: |-
+                  Phase is a coarse, human-facing lifecycle summary derived from conditions.
+                  One of: Pending, Registering, Connected, Disconnected, Error, Terminating.
                 type: string
             type: object
         type: object

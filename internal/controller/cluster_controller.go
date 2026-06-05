@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -26,10 +28,14 @@ import (
 	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -43,10 +49,13 @@ type ClusterReconciler struct {
 	OperatorNamespace  string
 	Reporter           agent.StatusReporter
 	EventBatcher       *agent.EventBatcher
+	// Recorder emits deprecation/audit Events; optional (nil-safe).
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=ops.vworkspace.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ops.vworkspace.io,resources=clusters/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=ops.vworkspace.io,resources=clusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch
 
@@ -58,13 +67,43 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	prevConditions := append([]metav1.Condition(nil), cluster.Status.Conditions...)
 	secretName := r.credentialsSecretName()
 	namespace := r.operatorNamespace()
 
-	if token := strings.TrimSpace(cluster.Spec.RegistrationToken); token != "" {
-		if err := r.registerCluster(ctx, cluster, token, secretName, namespace); err != nil {
+	if !cluster.DeletionTimestamp.IsZero() {
+		return r.finalizeCluster(ctx, cluster)
+	}
+	if !controllerutil.ContainsFinalizer(cluster, opsv1alpha1.ClusterFinalizer) {
+		controllerutil.AddFinalizer(cluster, opsv1alpha1.ClusterFinalizer)
+		if err := r.Update(ctx, cluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
+		}
+	}
+
+	prevConditions := append([]metav1.Condition(nil), cluster.Status.Conditions...)
+
+	token, tokenSource, err := r.resolveRegistrationToken(ctx, cluster, namespace)
+	if err != nil {
+		log.Error(err, "resolve registration token")
+		cluster.Status.Phase = opsv1alpha1.ClusterPhasePending
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "TokenSecretMissing", err.Error())
+		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "RegistrationPending", "registration token is not yet resolvable")
+		r.syncBufferOverflowCondition(cluster)
+		if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
+			return ctrl.Result{}, fmt.Errorf("update pending status: %w", statusErr)
+		}
+		r.reportConditions(cluster, prevConditions)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	if token != "" && tokenFingerprint(token) != cluster.Status.ObservedToken {
+		if tokenSource == tokenSourceInline && r.Recorder != nil {
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, "DeprecatedField",
+				"spec.registrationToken is deprecated; store the token in a Secret and use spec.registrationTokenSecretRef")
+		}
+		if err := r.registerCluster(ctx, cluster, token, tokenSource, secretName, namespace); err != nil {
 			log.Error(err, "cluster registration failed")
+			cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
 			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RegistrationFailed", err.Error())
 			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "RegistrationPending", "registration token exchange failed")
 			r.syncBufferOverflowCondition(cluster)
@@ -83,6 +122,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if cluster.Spec.RotateCredentials {
 		if err := r.rotateCredentials(ctx, cluster, secretName, namespace); err != nil {
 			log.Error(err, "credential rotation failed")
+			cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
 			cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RotationFailed", err.Error())
 			r.syncBufferOverflowCondition(cluster)
 			if statusErr := r.Status().Update(ctx, cluster); statusErr != nil {
@@ -113,6 +153,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	if clientForHeartbeat == nil {
 		agent.SetConnectivityState("pull", -1)
+		cluster.Status.Phase = opsv1alpha1.ClusterPhasePending
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "CredentialMissing", "bootstrap credential is not available")
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "CredentialMissing", "bootstrap credential is not available")
 		r.syncBufferOverflowCondition(cluster)
@@ -126,12 +167,14 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := clientForHeartbeat.Heartbeat(ctx); err != nil {
 		log.Error(err, "heartbeat failed")
 		agent.SetConnectivityState("pull", -1)
+		cluster.Status.Phase = opsv1alpha1.ClusterPhaseDisconnected
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionFalse, "ControlPlaneUnreachable", err.Error())
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionDisconnected, metav1.ConditionTrue, "NoRecentRoundTrip", err.Error())
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "ControlPlaneAuthenticationFailed", err.Error())
 	} else {
 		now := metav1.Now()
 		cluster.Status.LastHeartbeat = &now
+		cluster.Status.Phase = opsv1alpha1.ClusterPhaseConnected
 		agent.SetConnectivityState("pull", 1)
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "RoundTripOK", "Recent round-trip to the control plane succeeded")
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionDisconnected, metav1.ConditionFalse, "Connected", "Connection is alive")
@@ -223,10 +266,10 @@ func (r *ClusterReconciler) reportConditions(cluster *opsv1alpha1.Cluster, prev 
 	r.Reporter.ReportConditionTransitions(ref, prev, cluster.Status.Conditions)
 }
 
-func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1alpha1.Cluster, token, secretName, namespace string) error {
-	baseURL := strings.TrimSpace(cluster.Spec.ControlPlaneBaseURL)
+func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1alpha1.Cluster, token, tokenSource, secretName, namespace string) error {
+	baseURL := controlPlaneEndpoint(cluster)
 	if baseURL == "" {
-		return fmt.Errorf("spec.controlPlaneBaseUrl is required for registration")
+		return fmt.Errorf("spec.controlPlaneEndpoint is required for registration")
 	}
 
 	regClient := r.RegistrationClient
@@ -249,18 +292,30 @@ func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1a
 	}
 
 	now := metav1.Now()
+	specChanged := false
 	if strings.TrimSpace(cluster.Spec.ClusterID) == "" {
 		cluster.Spec.ClusterID = resp.ClusterID
+		specChanged = true
 	}
-	cluster.Spec.RegistrationToken = ""
-	if err := r.Update(ctx, cluster); err != nil {
-		return fmt.Errorf("clear registration token: %w", err)
+	// Only the deprecated inline token is cleared from the spec; the Secret-backed
+	// token is never mutated by the operator.
+	if tokenSource == tokenSourceInline && cluster.Spec.RegistrationToken != "" {
+		cluster.Spec.RegistrationToken = ""
+		specChanged = true
+	}
+	if specChanged {
+		if err := r.Update(ctx, cluster); err != nil {
+			return fmt.Errorf("persist post-registration spec: %w", err)
+		}
 	}
 
 	fresh := &opsv1alpha1.Cluster{}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), fresh); err != nil {
 		return fmt.Errorf("reload cluster after registration: %w", err)
 	}
+	fresh.Status.Phase = opsv1alpha1.ClusterPhaseRegistering
+	fresh.Status.ObservedToken = tokenFingerprint(token)
+	fresh.Status.CredentialsSecretRef = &opsv1alpha1.SecretReference{Name: secretName, Namespace: namespace}
 	fresh.Status.CredentialStatus = &opsv1alpha1.ClusterCredentialStatus{
 		SecretName:                secretName,
 		SecretNamespace:           namespace,
@@ -270,6 +325,74 @@ func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1a
 	fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionTrue, "RegistrationComplete", "registration token exchanged for bootstrap credential")
 	fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "ControlPlaneReachable", "registration exchange succeeded")
 	return r.Status().Update(ctx, fresh)
+}
+
+const (
+	tokenSourceSecret = "secret"
+	tokenSourceInline = "inline"
+)
+
+// resolveRegistrationToken returns the one-time registration token to exchange.
+// A registrationTokenSecretRef (resolved only within the operator namespace) is
+// preferred; the deprecated inline spec.registrationToken is the fallback. An empty
+// token with a nil error means there is nothing to register (already registered or
+// adopting an existing credentials Secret).
+func (r *ClusterReconciler) resolveRegistrationToken(ctx context.Context, cluster *opsv1alpha1.Cluster, namespace string) (token, source string, err error) {
+	if ref := cluster.Spec.RegistrationTokenSecretRef; ref != nil && strings.TrimSpace(ref.Name) != "" {
+		key := strings.TrimSpace(ref.Key)
+		if key == "" {
+			key = opsv1alpha1.DefaultRegistrationTokenKey
+		}
+		secret := &corev1.Secret{}
+		if getErr := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: strings.TrimSpace(ref.Name)}, secret); getErr != nil {
+			if apierrors.IsNotFound(getErr) {
+				return "", tokenSourceSecret, fmt.Errorf("registration token secret %s/%s not found", namespace, ref.Name)
+			}
+			return "", tokenSourceSecret, fmt.Errorf("get registration token secret %s/%s: %w", namespace, ref.Name, getErr)
+		}
+		tok := strings.TrimSpace(string(secret.Data[key]))
+		if tok == "" {
+			return "", tokenSourceSecret, fmt.Errorf("registration token secret %s/%s has no value for key %q", namespace, ref.Name, key)
+		}
+		return tok, tokenSourceSecret, nil
+	}
+	if tok := strings.TrimSpace(cluster.Spec.RegistrationToken); tok != "" {
+		return tok, tokenSourceInline, nil
+	}
+	return "", "", nil
+}
+
+// finalizeCluster runs best-effort cleanup before the Cluster is removed. The
+// credentials Secret is garbage-collected through its controller owner reference,
+// so the finalizer only guarantees deterministic teardown ordering and removes
+// itself. Server-side credential revoke is deferred (no revoke endpoint yet).
+func (r *ClusterReconciler) finalizeCluster(ctx context.Context, cluster *opsv1alpha1.Cluster) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(cluster, opsv1alpha1.ClusterFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	logf.FromContext(ctx).Info("finalizing cluster; owned credentials Secret will be garbage-collected", "cluster", cluster.Name)
+	agent.SetConnectivityState("pull", 0)
+	controllerutil.RemoveFinalizer(cluster, opsv1alpha1.ClusterFinalizer)
+	if err := r.Update(ctx, cluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+	}
+	return ctrl.Result{}, nil
+}
+
+// controlPlaneEndpoint returns the configured Pull-mode endpoint, preferring the
+// v2 controlPlaneEndpoint field and falling back to the deprecated controlPlaneBaseUrl alias.
+func controlPlaneEndpoint(cluster *opsv1alpha1.Cluster) string {
+	if endpoint := strings.TrimSpace(cluster.Spec.ControlPlaneEndpoint); endpoint != "" {
+		return endpoint
+	}
+	return strings.TrimSpace(cluster.Spec.ControlPlaneBaseURL)
+}
+
+// tokenFingerprint returns a short, non-reversible fingerprint of a registration
+// token suitable for storing in status to detect rotation/re-registration.
+func tokenFingerprint(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func (r *ClusterReconciler) loadStoredCredentials(ctx context.Context, namespace, secretName string) (agent.Credentials, error) {
