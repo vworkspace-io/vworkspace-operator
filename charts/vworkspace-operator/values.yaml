@@ -70,7 +70,7 @@ velero:
     accessKey: minio
     secretKey: minio123
     image: minio/minio:RELEASE.2024-05-28T17-19-04Z
-    mcImage: minio/mc:RELEASE.2024-05-28T17-19-04Z
+    mcImage: minio/mc:RELEASE.2024-05-24T09-08-49Z
 
 # Placeholders — out of scope for bundle v1 (Session 3 design).
 certManager:
