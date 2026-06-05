@@ -35,13 +35,8 @@ default_control_plane_url() {
 BASE_URL="$(default_control_plane_url)"
 BASE_URL="${BASE_URL%/}"
 
-kind_host_gateway() {
-  if ! command -v docker >/dev/null 2>&1; then
-    return 1
-  fi
-  local net="${KIND_DOCKER_NETWORK:-kind}"
-  docker network inspect "${net}" -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true
-}
+# shellcheck source=lib/kind-gateway.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/kind-gateway.sh"
 
 # Resolve server-issued cluster UUID (spec.clusterId / register --cluster-id).
 # Slug (e.g. dev-integration) is NOT valid for POST /api/agent/register when clusterId is sent.
@@ -111,22 +106,24 @@ echo "     - Server slug (registry name): ${CLUSTER_SLUG}"
 echo "     - Agent API clusterId (UUID):  ${CLUSTER_UUID:-<set VWORKSPACE_CLUSTER_ID or run server dev-integration.sh>}"
 echo "     - Kubernetes Cluster.metadata.name: ${CLUSTER_CR_NAME}"
 echo ""
-echo "2. Control plane base URL (this machine / host-run operator):"
-echo "     export CONTROL_PLANE_BASE_URL=${BASE_URL}"
+HOST_URL="http://127.0.0.1:${PORT}"
+KIND_URL="$(kind_control_plane_url "${PORT}" 2>/dev/null || echo "http://<kind-host-gateway>:${PORT}")"
+echo "2. Control plane base URL:"
+echo "     Host-run operator / register (always):  ${HOST_URL}"
+echo "       export CONTROL_PLANE_BASE_URL=${HOST_URL}"
+echo "     kind pods on Linux (in-cluster only):   ${KIND_URL}"
+echo "     (Do not use the kind gateway URL for host-run go run — use 127.0.0.1.)"
 echo ""
-echo "3. kind on Linux — pods must reach the host, not 127.0.0.1 inside the pod:"
-GATEWAY="$(kind_host_gateway || true)"
-if [[ -n "${GATEWAY}" ]]; then
-  echo "     Host gateway on docker network 'kind': ${GATEWAY}"
-  echo "     export CONTROL_PLANE_BASE_URL=http://${GATEWAY}:${PORT}"
-  echo "     (macOS kind often works with host.docker.internal; Linux usually needs the gateway IP.)"
-else
-  echo "     export CONTROL_PLANE_BASE_URL=http://<host-gateway-ip>:${PORT}"
-  echo "     Find gateway: docker network inspect kind -f '{{(index .IPAM.Config 0).Gateway}}'"
-  echo "     Or add extra_hosts host.docker.internal:host-gateway in kind cluster config."
-fi
+echo "3. Bootstrap order (host-run — registration before agent secret exists):"
+echo "     kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
+echo "     # Terminal A: manager WITHOUT agent (Cluster controller registers the token):"
+echo "     go run ./cmd/main.go"
+echo "     # Terminal B: apply Cluster CR or register (while Terminal A is running):"
+echo "     kubectl apply -f cluster.yaml   # spec.controlPlaneBaseUrl must be ${HOST_URL}"
+echo "     # After Connected=True and secret ${NAMESPACE}/vworkspace-agent-credentials exists:"
+echo "     # Stop Terminal A; restart WITH --agent-enabled=true (see step 6)."
 echo ""
-echo "4. Register (writes Cluster CR + credentials Secret in current kube context):"
+echo "4. Register or apply Cluster CR (Cluster controller must be running — step 3):"
 if [[ -n "${REG_TOKEN}" ]]; then
   echo "     export VWORKSPACE_CLUSTER_ID=${CLUSTER_UUID:-<uuid-from-server-seed>}"
   echo "     go run ./cmd/main.go register \\"
@@ -164,12 +161,18 @@ echo "         --token \"\${VWORKSPACE_REGISTRATION_TOKEN}\" \\"
 echo "         --cluster-name ${CLUSTER_CR_NAME} \\"
 register_cluster_id_flag
 echo ""
-echo "5. Run operator with Pull-mode agent (local make run):"
+echo "5. No ApplicationInstance CRs after register?"
+echo "     Server job may be stuck delivered/succeeded (kind recreated). Re-enqueue:"
+echo "       cd ../vworkspace-server && ./hack/redeploy-dev-instance.sh"
+echo ""
+echo "6. Run operator with Pull-mode agent (only AFTER registration + credentials secret):"
 echo "     make install   # if CRDs not on cluster"
-echo "     make run -- \\"
+echo "     export CONTROL_PLANE_BASE_URL=${HOST_URL}"
+echo "     go run ./cmd/main.go \\"
 echo "       --agent-enabled=true \\"
 echo "       --control-plane-base-url=\"\${CONTROL_PLANE_BASE_URL}\" \\"
-echo "       --agent-credentials-secret=vworkspace-agent-credentials"
+echo "       --agent-credentials-secret=vworkspace-agent-credentials \\"
+echo "       --agent-credentials-namespace=${NAMESPACE}"
 echo ""
 echo "     Helm (in-cluster):"
 echo "     helm upgrade vworkspace-operator ./charts/vworkspace-operator \\"
@@ -177,7 +180,7 @@ echo "       -n ${NAMESPACE} --reuse-values \\"
 echo "       --set agent.enabled=true \\"
 echo "       --set agent.controlPlaneBaseUrl=\"\${CONTROL_PLANE_BASE_URL}\""
 echo ""
-echo "6. Integration test against live server (optional, not CI by default):"
+echo "7. Integration test against live server (optional, not CI by default):"
 echo "     export CONTROL_PLANE_BASE_URL=\${CONTROL_PLANE_BASE_URL}"
 echo "     export VWORKSPACE_REGISTRATION_TOKEN=<fresh-one-time-token>"
 echo "     export VWORKSPACE_CLUSTER_ID=<server-uuid>"

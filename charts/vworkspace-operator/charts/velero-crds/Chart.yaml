@@ -1,0 +1,6 @@
+apiVersion: v2
+name: velero-crds
+description: Velero CustomResourceDefinitions (installed before bundle templates)
+type: application
+version: 0.0.0
+appVersion: "1.15.0"
