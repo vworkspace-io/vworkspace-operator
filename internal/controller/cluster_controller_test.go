@@ -214,6 +214,101 @@ func TestClusterReconcilerRegistrationFromSecret(t *testing.T) {
 	}
 }
 
+func TestClusterReconcilerAdoptsExistingRegistration(t *testing.T) {
+	server := newEventsServer(t)
+	defer server.Close()
+
+	scheme := newClusterTestScheme(t)
+
+	// Pre-existing bootstrap credentials Secret (cluster registered before observedToken existed).
+	credsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: agent.DefaultCredentialsSecret, Namespace: "vworkspace-system"},
+		Data: map[string][]byte{
+			agent.SecretKeyControlPlaneBaseURL: []byte(server.URL),
+			agent.SecretKeyClusterID:           []byte("cluster-local"),
+			agent.SecretKeyToken:               []byte("bootstrap-token"),
+		},
+	}
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-local-registration", Namespace: "vworkspace-system"},
+		Data:       map[string][]byte{opsv1alpha1.DefaultRegistrationTokenKey: []byte("vwksp-reg-consumed")},
+	}
+	cluster := &opsv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-local"},
+		Spec: opsv1alpha1.ClusterSpec{
+			ControlPlaneEndpoint:       server.URL,
+			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{Name: "cluster-local-registration"},
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, tokenSecret, credsSecret).WithStatusSubresource(cluster).Build()
+	httpClient, err := agent.NewHTTPClient(agent.Config{BaseURL: server.URL, ClusterID: "cluster-local", Token: "bootstrap-token"})
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	regClient := &fakeRegistrationClient{resp: agent.RegisterResponse{ClusterID: "cluster-local", Token: "bootstrap-token"}}
+
+	reconciler := &ClusterReconciler{
+		Client:             cl,
+		Scheme:             scheme,
+		AgentClient:        httpClient,
+		RegistrationClient: regClient,
+		CredentialsSecret:  agent.DefaultCredentialsSecret,
+		OperatorNamespace:  "vworkspace-system",
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if regClient.calls != 0 {
+		t.Fatalf("expected adoption without re-registration, got %d register calls", regClient.calls)
+	}
+	updated := &opsv1alpha1.Cluster{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if updated.Status.ObservedToken == "" {
+		t.Fatal("expected observedToken seeded on adoption")
+	}
+	if updated.Status.Phase != opsv1alpha1.ClusterPhaseConnected {
+		t.Fatalf("expected phase Connected after adoption, got %q", updated.Status.Phase)
+	}
+}
+
+func TestClusterReconcilerRejectsEmptyTokenSecretRefName(t *testing.T) {
+	scheme := newClusterTestScheme(t)
+	cluster := &opsv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-local"},
+		Spec: opsv1alpha1.ClusterSpec{
+			ControlPlaneEndpoint:       "https://workspace.example.org",
+			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
+	reconciler := &ClusterReconciler{
+		Client:            cl,
+		Scheme:            scheme,
+		CredentialsSecret: agent.DefaultCredentialsSecret,
+		OperatorNamespace: "vworkspace-system",
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	updated := &opsv1alpha1.Cluster{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if updated.Status.Phase != opsv1alpha1.ClusterPhasePending {
+		t.Fatalf("expected phase Pending for invalid ref, got %q", updated.Status.Phase)
+	}
+	cond, ok := conditions.Get(updated.Status.Conditions, opsv1alpha1.ConditionAuthenticated)
+	if !ok || cond.Status != metav1.ConditionFalse {
+		t.Fatalf("expected Authenticated=False for invalid ref, got %+v", cond)
+	}
+}
+
 func TestClusterReconcilerPendingWhenTokenSecretMissing(t *testing.T) {
 	scheme := newClusterTestScheme(t)
 	cluster := &opsv1alpha1.Cluster{

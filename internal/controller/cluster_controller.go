@@ -96,7 +96,26 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	if token != "" && tokenFingerprint(token) != cluster.Status.ObservedToken {
+	needRegister := token != "" && tokenFingerprint(token) != cluster.Status.ObservedToken
+
+	// Adoption: a cluster registered before observedToken existed has empty
+	// observedToken but already holds a bootstrap credentials Secret. Seed the
+	// fingerprint from the current token without re-exchanging the (already
+	// consumed) one-time token, so it does not spuriously flip to Error.
+	if needRegister && cluster.Status.ObservedToken == "" {
+		if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr == nil {
+			if err := r.adoptExistingRegistration(ctx, cluster, tokenFingerprint(token), secretName, namespace); err != nil {
+				return ctrl.Result{}, err
+			}
+			if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("reload cluster after adoption: %w", err)
+			}
+			prevConditions = append([]metav1.Condition(nil), cluster.Status.Conditions...)
+			needRegister = false
+		}
+	}
+
+	if needRegister {
 		if tokenSource == tokenSourceInline && r.Recorder != nil {
 			r.Recorder.Event(cluster, corev1.EventTypeWarning, "DeprecatedField",
 				"spec.registrationToken is deprecated; store the token in a Secret and use spec.registrationTokenSecretRef")
@@ -338,7 +357,10 @@ const (
 // token with a nil error means there is nothing to register (already registered or
 // adopting an existing credentials Secret).
 func (r *ClusterReconciler) resolveRegistrationToken(ctx context.Context, cluster *opsv1alpha1.Cluster, namespace string) (token, source string, err error) {
-	if ref := cluster.Spec.RegistrationTokenSecretRef; ref != nil && strings.TrimSpace(ref.Name) != "" {
+	if ref := cluster.Spec.RegistrationTokenSecretRef; ref != nil {
+		if strings.TrimSpace(ref.Name) == "" {
+			return "", tokenSourceSecret, fmt.Errorf("registrationTokenSecretRef.name must not be empty")
+		}
 		key := strings.TrimSpace(ref.Key)
 		if key == "" {
 			key = opsv1alpha1.DefaultRegistrationTokenKey
@@ -362,6 +384,21 @@ func (r *ClusterReconciler) resolveRegistrationToken(ctx context.Context, cluste
 	return "", "", nil
 }
 
+// adoptExistingRegistration records the fingerprint of an already-consumed token
+// for a cluster whose bootstrap credentials predate the observedToken field,
+// without re-exchanging the token.
+func (r *ClusterReconciler) adoptExistingRegistration(ctx context.Context, cluster *opsv1alpha1.Cluster, fingerprint, secretName, namespace string) error {
+	fresh := &opsv1alpha1.Cluster{}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), fresh); err != nil {
+		return fmt.Errorf("reload cluster for adoption: %w", err)
+	}
+	fresh.Status.ObservedToken = fingerprint
+	if fresh.Status.CredentialsSecretRef == nil {
+		fresh.Status.CredentialsSecretRef = &opsv1alpha1.SecretReference{Name: secretName, Namespace: namespace}
+	}
+	return r.Status().Update(ctx, fresh)
+}
+
 // finalizeCluster runs best-effort cleanup before the Cluster is removed. The
 // credentials Secret is garbage-collected through its controller owner reference,
 // so the finalizer only guarantees deterministic teardown ordering and removes
@@ -372,6 +409,12 @@ func (r *ClusterReconciler) finalizeCluster(ctx context.Context, cluster *opsv1a
 	}
 	logf.FromContext(ctx).Info("finalizing cluster; owned credentials Secret will be garbage-collected", "cluster", cluster.Name)
 	agent.SetConnectivityState("pull", 0)
+	if cluster.Status.Phase != opsv1alpha1.ClusterPhaseTerminating {
+		cluster.Status.Phase = opsv1alpha1.ClusterPhaseTerminating
+		if err := r.Status().Update(ctx, cluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update terminating status: %w", err)
+		}
+	}
 	controllerutil.RemoveFinalizer(cluster, opsv1alpha1.ClusterFinalizer)
 	if err := r.Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
