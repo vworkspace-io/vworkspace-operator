@@ -114,6 +114,9 @@ spec:
             - /bin/sh
             - -c
             - >-
-              mc alias set local http://minio.{{ $ns }}.svc:9000 {{ $accessKey }} {{ $secretKey }} &&
+              until mc alias set local http://minio.{{ $ns }}.svc:9000 {{ $accessKey }} {{ $secretKey }}; do
+                echo "waiting for minio..."
+                sleep 5
+              done &&
               mc mb -p local/{{ $bucket }} || true
 {{- end }}
