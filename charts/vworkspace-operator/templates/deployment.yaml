@@ -33,7 +33,7 @@ spec:
             - --agent-enabled={{ .Values.agent.enabled }}
             - --agent-poll-interval={{ .Values.agent.pollIntervalSeconds }}s
             {{- if .Values.agent.enabled }}
-            - --control-plane-base-url={{ .Values.agent.controlPlaneBaseUrl | quote }}
+            - --control-plane-base-url={{ .Values.agent.controlPlaneBaseUrl }}
             - --agent-credentials-secret={{ .Values.agent.credentialsSecret }}
             {{- end }}
             {{- if .Values.webhooks.enabled }}
