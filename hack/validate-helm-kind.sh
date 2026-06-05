@@ -14,6 +14,11 @@ INSTALL_FLUX_CRDS="${INSTALL_FLUX_CRDS:-false}"
 FLUX_VERSION="${FLUX_VERSION:-v2.4.0}"
 DELETE_CLUSTER="${DELETE_CLUSTER:-true}"
 USE_PUBLISHED_IMAGE="${USE_PUBLISHED_IMAGE:-0}"
+VALIDATE_BUNDLE="${VALIDATE_BUNDLE:-false}"
+VALUES_FILE="${VALUES_FILE:-}"
+if [[ "${VALIDATE_BUNDLE}" == "true" && "${USE_PUBLISHED_IMAGE}" == "0" ]]; then
+  USE_PUBLISHED_IMAGE=1
+fi
 
 CREATED_CLUSTER=false
 HELM_INSTALLED=false
@@ -69,7 +74,20 @@ else
   CREATED_CLUSTER=true
 fi
 
+HELM_EXTRA_ARGS=()
+if [[ "${VALIDATE_BUNDLE}" == "true" ]]; then
+  VALUES_FILE="${VALUES_FILE:-${CHART}/values-kind.yaml}"
+  USE_PUBLISHED_IMAGE="${USE_PUBLISHED_IMAGE:-1}"
+  log "bundle validation: using values file ${VALUES_FILE}"
+  HELM_EXTRA_ARGS+=(-f "${VALUES_FILE}")
+elif [[ -n "${VALUES_FILE}" ]]; then
+  HELM_EXTRA_ARGS+=(-f "${VALUES_FILE}")
+fi
+
 IMAGE_REPO="vworkspace/vworkspace-operator"
+if [[ "${VALIDATE_BUNDLE}" == "true" ]]; then
+  IMAGE_REPO="docker.io/vworkspace/vworkspace-operator"
+fi
 if [[ "${USE_PUBLISHED_IMAGE}" == "1" ]]; then
   IMAGE_TAG="${IMAGE_TAG:-latest}"
   log "using published image ${IMAGE_REPO}:${IMAGE_TAG}"
@@ -87,8 +105,9 @@ helm upgrade --install "${RELEASE}" "${CHART}" \
   --create-namespace \
   --set "image.repository=${IMAGE_REPO}" \
   --set "image.tag=${IMAGE_TAG}" \
+  "${HELM_EXTRA_ARGS[@]}" \
   --wait \
-  --timeout 3m
+  --timeout 5m
 HELM_INSTALLED=true
 
 log "waiting for operator deployment in ${NAMESPACE}"
@@ -98,7 +117,15 @@ kubectl -n "${NAMESPACE}" wait --for=condition=Available \
 log "checking vWorkspace CRDs"
 kubectl get crd applicationinstances.apps.vworkspace.io clusters.ops.vworkspace.io operations.ops.vworkspace.io
 
-if [[ "${INSTALL_FLUX_CRDS}" == "true" ]]; then
+if [[ "${VALIDATE_BUNDLE}" == "true" ]]; then
+  log "waiting for Flux controllers in flux-system"
+  kubectl -n flux-system wait --for=condition=Available \
+    deployment/helm-controller deployment/source-controller --timeout=300s
+  log "waiting for Velero in velero namespace"
+  kubectl -n velero wait --for=condition=Available deployment/velero --timeout=300s
+  kubectl get crd backups.velero.io
+  kubectl get backupstoragelocation -n velero
+elif [[ "${INSTALL_FLUX_CRDS}" == "true" ]]; then
   log "installing minimal Flux CRDs (${FLUX_VERSION}) for HelmRelease support"
   kubectl apply -f "https://github.com/fluxcd/helm-controller/releases/download/v1.1.0/helm-controller.crds.yaml"
   kubectl apply -f "https://github.com/fluxcd/source-controller/releases/download/v1.4.1/source-controller.crds.yaml"

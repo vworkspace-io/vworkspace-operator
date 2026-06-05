@@ -1,0 +1,6 @@
+{{- if and .Values.velero.enabled .Values.velero.installed }}
+{{- range $path, $bytes := .Files.Glob "files/velero/crds/*.yaml" }}
+---
+{{ $.Files.Get $path }}
+{{- end }}
+{{- end }}

@@ -2,28 +2,41 @@
 
 Install the operator, CRDs, and RBAC via Helm. User-facing install guide: [docs/install/helm.md](../../docs/install/helm.md).
 
+Session 3 dogfood profile: [values-kind.yaml](values-kind.yaml) — see hub [session-3-helm-path-design.md](https://github.com/vworkspace-io/vworkspace/blob/main/docs/dogfooding/session-3-helm-path-design.md).
+
 ## Install from repository checkout
+
+Operator only (default):
 
 ```bash
 helm install vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system \
   --create-namespace \
-  --set image.tag=latest \
-  --set agent.enabled=true \
-  --set agent.controlPlaneBaseUrl=http://mock-control-plane:8080
+  --set image.tag=latest
+```
+
+Session 3 bundle (Flux + Velero + MinIO + metrics on kind):
+
+```bash
+helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
+  -n vworkspace-system --create-namespace \
+  -f charts/vworkspace-operator/values-kind.yaml \
+  --set agent.controlPlaneBaseUrl=http://127.0.0.1:8069
 ```
 
 Validate rendering without applying:
 
 ```bash
 helm template vworkspace-operator ./charts/vworkspace-operator \
-  --namespace vworkspace-system
+  --namespace vworkspace-system \
+  -f charts/vworkspace-operator/values-kind.yaml
 ```
 
 Validate on kind:
 
 ```bash
 ./hack/validate-helm-kind.sh
+VALIDATE_BUNDLE=true ./hack/validate-helm-kind.sh
 ```
 
 ## Values
@@ -33,14 +46,18 @@ Validate on kind:
 | `image.repository` | `vworkspace/vworkspace-operator` | Operator image |
 | `image.tag` | Chart `appVersion` | Image tag |
 | `agent.enabled` | `false` | Enable Pull-mode job poller |
-| `agent.controlPlaneBaseUrl` | `https://odoo.example.org` | Odoo or mock control plane base URL |
+| `agent.controlPlaneBaseUrl` | `https://control-plane.example.org` | Control plane base URL |
 | `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret for agent bearer token |
 | `crds.install` | `true` | Install CRDs from `files/crds/` |
+| `flux.enabled` | `false` | Bundle: Flux helm-controller + source-controller |
+| `velero.enabled` | `false` | Bundle: Velero server + CRDs |
+| `velero.minio.enabled` | `false` | Bundle: in-cluster MinIO for kind |
+| `manager.metricsBindAddress` | `0` (off) | Set `:8443` for HTTPS `/metrics` |
 
-See [values.yaml](values.yaml) for the full list.
+See [values.yaml](values.yaml) and [values-kind.yaml](values-kind.yaml) for the full list.
 
 ## Notes
 
-- This chart installs **only** the vworkspace-operator controller. Flux, Velero, cert-manager, and other prerequisites remain separate ([prerequisites.md](../../docs/install/prerequisites.md)).
-- CRD files live under `files/crds/` (not Helm's reserved `crds/` directory) and are copied from `config/crd/bases/` during chart maintenance; run `make manifests` before refreshing chart CRDs.
+- Default values install **only** the operator. Optional bundle flags add Flux and Velero — [prerequisites.md](../../docs/install/prerequisites.md).
+- CRD files live under `files/crds/` (operator) and `files/velero/crds/` (Velero bundle); Flux manifests are under `files/flux/`.
 - Post-install hints are rendered in `templates/NOTES.txt`.

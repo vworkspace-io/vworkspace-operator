@@ -40,4 +40,15 @@ Deployment: {{ include "vworkspace-operator.fullname" . }}
 {{- end }}
 
 Install guide: docs/install/helm.md
-Prerequisites (Flux, Velero, cert-manager): docs/install/prerequisites.md
+Prerequisites (optional Flux / Velero bundle): docs/install/prerequisites.md
+{{- if .Values.flux.enabled }}
+
+Flux controllers (helm-controller, source-controller) are enabled in namespace {{ .Values.flux.namespace }}.
+{{- end }}
+{{- if .Values.velero.enabled }}
+
+Velero is enabled in namespace {{ .Values.velero.namespace }}.
+{{- if .Values.velero.minio.enabled }}
+MinIO object store is deployed for kind backup testing.
+{{- end }}
+{{- end }}

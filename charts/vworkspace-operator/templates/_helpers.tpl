@@ -47,3 +47,12 @@ control-plane: controller-manager
 {{- $tag := default .Chart.AppVersion .Values.image.tag }}
 {{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}
+
+{{- define "vworkspace-operator.metricsPort" -}}
+{{- $addr := .Values.manager.metricsBindAddress -}}
+{{- if hasPrefix ":" $addr -}}
+{{- trimPrefix ":" $addr -}}
+{{- else -}}
+8443
+{{- end -}}
+{{- end }}

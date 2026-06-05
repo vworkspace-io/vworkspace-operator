@@ -1,0 +1,59 @@
+# Session 3 dogfood profile for kind + host-run vWorkspace Server.
+# Hub design: vworkspace/docs/dogfooding/session-3-helm-path-design.md
+#
+# Install:
+#   helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
+#     -n vworkspace-system --create-namespace \
+#     -f charts/vworkspace-operator/values-kind.yaml \
+#     --set agent.controlPlaneBaseUrl="${CONTROL_PLANE_BASE_URL}"
+#
+# Registration (in-cluster — no host go run):
+#   kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
+#     /manager register \
+#       --control-plane-endpoint="${CONTROL_PLANE_BASE_URL}" \
+#       --token="${REGISTRATION_TOKEN}" \
+#       --cluster-name=cluster-local \
+#       --cluster-id="${CLUSTER_ID}"
+#
+# Then enable agent:
+#   helm upgrade vworkspace-operator ./charts/vworkspace-operator \
+#     -n vworkspace-system --reuse-values --set agent.enabled=true
+
+image:
+  repository: docker.io/vworkspace/vworkspace-operator
+  tag: latest
+  pullPolicy: IfNotPresent
+
+crds:
+  install: true
+
+agent:
+  enabled: false
+  controlPlaneBaseUrl: "http://127.0.0.1:8069"
+  credentialsSecret: vworkspace-agent-credentials
+  pollIntervalSeconds: 5
+
+manager:
+  leaderElect: true
+  healthProbeBindAddress: ":8081"
+  metricsBindAddress: ":8443"
+
+flux:
+  enabled: true
+  installed: true
+  namespace: flux-system
+  version: v2.4.0
+
+velero:
+  enabled: true
+  installed: true
+  namespace: velero
+  minio:
+    enabled: true
+
+certManager:
+  enabled: false
+externalSecrets:
+  enabled: false
+webhooks:
+  enabled: false
