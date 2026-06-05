@@ -27,6 +27,11 @@ helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
 Validate rendering without applying:
 
 ```bash
+# Operator only (default values)
+helm template vworkspace-operator ./charts/vworkspace-operator \
+  --namespace vworkspace-system
+
+# Session 3 bundle profile
 helm template vworkspace-operator ./charts/vworkspace-operator \
   --namespace vworkspace-system \
   -f charts/vworkspace-operator/values-kind.yaml
