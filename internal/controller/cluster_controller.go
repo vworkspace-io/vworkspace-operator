@@ -124,6 +124,11 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 	// Seed the fingerprint without re-exchanging the consumed one-time token, so it
 	// does not spuriously flip to Error. Gated on a proven prior registration so a
 	// genuinely new token (no prior registration recorded) still triggers exchange.
+	//
+	// Tradeoff: on the first post-upgrade reconcile this also adopts a token that the
+	// admin may have just swapped in to deliberately re-register. Distinguishing that
+	// race needs an explicit re-registration trigger (design open question #1); until
+	// then any subsequent token change (fingerprint != observedToken) re-registers.
 	if cluster.Status.ObservedToken == "" && registrationConsumed(cluster) {
 		if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr == nil {
 			if err := r.adoptExistingRegistration(ctx, cluster, tokenFingerprint(token), secretName, namespace); err != nil {
@@ -136,10 +141,6 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 		}
 	}
 
-	if tokenSource == tokenSourceInline && r.Recorder != nil {
-		r.Recorder.Event(cluster, corev1.EventTypeWarning, "DeprecatedField",
-			"spec.registrationToken is deprecated; store the token in a Secret and use spec.registrationTokenSecretRef")
-	}
 	if err := r.registerCluster(ctx, cluster, token, tokenSource, secretName, namespace); err != nil {
 		log.Error(err, "cluster registration failed")
 		cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
@@ -151,6 +152,12 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 		}
 		r.reportConditions(cluster, prev)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, true, nil
+	}
+	// Emit the inline-token deprecation warning only after a successful exchange so
+	// repeated failed retries do not spam the event stream.
+	if tokenSource == tokenSourceInline && r.Recorder != nil {
+		r.Recorder.Event(cluster, corev1.EventTypeWarning, "DeprecatedField",
+			"spec.registrationToken is deprecated; store the token in a Secret and use spec.registrationTokenSecretRef")
 	}
 	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
 		return ctrl.Result{}, true, fmt.Errorf("reload cluster after registration: %w", err)
