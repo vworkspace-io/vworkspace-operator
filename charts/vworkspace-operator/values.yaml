@@ -53,6 +53,9 @@ flux:
 velero:
   enabled: false
   installed: true
+  # Install Velero CRDs from the velero-crds subchart. Set false when velero.enabled
+  # but velero.installed=false (BYO Velero — CRDs already present).
+  crdsInstall: true
   namespace: velero
   image:
     repository: velero/velero
