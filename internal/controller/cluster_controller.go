@@ -327,7 +327,7 @@ func (r *ClusterReconciler) reportConditions(cluster *opsv1alpha1.Cluster, prev 
 func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1alpha1.Cluster, token, tokenSource, secretName, namespace string) error {
 	baseURL := controlPlaneEndpoint(cluster)
 	if baseURL == "" {
-		return fmt.Errorf("spec.controlPlaneEndpoint is required for registration")
+		return fmt.Errorf("spec.controlPlaneEndpoint (or the deprecated spec.controlPlaneBaseUrl) is required for registration")
 	}
 
 	regClient := r.RegistrationClient
