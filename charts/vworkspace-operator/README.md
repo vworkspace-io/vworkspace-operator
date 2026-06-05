@@ -64,5 +64,5 @@ See [values.yaml](values.yaml) and [values-kind.yaml](values-kind.yaml) for the 
 ## Notes
 
 - Default values install **only** the operator. Optional bundle flags add Flux and Velero — [prerequisites.md](../../docs/install/prerequisites.md).
-- CRD files live under `files/crds/` (operator) and `files/velero/crds/` (Velero bundle); Flux manifests are under `files/flux/`.
+- CRD files live under `files/crds/` (operator) and `charts/velero-crds/crds/` (Velero bundle, installed before Velero templates when `velero.enabled=true`); Flux manifests are under `files/flux/`.
 - Post-install hints are rendered in `templates/NOTES.txt`.

@@ -47,6 +47,7 @@ flux:
 velero:
   enabled: true
   installed: true
+  crdsInstall: true
   namespace: velero
   minio:
     enabled: true

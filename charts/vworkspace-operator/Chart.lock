@@ -1,0 +1,6 @@
+dependencies:
+- name: velero-crds
+  repository: ""
+  version: 0.0.0
+digest: sha256:187dcf5b588a4234167bda5a6bc824e14ba1ebbcd959d2564d901a32bbcf38aa
+generated: "2026-06-05T23:30:51.011215099+03:30"
