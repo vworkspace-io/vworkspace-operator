@@ -43,13 +43,30 @@ func (p veleroParameters) csiSnapshotClassName() string {
 	return p.SnapshotClassName
 }
 
+const DefaultVeleroNamespace = "velero"
+
 // VeleroEngine materializes velero Backup and Restore resources.
 type VeleroEngine struct {
-	Client client.Client
+	Client    client.Client
+	Namespace string
 }
 
 func NewVeleroEngine(c client.Client) *VeleroEngine {
-	return &VeleroEngine{Client: c}
+	return NewVeleroEngineWithNamespace(c, DefaultVeleroNamespace)
+}
+
+func NewVeleroEngineWithNamespace(c client.Client, namespace string) *VeleroEngine {
+	if namespace == "" {
+		namespace = DefaultVeleroNamespace
+	}
+	return &VeleroEngine{Client: c, Namespace: namespace}
+}
+
+func (e *VeleroEngine) veleroNamespace() string {
+	if e.Namespace == "" {
+		return DefaultVeleroNamespace
+	}
+	return e.Namespace
 }
 
 func (e *VeleroEngine) Name() opsv1alpha1.OperationEngine {
@@ -72,21 +89,29 @@ func (e *VeleroEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operatio
 }
 
 func (e *VeleroEngine) materializeBackup(ctx context.Context, op *opsv1alpha1.Operation, target *appsv1alpha1.ApplicationInstance, params veleroParameters) error {
+	includedNS := targetNamespace(target)
 	backup := &unstructured.Unstructured{}
 	backup.SetGroupVersionKind(schema.GroupVersionKind{Group: "velero.io", Version: "v1", Kind: "Backup"})
 	backup.SetName(op.Name)
-	backup.SetNamespace(target.Namespace)
+	backup.SetNamespace(e.veleroNamespace())
 	_, err := controllerutil.CreateOrUpdate(ctx, e.Client, backup, func() error {
-		if err := controllerutil.SetOwnerReference(op, backup, e.Client.Scheme()); err != nil {
-			return err
-		}
-		if err := unstructured.SetNestedStringSlice(backup.Object, []string{target.Namespace}, "spec", "includedNamespaces"); err != nil {
-			return err
-		}
-		if params.StorageLocation != "" {
-			if err := unstructured.SetNestedField(backup.Object, params.StorageLocation, "spec", "storageLocation"); err != nil {
+		objectMeta := metav1.ObjectMeta{Labels: backup.GetLabels()}
+		applyOperationLabels(&objectMeta, op)
+		backup.SetLabels(objectMeta.Labels)
+		if op.Namespace == backup.GetNamespace() {
+			if err := controllerutil.SetOwnerReference(op, backup, e.Client.Scheme()); err != nil {
 				return err
 			}
+		}
+		if err := unstructured.SetNestedStringSlice(backup.Object, []string{includedNS}, "spec", "includedNamespaces"); err != nil {
+			return err
+		}
+		storageLocation := params.StorageLocation
+		if storageLocation == "" {
+			storageLocation = "default"
+		}
+		if err := unstructured.SetNestedField(backup.Object, storageLocation, "spec", "storageLocation"); err != nil {
+			return err
 		}
 		if params.SnapshotVolumes != nil {
 			if err := unstructured.SetNestedField(backup.Object, *params.SnapshotVolumes, "spec", "snapshotVolumes"); err != nil {
@@ -125,10 +150,15 @@ func (e *VeleroEngine) materializeRestore(ctx context.Context, op *opsv1alpha1.O
 	restore := &unstructured.Unstructured{}
 	restore.SetGroupVersionKind(schema.GroupVersionKind{Group: "velero.io", Version: "v1", Kind: "Restore"})
 	restore.SetName(op.Name)
-	restore.SetNamespace(target.Namespace)
+	restore.SetNamespace(e.veleroNamespace())
 	_, err := controllerutil.CreateOrUpdate(ctx, e.Client, restore, func() error {
-		if err := controllerutil.SetOwnerReference(op, restore, e.Client.Scheme()); err != nil {
-			return err
+		objectMeta := metav1.ObjectMeta{Labels: restore.GetLabels()}
+		applyOperationLabels(&objectMeta, op)
+		restore.SetLabels(objectMeta.Labels)
+		if op.Namespace == restore.GetNamespace() {
+			if err := controllerutil.SetOwnerReference(op, restore, e.Client.Scheme()); err != nil {
+				return err
+			}
 		}
 		if err := unstructured.SetNestedField(restore.Object, params.BackupName, "spec", "backupName"); err != nil {
 			return err
@@ -170,7 +200,7 @@ func (e *VeleroEngine) Status(ctx context.Context, op *opsv1alpha1.Operation) (S
 	}
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: op.Namespace, Name: op.Name}, obj); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: e.veleroNamespace(), Name: op.Name}, obj); err != nil {
 		return Status{}, fmt.Errorf("get velero resource: %w", err)
 	}
 	phase, _, _ := unstructured.NestedString(obj.Object, "status", "phase")

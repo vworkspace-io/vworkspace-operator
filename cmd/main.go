@@ -83,6 +83,7 @@ func main() {
 	var agentCredentialsNamespace string
 	var enableWebhooks bool
 	var approvalClaimSecret string
+	var veleroNamespace string
 	var tlsOpts []func(*tls.Config)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to.")
@@ -118,6 +119,12 @@ func main() {
 	flag.BoolVar(&enableWebhooks, "webhooks-enabled", false, "Enable validating admission webhooks.")
 	flag.StringVar(&approvalClaimSecret, "approval-claim-secret", os.Getenv("VWORKSPACE_APPROVAL_CLAIM_SECRET"),
 		"HMAC secret for verifying Operation.spec.approvals.claim (vws1 tokens from the control plane).")
+	defaultVeleroNS := engines.DefaultVeleroNamespace
+	if v := strings.TrimSpace(os.Getenv("VELERO_NAMESPACE")); v != "" {
+		defaultVeleroNS = v
+	}
+	flag.StringVar(&veleroNamespace, "velero-namespace", defaultVeleroNS,
+		"Namespace where Velero Backup and Restore CRs are created (must match Velero server install namespace).")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -230,7 +237,7 @@ func main() {
 
 	engineRegistry := engines.NewRegistry(
 		engines.NewHelmEngine(mgr.GetClient()),
-		engines.NewVeleroEngine(mgr.GetClient()),
+		engines.NewVeleroEngineWithNamespace(mgr.GetClient(), veleroNamespace),
 		engines.NewJobEngine(mgr.GetClient()),
 		engines.NewWorkflowEngine(mgr.GetClient()),
 		engines.NewHelmHookJobEngine(mgr.GetClient()),

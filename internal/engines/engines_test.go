@@ -64,12 +64,16 @@ func TestVeleroEngineCreatesBackup(t *testing.T) {
 
 	backup := &unstructured.Unstructured{}
 	backup.SetGroupVersionKind(schema.GroupVersionKind{Group: "velero.io", Version: "v1", Kind: "Backup"})
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "backup-1"}, backup); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "velero", Name: "backup-1"}, backup); err != nil {
 		t.Fatalf("expected backup CR: %v", err)
 	}
 	namespaces, _, _ := unstructured.NestedStringSlice(backup.Object, "spec", "includedNamespaces")
 	if len(namespaces) != 1 || namespaces[0] != "team-a" {
 		t.Fatalf("unexpected includedNamespaces: %v", namespaces)
+	}
+	location, _, _ := unstructured.NestedString(backup.Object, "spec", "storageLocation")
+	if location != "default" {
+		t.Fatalf("unexpected default storageLocation: %q", location)
 	}
 }
 
@@ -106,7 +110,7 @@ func TestVeleroEngineCreatesBackupWithDocumentedParameters(t *testing.T) {
 
 	backup := &unstructured.Unstructured{}
 	backup.SetGroupVersionKind(schema.GroupVersionKind{Group: "velero.io", Version: "v1", Kind: "Backup"})
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "backup-2"}, backup); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: "velero", Name: "backup-2"}, backup); err != nil {
 		t.Fatalf("expected backup CR: %v", err)
 	}
 	location, _, _ := unstructured.NestedString(backup.Object, "spec", "storageLocation")

@@ -40,6 +40,9 @@ spec:
             - --webhooks-enabled=true
             - --webhook-cert-path={{ .Values.webhooks.certPath }}
             {{- end }}
+            {{- if .Values.velero.enabled }}
+            - --velero-namespace={{ .Values.velero.namespace }}
+            {{- end }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
