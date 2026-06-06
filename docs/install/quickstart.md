@@ -106,10 +106,10 @@ Full procedure and validation: [cluster-bootstrap.md](cluster-bootstrap.md#step-
 
 ### Break-glass: register CLI
 
-For debugging only — not the supported path:
+For debugging only — not the supported path. Use the Deployment name from Step 1 (`vworkspace-operator` for Option A, `vworkspace-app-operator` for Option B):
 
 ```
-kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
+kubectl -n vworkspace-system exec deploy/<operator-deployment> -- \
   /manager register \
     --token=<one-time-token> \
     --control-plane-endpoint=https://workspace.example.org \
@@ -235,7 +235,7 @@ If `ApplicationInstance` is stuck in `Reconciling=True`:
 - If `kubectl get helmrelease -A` shows objects but `kubectl get deploy -A | grep helm-controller` is empty, you have CRDs only — install Flux controllers ([cluster-bootstrap.md#flux-contract-only-vs-full-reconcile](cluster-bootstrap.md#flux-contract-only-vs-full-reconcile)) before expecting `Ready`.
 - Check the underlying `HelmRelease`: `kubectl get helmrelease -A`. If Flux reports `Ready=False`, the chart's own reconcile is failing; `kubectl describe helmrelease` shows the reason.
 - Check the chart source: `kubectl get helmrepository,ocirepository -A`. If the source cannot be fetched, Flux will surface the reason.
-- Check the operator's logs: `kubectl logs -n vworkspace-system deploy/vworkspace-app-operator`. The operator's structured logs include the `application_instance` name on every relevant line.
+- Check the operator's logs: `kubectl logs -n vworkspace-system deploy/<operator-deployment>` (same Deployment name as Step 1). The operator's structured logs include the `application_instance` name on every relevant line.
 
 More detail is in [../operate/troubleshooting.md](../operate/troubleshooting.md).
 
