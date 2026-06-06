@@ -1,7 +1,7 @@
 # Helm install guide
 
 **Status:** Alpha
-**Last Updated:** 2026-06-05
+**Last Updated:** 2026-06-06
 
 This document is the full reference for installing `vworkspace-operator` with the in-repo Helm chart at `charts/vworkspace-operator/`. For the shortest path, start with [quickstart.md](quickstart.md) Option A.
 
@@ -34,20 +34,10 @@ These values are exercised by `./hack/validate-helm-kind.sh`:
 | `image.repository` | `vworkspace/vworkspace-operator` | Chart default |
 | `image.tag` | `latest` or locally built `helm-validate` | Use `latest` when pulling from Docker Hub |
 | `crds.install` | `true` | Installs ApplicationInstance, Operation, Cluster CRDs |
-| `agent.enabled` | `false` | Enable after cluster registration |
-| `agent.controlPlaneBaseUrl` | Odoo or mock URL | Required when `agent.enabled=true` |
-| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Written by registration |
+| `agent.pollIntervalSeconds` | `30` (default) or `5` in `values-kind.yaml` | Operator-wide long-poll interval |
+| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Default name; written by `Cluster` reconciler |
 
-Example with Pull-mode enabled against mock control plane (local dev):
-
-```bash
-helm install vworkspace-operator ./charts/vworkspace-operator \
-  -n vworkspace-system \
-  --create-namespace \
-  --set image.tag=latest \
-  --set agent.enabled=true \
-  --set agent.controlPlaneBaseUrl=http://mock-control-plane:8080
-```
+Pull-mode connectivity is **not** configured at install time. After `helm install`, apply a token `Secret` and `Cluster` CR ([cluster-bootstrap.md](cluster-bootstrap.md)). Example templates: `charts/vworkspace-operator/examples/cluster-bootstrap/`.
 
 ## Values reference
 
@@ -58,10 +48,8 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
 | `image.pullPolicy` | `IfNotPresent` | Kubernetes pull policy |
 | `replicaCount` | `1` | Manager Deployment replicas |
 | `crds.install` | `true` | Render CRDs from `files/crds/` via chart template |
-| `agent.enabled` | `false` | Start Pull-mode job poller |
-| `agent.controlPlaneBaseUrl` | `https://odoo.example.org` | control plane base URL (flag `--control-plane-base-url` (alias: `--control-plane-base-url`)) |
-| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret with `token`, `cluster-id`, `control-plane-base-url` |
-| `agent.pollIntervalSeconds` | `30` | Long-poll interval |
+| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Default credentials Secret name (overridden by `Cluster.status.credentialsSecretRef`) |
+| `agent.pollIntervalSeconds` | `30` | Operator-wide Pull-mode long-poll interval |
 | `rbac.create` | `true` | ClusterRole and ClusterRoleBinding |
 | `serviceAccount.create` | `true` | Dedicated ServiceAccount |
 | `manager.metricsBindAddress` | `0` (off) | Set to `:8443` to expose HTTPS `/metrics` (see [observability.md](../operate/observability.md#prometheus-scrape)) |
@@ -82,16 +70,15 @@ Hub design: [session-3-helm-path-design.md](https://github.com/vworkspace-io/vwo
 | `certManager.enabled` | `false` | Placeholder — not bundled in v1 |
 | `externalSecrets.enabled` | `false` | Placeholder — not bundled in v1 |
 
-**Kind / dogfood profile** — single install with metrics, Flux, Velero, and MinIO:
+**Kind / dogfood profile** — single install with metrics, Flux, Velero, and MinIO (no connectivity Helm values):
 
 ```bash
 helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system --create-namespace \
-  -f charts/vworkspace-operator/values-kind.yaml \
-  --set agent.controlPlaneBaseUrl="${CONTROL_PLANE_BASE_URL}"
+  -f charts/vworkspace-operator/values-kind.yaml
 ```
 
-Pin the operator image at run time: `--set image.tag=<sha-tag>`.
+Then apply cluster bootstrap manifests ([examples/cluster-bootstrap/](https://github.com/vworkspace-io/vworkspace-operator/blob/main/charts/vworkspace-operator/examples/cluster-bootstrap/)). Pin the operator image at run time: `--set image.tag=<sha-tag>`.
 
 ## CRD installation
 
@@ -103,38 +90,26 @@ To manage CRDs outside Helm (GitOps or cluster bootstrap), set `crds.install=fal
 kubectl apply -f charts/vworkspace-operator/files/crds/
 ```
 
-## Post-install: register and enable agent
+## Post-install: connect to the control plane
 
-After `helm install`, the operator is running but not yet connected to Odoo.
+After `helm install`, the operator is running but not yet connected to vWorkspace Server. Connectivity is declarative — no second `helm upgrade`, no `agent.enabled` toggle.
 
-1. **Register in-cluster** — exchange a one-time token for bootstrap credentials ([cluster-bootstrap.md](cluster-bootstrap.md)); no host `go run`:
+1. **Issue a registration token** in vWorkspace Server (Cluster Registry). See [cluster-bootstrap.md](cluster-bootstrap.md) Step 3.
 
-   ```bash
-   kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
-     /manager register \
-       --token=<one-time-token> \
-       --control-plane-endpoint="${CONTROL_PLANE_BASE_URL}" \
-       --cluster-name=cluster-local \
-       --cluster-id="${CLUSTER_ID}"
-   ```
-
-   Alternative: apply a `Cluster` CR with `spec.registrationToken` (same as quickstart Step 2).
-
-   Registration creates `Secret/vworkspace-agent-credentials` in the release namespace.
-
-2. **Enable Pull-mode** (if not already set at install time):
+2. **Apply bootstrap manifests** — token `Secret` + `Cluster` CR referencing that Secret:
 
    ```bash
-   helm upgrade vworkspace-operator ./charts/vworkspace-operator \
-     -n vworkspace-system \
-     --reuse-values \
-     --set agent.enabled=true \
-     --set agent.controlPlaneBaseUrl=https://workspace.example.org
+   # Edit placeholders first, then apply from repo root:
+   kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/registration-token.secret.yaml
+   kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/cluster.yaml
+   kubectl get cluster cluster-local -w
    ```
 
-3. **Validate** — see [quickstart.md](quickstart.md) Step 3.
+   The reconciler exchanges the token, writes `Secret/vworkspace-agent-credentials`, and the Pull-mode agent starts automatically when credentials exist.
 
-Helm prints the same hints in the release notes (`NOTES.txt`).
+3. **Validate** — `Cluster.status.phase=Connected` and `Connected=True`; see [quickstart.md](quickstart.md) Step 3.
+
+Helm prints the same hints in the release notes (`NOTES.txt`). Break-glass `kubectl exec … /manager register` is documented in [cluster-bootstrap.md#break-glass-register-cli](cluster-bootstrap.md#break-glass-register-cli).
 
 ## Upgrade and uninstall
 
@@ -230,7 +205,7 @@ kubectl get helmreleases -A
 ```bash
 helm template vworkspace-operator ./charts/vworkspace-operator \
   --namespace vworkspace-system \
-  --set agent.enabled=true
+  -f charts/vworkspace-operator/values-kind.yaml
 ```
 
 ## Related material

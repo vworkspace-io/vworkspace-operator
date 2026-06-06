@@ -14,8 +14,9 @@ Deployment: {{ include "vworkspace-operator.fullname" . }}
 
 3. Connect this cluster to vWorkspace Server (declarative golden path):
 
-  kubectl apply -f registration-token.secret.yaml
-  kubectl apply -f cluster.yaml
+  # Edit placeholders in examples/cluster-bootstrap/ (paths relative to chart root), then:
+  kubectl apply -f examples/cluster-bootstrap/registration-token.secret.yaml
+  kubectl apply -f examples/cluster-bootstrap/cluster.yaml
 
   The Cluster reconciler exchanges the token, writes Secret/{{ .Values.agent.credentialsSecret }},
   and the Pull-mode agent starts automatically when credentials exist.

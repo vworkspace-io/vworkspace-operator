@@ -1,0 +1,15 @@
+# Declarative cluster registration (cluster-bootstrap v2 golden path).
+# Cluster is cluster-scoped (no metadata.namespace). The token Secret must live in
+# the operator namespace (vworkspace-system) — see registration-token.secret.yaml.
+apiVersion: ops.vworkspace.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-local
+spec:
+  # HTTPS base URL reachable from operator pods (kind on Linux: host gateway, not 127.0.0.1).
+  controlPlaneEndpoint: https://workspace.example.org
+  # Optional when the token is bound to a known cluster; server returns clusterId on first registration.
+  # clusterId: <server-issued-uuid>
+  registrationTokenSecretRef:
+    name: cluster-local-registration
+    key: registrationToken

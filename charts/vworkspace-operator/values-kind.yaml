@@ -6,7 +6,8 @@
 #     -n vworkspace-system --create-namespace \
 #     -f charts/vworkspace-operator/values-kind.yaml
 #
-# Register via Cluster CR + token Secret (see cluster-bootstrap-v2 design).
+# Connect: apply token Secret + Cluster CR (no second helm pass, no agent toggle).
+#   charts/vworkspace-operator/examples/cluster-bootstrap/
 # Break-glass: kubectl exec ... /manager register ...
 
 image:

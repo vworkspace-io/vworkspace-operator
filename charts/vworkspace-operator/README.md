@@ -43,6 +43,17 @@ Validate on kind:
 VALIDATE_BUNDLE=true ./hack/validate-helm-kind.sh
 ```
 
+## Cluster bootstrap (after install)
+
+Connectivity is not configured via Helm values. Apply a token `Secret` and `Cluster` CR — see [examples/cluster-bootstrap/](examples/cluster-bootstrap/).
+
+```bash
+# Edit placeholders, then:
+kubectl apply -f examples/cluster-bootstrap/registration-token.secret.yaml
+kubectl apply -f examples/cluster-bootstrap/cluster.yaml
+kubectl get cluster cluster-local -w
+```
+
 ## Values
 
 | Key | Default | Description |

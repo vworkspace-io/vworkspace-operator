@@ -1,7 +1,7 @@
 # Prerequisites
 
 **Status:** Alpha
-**Last Updated:** 2026-06-05
+**Last Updated:** 2026-06-06
 
 This document is the prerequisites checklist for installing `vworkspace-operator`. Most items are properties of the cluster you already run; a few have opinionated recommendations for the cases that warrant them.
 
@@ -61,7 +61,7 @@ Two notes:
 
 The operator's Pull-mode default needs outbound HTTPS (port 443) to the vWorkspace Server control plane. No inbound port on the cluster is required for Pull. Concretely:
 
-- The operator pod's outbound HTTP client must reach `https://<control-plane-host>` for `/api/agent/*` endpoints. The host and (optional) proxy are configured in `Cluster.spec.controlPlaneBaseUrl` and `Cluster.spec (egress proxy — see pull-mode docs)`.
+- The operator pod's outbound HTTP client must reach `https://<control-plane-host>` for `/api/agent/*` endpoints. The host is set in `Cluster.spec.controlPlaneEndpoint` (or the deprecated `controlPlaneBaseUrl` alias) when you apply the bootstrap `Cluster` CR — not via Helm values.
 - Velero needs outbound access to the configured `BackupStorageLocation` (S3, GCS, Azure Blob, MinIO, on-prem object store). Configure your egress firewall accordingly.
 - external-secrets needs outbound access to whichever upstream secret store you use (Vault, AWS, GCP, Azure, Akeyless, etc.).
 - cert-manager needs outbound access to your ACME endpoint (typically Let's Encrypt).
