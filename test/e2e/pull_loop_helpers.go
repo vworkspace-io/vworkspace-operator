@@ -33,6 +33,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
+	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/test/mockcontrolplane"
 	"github.com/vworkspace-io/vworkspace-operator/test/utils"
@@ -210,6 +211,19 @@ stringData:
 	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed())
 }
 
+func seedClusterCRForPullLoop() {
+	By("applying Cluster CR so the credential-driven agent runtime can start")
+	manifest := fmt.Sprintf(`apiVersion: ops.vworkspace.io/v1alpha1
+kind: Cluster
+metadata:
+  name: %s
+spec:
+  clusterId: %s
+  controlPlaneEndpoint: %s
+`, pullLoopClusterID, pullLoopClusterID, mockOdooServiceURL())
+	Expect(utils.KubectlApplyYAML(manifest)).To(Succeed())
+}
+
 func deployOperatorWithAgent() {
 	By("installing CRDs")
 	cmd := exec.Command("make", "install")
@@ -220,6 +234,7 @@ func deployOperatorWithAgent() {
 	Expect(utils.EnsureNamespace(namespace)).To(Succeed())
 
 	seedAgentCredentialsSecret()
+	seedClusterCRForPullLoop()
 
 	By("labeling operator namespace with restricted pod security")
 	cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
@@ -227,33 +242,22 @@ func deployOperatorWithAgent() {
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("deploying operator with Pull-mode agent enabled")
+	By("deploying operator (Pull-mode agent starts when Cluster + credentials exist)")
 	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Failed to deploy operator")
 
-	Eventually(func(g Gomega) {
-		cmd := exec.Command("kubectl", "rollout", "status",
-			"deployment/vworkspace-operator-controller-manager", "-n", namespace, "--timeout=60s")
-		_, err := utils.Run(cmd)
-		g.Expect(err).NotTo(HaveOccurred())
-	}, 3*time.Minute, 5*time.Second).Should(Succeed())
-
-	patch := fmt.Sprintf(`[
+	patch := `[
   {"op": "replace", "path": "/spec/strategy", "value": {"type": "Recreate"}},
-  {"op": "replace", "path": "/spec/template/spec/containers/0/args/3", "value": "--agent-enabled=true"},
-  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--control-plane-base-url=%s"},
-  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--cluster-id=%s"},
-  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-token=%s"},
   {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-poll-interval=5s"},
-  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-credentials-secret=%s"},
-  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-credentials-namespace=%s"}
-]`, mockOdooServiceURL(), pullLoopClusterID, pullLoopBootstrapToken, agentCredentialsSecret, namespace)
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-credentials-secret=` + agentCredentialsSecret + `"},
+  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--agent-credentials-namespace=` + namespace + `"}
+]`
 
 	cmd = exec.Command("kubectl", "patch", "deployment", "vworkspace-operator-controller-manager",
 		"-n", namespace, "--type=json", "-p", patch)
 	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred(), "Failed to patch operator for agent mode")
+	Expect(err).NotTo(HaveOccurred(), "Failed to patch operator pull-mode settings")
 
 	Eventually(func(g Gomega) {
 		cmd := exec.Command("kubectl", "rollout", "status",
@@ -261,6 +265,13 @@ func deployOperatorWithAgent() {
 		_, err := utils.Run(cmd)
 		g.Expect(err).NotTo(HaveOccurred())
 	}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+	Eventually(func(g Gomega) {
+		out, err := utils.Run(exec.Command("kubectl", "get", "cluster", pullLoopClusterID,
+			"-o", "jsonpath={.status.phase}"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(strings.TrimSpace(out)).To(Equal(opsv1alpha1.ClusterPhaseConnected))
+	}, 3*time.Minute, 5*time.Second).Should(Succeed())
 }
 
 func teardownOperatorWithAgent() {

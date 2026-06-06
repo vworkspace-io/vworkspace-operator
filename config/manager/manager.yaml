@@ -63,7 +63,6 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
-          - --agent-enabled=false
         image: controller:latest
         env:
         - name: POD_NAMESPACE
