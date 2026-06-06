@@ -99,9 +99,9 @@ After `helm install`, the operator is running but not yet connected to vWorkspac
 2. **Apply bootstrap manifests** — token `Secret` + `Cluster` CR referencing that Secret:
 
    ```bash
-   # Edit placeholders in charts/vworkspace-operator/examples/cluster-bootstrap/ first.
-   kubectl apply -f registration-token.secret.yaml
-   kubectl apply -f cluster.yaml
+   # Edit placeholders first, then apply from repo root:
+   kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/registration-token.secret.yaml
+   kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/cluster.yaml
    kubectl get cluster cluster-local -w
    ```
 

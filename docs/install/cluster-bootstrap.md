@@ -92,8 +92,8 @@ After `helm install`, connectivity is **not** a Helm value. Apply two manifests:
 Example templates ship with the chart at `charts/vworkspace-operator/examples/cluster-bootstrap/`. Edit placeholders, then apply:
 
 ```
-kubectl apply -f registration-token.secret.yaml   # Secret → vworkspace-system (namespace in manifest)
-kubectl apply -f cluster.yaml                     # Cluster is cluster-scoped (no namespace)
+kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/registration-token.secret.yaml
+kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/cluster.yaml
 ```
 
 Or inline (replace placeholders):

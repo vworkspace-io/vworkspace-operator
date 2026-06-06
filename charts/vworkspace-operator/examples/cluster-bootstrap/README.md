@@ -8,8 +8,9 @@ Templates for the declarative golden path after `helm install`. Connectivity is 
 4. Apply (Secret namespace is set in the manifest; `Cluster` is cluster-scoped):
 
 ```bash
-kubectl apply -f registration-token.secret.yaml   # → vworkspace-system
-kubectl apply -f cluster.yaml                     # cluster-scoped CR
+# From repository root:
+kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/registration-token.secret.yaml
+kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/cluster.yaml
 kubectl get cluster cluster-local -w
 ```
 
