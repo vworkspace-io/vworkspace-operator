@@ -24,9 +24,8 @@ crds:
   install: true
 
 agent:
-  enabled: false
-  # HTTPS base URL of vWorkspace Server (the control plane).
-  controlPlaneBaseUrl: "https://control-plane.example.org"
+  # Pull-mode connectivity is driven by a Cluster CR + credentials Secret, not Helm
+  # values. The operator idles until those exist (cluster-bootstrap v2).
   pollIntervalSeconds: 30
   credentialsSecret: vworkspace-agent-credentials
 

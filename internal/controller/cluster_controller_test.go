@@ -20,6 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+const agentEventsAPIPath = "/api/agent/events"
+
 type fakeRegistrationClient struct {
 	resp  agent.RegisterResponse
 	err   error
@@ -46,7 +48,7 @@ func newClusterTestScheme(t *testing.T) *runtime.Scheme {
 func newEventsServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/agent/events" {
+		if r.URL.Path == agentEventsAPIPath {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -62,7 +64,7 @@ func TestClusterReconcilerRegistration(t *testing.T) {
 				ClusterID: "cluster-prod-1",
 				Token:     "bootstrap-token",
 			})
-		case "/api/agent/events":
+		case agentEventsAPIPath:
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
@@ -397,6 +399,93 @@ func TestClusterReconcilerPendingWhenTokenSecretMissing(t *testing.T) {
 	credSecret := &corev1.Secret{}
 	if err := cl.Get(context.Background(), types.NamespacedName{Namespace: "vworkspace-system", Name: agent.DefaultCredentialsSecret}, credSecret); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected no credentials secret while pending, got %v", err)
+	}
+}
+
+func TestClusterReconcilerReRegisterAnnotationSkipsAdoption(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/agent/register":
+			_ = json.NewEncoder(w).Encode(agent.RegisterResponse{
+				ClusterID: "cluster-local",
+				Token:     "new-bootstrap-token",
+			})
+		case agentEventsAPIPath:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	scheme := newClusterTestScheme(t)
+
+	credsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: agent.DefaultCredentialsSecret, Namespace: "vworkspace-system"},
+		Data: map[string][]byte{
+			agent.SecretKeyControlPlaneBaseURL: []byte(server.URL),
+			agent.SecretKeyClusterID:           []byte("cluster-local"),
+			agent.SecretKeyToken:               []byte("old-bootstrap-token"),
+		},
+	}
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-local-registration", Namespace: "vworkspace-system"},
+		Data:       map[string][]byte{opsv1alpha1.DefaultRegistrationTokenKey: []byte("vwksp-reg-new-token")},
+	}
+	cluster := &opsv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster-local",
+			Annotations: map[string]string{
+				opsv1alpha1.ClusterReRegisterAnnotation: "true",
+			},
+		},
+		Spec: opsv1alpha1.ClusterSpec{
+			ControlPlaneEndpoint:       server.URL,
+			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{Name: "cluster-local-registration"},
+		},
+		Status: opsv1alpha1.ClusterStatus{
+			CredentialStatus: &opsv1alpha1.ClusterCredentialStatus{
+				SecretName:                agent.DefaultCredentialsSecret,
+				SecretNamespace:           "vworkspace-system",
+				RegistrationTokenConsumed: true,
+			},
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, tokenSecret, credsSecret).WithStatusSubresource(cluster).Build()
+	regClient := &fakeRegistrationClient{resp: agent.RegisterResponse{ClusterID: "cluster-local", Token: "new-bootstrap-token"}}
+	reconciler := &ClusterReconciler{
+		Client:             cl,
+		Scheme:             scheme,
+		RegistrationClient: regClient,
+		CredentialsSecret:  agent.DefaultCredentialsSecret,
+		OperatorNamespace:  "vworkspace-system",
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if regClient.calls != 1 {
+		t.Fatalf("expected re-register annotation to force token exchange, got %d register calls", regClient.calls)
+	}
+
+	updated := &opsv1alpha1.Cluster{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if _, ok := updated.Annotations[opsv1alpha1.ClusterReRegisterAnnotation]; ok {
+		t.Fatal("expected re-register annotation to be cleared after successful registration")
+	}
+	if updated.Status.ObservedToken == "" {
+		t.Fatal("expected observedToken to be set after re-registration")
+	}
+
+	secret := &corev1.Secret{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Namespace: "vworkspace-system", Name: agent.DefaultCredentialsSecret}, secret); err != nil {
+		t.Fatalf("get credentials secret: %v", err)
+	}
+	if string(secret.Data[agent.SecretKeyToken]) != "new-bootstrap-token" {
+		t.Fatalf("expected rotated bootstrap token, got %q", secret.Data[agent.SecretKeyToken])
 	}
 }
 

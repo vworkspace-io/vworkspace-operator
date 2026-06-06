@@ -20,7 +20,6 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -74,10 +73,6 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
-	var clusterID string
-	var controlPlaneBaseURL string
-	var agentToken string
-	var agentEnabled bool
 	var agentPollInterval time.Duration
 	var agentCredentialsSecret string
 	var agentCredentialsNamespace string
@@ -98,22 +93,10 @@ func main() {
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(&clusterID, "cluster-id", os.Getenv("VWORKSPACE_CLUSTER_ID"),
-		"Stable cluster identity registered with the control plane.")
-	flag.StringVar(
-		&controlPlaneBaseURL,
-		"control-plane-base-url",
-		os.Getenv("CONTROL_PLANE_BASE_URL"),
-		"HTTPS base URL of the vWorkspace Server control plane for Pull-mode connectivity.",
-	)
-	flag.StringVar(&agentToken, "agent-token", os.Getenv("VWORKSPACE_AGENT_TOKEN"),
-		"Bearer token for Pull-mode agent API.")
-	flag.BoolVar(&agentEnabled, "agent-enabled", false,
-		"Enable the Pull-mode agent loop (long-poll jobs from the control plane).")
 	flag.DurationVar(&agentPollInterval, "agent-poll-interval", 30*time.Second,
 		"Long-poll wait duration when fetching jobs from the control plane.")
 	flag.StringVar(&agentCredentialsSecret, "agent-credentials-secret", agent.DefaultCredentialsSecret,
-		"Kubernetes Secret name containing control-plane-base-url, cluster-id, and token keys.")
+		"Default Kubernetes Secret name for bootstrap credentials when status.credentialsSecretRef is unset.")
 	flag.StringVar(&agentCredentialsNamespace, "agent-credentials-namespace", os.Getenv("POD_NAMESPACE"),
 		"Namespace of the agent credentials Secret.")
 	flag.BoolVar(&enableWebhooks, "webhooks-enabled", false, "Enable validating admission webhooks.")
@@ -129,8 +112,6 @@ func main() {
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
-
-	resolvedControlPlaneBaseURL := strings.TrimSpace(controlPlaneBaseURL)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -183,47 +164,11 @@ func main() {
 		credNamespace = "vworkspace-system"
 	}
 
-	var agentClient agent.Client
-	var eventBatcher *agent.EventBatcher
-	statusReporter := agent.NoopStatusReporter()
-	if agentEnabled {
-		creds, err := agent.CredentialsConfig{
-			BaseURL:         resolvedControlPlaneBaseURL,
-			ClusterID:       clusterID,
-			Token:           agentToken,
-			SecretNamespace: credNamespace,
-			SecretName:      agentCredentialsSecret,
-			K8s:             mgr.GetAPIReader(),
-		}.Load(context.Background())
-		if err != nil {
-			setupLog.Error(err, "unable to load agent credentials")
-			os.Exit(1)
-		}
-		if secret, found, secretErr := agent.GetCredentialsSecret(
-			context.Background(),
-			mgr.GetAPIReader(),
-			credNamespace,
-			agentCredentialsSecret,
-		); secretErr == nil && found {
-			agent.UpdateCredentialAgeFromSecret(secret)
-		} else {
-			agent.SetCredentialUpdatedAt(time.Now().UTC())
-		}
-		clusterID = creds.ClusterID
-		agentClient, err = agent.NewHTTPClient(agent.Config{
-			BaseURL:   creds.BaseURL,
-			ClusterID: creds.ClusterID,
-			Token:     creds.Token,
-		})
-		if err != nil {
-			setupLog.Error(err, "unable to configure agent client")
-			os.Exit(1)
-		}
-		eventBatcher = agent.NewEventBatcher(agentClient)
-		eventBatcher.Log = ctrl.Log.WithName("agent-events")
-		statusReporter = agent.NewStatusReporter(eventBatcher)
-		setupLog.Info("pull-mode agent enabled", "cluster_id", creds.ClusterID)
-	}
+	// Pull-mode agent is always constructed; it idles until a Cluster CR and
+	// bootstrap credentials Secret exist (cluster-bootstrap v2 agent unification).
+	eventBatcher := agent.NewEventBatcher(nil)
+	eventBatcher.Log = ctrl.Log.WithName("agent-events")
+	statusReporter := agent.NewStatusReporter(eventBatcher)
 
 	if err := (&controller.ApplicationInstanceReconciler{
 		Client:   mgr.GetClient(),
@@ -256,7 +201,6 @@ func main() {
 	if err := (&controller.ClusterReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
-		AgentClient:       agentClient,
 		CredentialsSecret: agentCredentialsSecret,
 		OperatorNamespace: credNamespace,
 		Reporter:          statusReporter,
@@ -307,23 +251,20 @@ func main() {
 		Name:      agent.DefaultIdempotencyConfigMap,
 	}
 
-	if agentEnabled {
-		go eventBatcher.Start(ctx)
-		agentRuntime := agent.NewRuntime(agent.RuntimeConfig{
-			K8s:              mgr.GetClient(),
-			Scheme:           mgr.GetScheme(),
-			SecretNamespace:  credNamespace,
-			SecretName:       agentCredentialsSecret,
-			PollInterval:     agentPollInterval,
-			Idempotency:      idempotencyStore,
-			EventBatcher:     eventBatcher,
-			Log:              ctrl.Log.WithName("agent-runtime"),
-			InitialClusterID: clusterID,
-		})
-		go agentRuntime.Start(ctx)
-	}
+	go eventBatcher.Start(ctx)
+	agentRuntime := agent.NewRuntime(agent.RuntimeConfig{
+		K8s:             mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		SecretNamespace: credNamespace,
+		SecretName:      agentCredentialsSecret,
+		PollInterval:    agentPollInterval,
+		Idempotency:     idempotencyStore,
+		EventBatcher:    eventBatcher,
+		Log:             ctrl.Log.WithName("agent-runtime"),
+	})
+	go agentRuntime.Start(ctx)
 
-	setupLog.Info("starting manager", "cluster_id", clusterID)
+	setupLog.Info("starting manager", "pull_mode", "credential-driven")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
