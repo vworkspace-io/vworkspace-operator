@@ -30,12 +30,8 @@ spec:
             - --leader-elect={{ .Values.manager.leaderElect }}
             - --health-probe-bind-address={{ .Values.manager.healthProbeBindAddress }}
             - --metrics-bind-address={{ .Values.manager.metricsBindAddress }}
-            - --agent-enabled={{ .Values.agent.enabled }}
             - --agent-poll-interval={{ .Values.agent.pollIntervalSeconds }}s
-            {{- if .Values.agent.enabled }}
-            - --control-plane-base-url={{ .Values.agent.controlPlaneBaseUrl }}
             - --agent-credentials-secret={{ .Values.agent.credentialsSecret }}
-            {{- end }}
             {{- if .Values.webhooks.enabled }}
             - --webhooks-enabled=true
             - --webhook-cert-path={{ .Values.webhooks.certPath }}

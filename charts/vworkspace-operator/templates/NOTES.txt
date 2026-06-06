@@ -12,7 +12,15 @@ Deployment: {{ include "vworkspace-operator.fullname" . }}
 
   kubectl get crd applicationinstances.apps.vworkspace.io clusters.ops.vworkspace.io operations.ops.vworkspace.io
 
-3. Register this cluster with vWorkspace Server (one-time token exchange):
+3. Connect this cluster to vWorkspace Server (declarative golden path):
+
+  kubectl apply -f registration-token.secret.yaml
+  kubectl apply -f cluster.yaml
+
+  The Cluster reconciler exchanges the token, writes Secret/{{ .Values.agent.credentialsSecret }},
+  and the Pull-mode agent starts automatically when credentials exist.
+
+  Break-glass (debug only):
 
   kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "vworkspace-operator.fullname" . }} -- \
     /manager register \
@@ -20,24 +28,11 @@ Deployment: {{ include "vworkspace-operator.fullname" . }}
       --control-plane-endpoint=https://your-server.example.org \
       --cluster-name=<cluster-id>
 
-  Or apply a Cluster CR — see docs/install/cluster-bootstrap.md.
+  See docs/install/cluster-bootstrap.md.
 
-  Registration writes Secret/{{ .Values.agent.credentialsSecret }} in this namespace.
+4. Watch connectivity converge:
 
-{{- if not .Values.agent.enabled }}
-
-4. Enable Pull-mode after registration (Helm upgrade):
-
-  helm upgrade {{ .Release.Name }} {{ .Chart.Name }} \
-    -n {{ .Release.Namespace }} \
-    --reuse-values \
-    --set agent.enabled=true \
-    --set agent.controlPlaneBaseUrl=https://your-server.example.org
-{{- else }}
-
-4. Pull-mode agent is enabled. Ensure Secret/{{ .Values.agent.credentialsSecret }} exists
-   (created during registration) or set agent credentials via flags before enabling the agent.
-{{- end }}
+  kubectl get cluster -w
 
 Install guide: docs/install/helm.md
 Prerequisites (optional Flux / Velero bundle): docs/install/prerequisites.md

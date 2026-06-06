@@ -1,23 +1,13 @@
 # Session 3 dogfood profile for kind + host-run vWorkspace Server.
 # Hub design: vworkspace/docs/dogfooding/session-3-helm-path-design.md
 #
-# Install:
+# Install (single pass — no agent toggle):
 #   helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
 #     -n vworkspace-system --create-namespace \
-#     -f charts/vworkspace-operator/values-kind.yaml \
-#     --set agent.controlPlaneBaseUrl="${CONTROL_PLANE_BASE_URL}"
+#     -f charts/vworkspace-operator/values-kind.yaml
 #
-# Registration (in-cluster — no host go run):
-#   kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
-#     /manager register \
-#       --control-plane-endpoint="${CONTROL_PLANE_BASE_URL}" \
-#       --token="${REGISTRATION_TOKEN}" \
-#       --cluster-name=cluster-local \
-#       --cluster-id="${CLUSTER_ID}"
-#
-# Then enable agent:
-#   helm upgrade vworkspace-operator ./charts/vworkspace-operator \
-#     -n vworkspace-system --reuse-values --set agent.enabled=true
+# Register via Cluster CR + token Secret (see cluster-bootstrap-v2 design).
+# Break-glass: kubectl exec ... /manager register ...
 
 image:
   repository: docker.io/vworkspace/vworkspace-operator
@@ -28,8 +18,6 @@ crds:
   install: true
 
 agent:
-  enabled: false
-  controlPlaneBaseUrl: "http://127.0.0.1:8069"
   credentialsSecret: vworkspace-agent-credentials
   pollIntervalSeconds: 5
 

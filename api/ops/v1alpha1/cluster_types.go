@@ -36,6 +36,12 @@ const (
 	// DefaultRegistrationTokenKey is the Secret data key read when
 	// registrationTokenSecretRef.key is omitted.
 	DefaultRegistrationTokenKey = "registrationToken"
+
+	// ClusterReRegisterAnnotation requests an immediate registration-token
+	// re-exchange (for example after swapping the token Secret). Cleared after
+	// a successful registration. Distinct from spec.rotateCredentials, which
+	// rotates the long-lived bootstrap credential.
+	ClusterReRegisterAnnotation = "ops.vworkspace.io/reregister"
 )
 
 // Cluster lifecycle phases reported in status.phase. They are a coarse,

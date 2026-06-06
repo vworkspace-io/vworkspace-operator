@@ -20,8 +20,7 @@ Session 3 bundle (Flux + Velero + MinIO + metrics on kind):
 ```bash
 helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
   -n vworkspace-system --create-namespace \
-  -f charts/vworkspace-operator/values-kind.yaml \
-  --set agent.controlPlaneBaseUrl=http://127.0.0.1:8069
+  -f charts/vworkspace-operator/values-kind.yaml
 ```
 
 Validate rendering without applying:
@@ -50,9 +49,8 @@ VALIDATE_BUNDLE=true ./hack/validate-helm-kind.sh
 |-----|---------|-------------|
 | `image.repository` | `vworkspace/vworkspace-operator` | Operator image |
 | `image.tag` | Chart `appVersion` | Image tag |
-| `agent.enabled` | `false` | Enable Pull-mode job poller |
-| `agent.controlPlaneBaseUrl` | `https://control-plane.example.org` | Control plane base URL |
-| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Secret for agent bearer token |
+| `agent.pollIntervalSeconds` | `30` | Pull-mode job long-poll interval |
+| `agent.credentialsSecret` | `vworkspace-agent-credentials` | Default credentials Secret name (overridden by Cluster status) |
 | `crds.install` | `true` | Install CRDs from `files/crds/` |
 | `flux.enabled` | `false` | Bundle: Flux helm-controller + source-controller |
 | `velero.enabled` | `false` | Bundle: Velero server + CRDs |

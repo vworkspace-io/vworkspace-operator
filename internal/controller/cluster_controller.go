@@ -115,7 +115,8 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 		token, tokenSource = "", ""
 	}
 
-	if token == "" || tokenFingerprint(token) == cluster.Status.ObservedToken {
+	forceReRegister := reRegisterRequested(cluster)
+	if token == "" || (tokenFingerprint(token) == cluster.Status.ObservedToken && !forceReRegister) {
 		return ctrl.Result{}, false, nil
 	}
 
@@ -124,12 +125,9 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 	// Seed the fingerprint without re-exchanging the consumed one-time token, so it
 	// does not spuriously flip to Error. Gated on a proven prior registration so a
 	// genuinely new token (no prior registration recorded) still triggers exchange.
-	//
-	// Tradeoff: on the first post-upgrade reconcile this also adopts a token that the
-	// admin may have just swapped in to deliberately re-register. Distinguishing that
-	// race needs an explicit re-registration trigger (design open question #1); until
-	// then any subsequent token change (fingerprint != observedToken) re-registers.
-	if cluster.Status.ObservedToken == "" && registrationConsumed(cluster) {
+	// Skipped when ops.vworkspace.io/reregister is set (admin swapped the
+	// token Secret and wants a deliberate re-exchange).
+	if !forceReRegister && cluster.Status.ObservedToken == "" && registrationConsumed(cluster) {
 		if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr == nil {
 			if err := r.adoptExistingRegistration(ctx, cluster, tokenFingerprint(token), secretName, namespace); err != nil {
 				return ctrl.Result{}, true, err
@@ -361,6 +359,13 @@ func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1a
 		cluster.Spec.RegistrationToken = ""
 		specChanged = true
 	}
+	if reRegisterRequested(cluster) {
+		if cluster.Annotations == nil {
+			cluster.Annotations = map[string]string{}
+		}
+		delete(cluster.Annotations, opsv1alpha1.ClusterReRegisterAnnotation)
+		specChanged = true
+	}
 	if specChanged {
 		if err := r.Update(ctx, cluster); err != nil {
 			return fmt.Errorf("persist post-registration spec: %w", err)
@@ -474,6 +479,19 @@ func controlPlaneEndpoint(cluster *opsv1alpha1.Cluster) string {
 // registration token for the cluster (a proven prior registration).
 func registrationConsumed(cluster *opsv1alpha1.Cluster) bool {
 	return cluster.Status.CredentialStatus != nil && cluster.Status.CredentialStatus.RegistrationTokenConsumed
+}
+
+// reRegisterRequested reports whether the admin set ops.vworkspace.io/reregister
+// to force a registration-token re-exchange (for example after swapping the token Secret).
+func reRegisterRequested(cluster *opsv1alpha1.Cluster) bool {
+	if cluster.Annotations == nil {
+		return false
+	}
+	v := strings.TrimSpace(cluster.Annotations[opsv1alpha1.ClusterReRegisterAnnotation])
+	if v == "" {
+		return false
+	}
+	return strings.ToLower(v) != "false"
 }
 
 // tokenFingerprint returns a short, non-reversible fingerprint of a registration

@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
+	opsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/ops/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -69,12 +71,21 @@ func (r *Runtime) Start(ctx context.Context) {
 }
 
 func (r *Runtime) ensurePoller(ctx context.Context) error {
-	secret, found, err := GetCredentialsSecret(ctx, r.cfg.K8s, r.cfg.SecretNamespace, r.cfg.SecretName)
+	secretNS, secretName, clusterPresent, err := r.resolveCredentialsTarget(ctx)
+	if err != nil {
+		return err
+	}
+	if !clusterPresent {
+		r.stopPoller()
+		return fmt.Errorf("no Cluster resource found")
+	}
+	secret, found, err := GetCredentialsSecret(ctx, r.cfg.K8s, secretNS, secretName)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return fmt.Errorf("credentials secret %s/%s not found", r.cfg.SecretNamespace, r.cfg.SecretName)
+		r.stopPoller()
+		return fmt.Errorf("credentials secret %s/%s not found", secretNS, secretName)
 	}
 	creds, err := CredentialsFromSecret(secret)
 	if err != nil {
@@ -88,6 +99,7 @@ func (r *Runtime) ensurePoller(ctx context.Context) error {
 		return nil
 	}
 	r.stopPollerLocked()
+	r.setEventBatcherClient(nil)
 
 	httpClient, err := NewHTTPClient(Config{
 		BaseURL:   creds.BaseURL,
@@ -126,10 +138,52 @@ func (r *Runtime) ensurePoller(ctx context.Context) error {
 	r.cancel = cancel
 	r.running = true
 	r.clusterID = creds.ClusterID
+	r.setEventBatcherClient(httpClient)
 	if r.cfg.Log.GetSink() != nil {
 		r.cfg.Log.Info("pull-mode agent started", "cluster_id", creds.ClusterID)
 	}
 	return nil
+}
+
+// resolveCredentialsTarget returns the credentials Secret coordinates from the
+// Cluster CR status when available, falling back to the configured default.
+func (r *Runtime) resolveCredentialsTarget(ctx context.Context) (namespace, name string, clusterPresent bool, err error) {
+	defaultNS := strings.TrimSpace(r.cfg.SecretNamespace)
+	if defaultNS == "" {
+		defaultNS = "vworkspace-system"
+	}
+	defaultName := strings.TrimSpace(r.cfg.SecretName)
+	if defaultName == "" {
+		defaultName = DefaultCredentialsSecret
+	}
+
+	clusterList := &opsv1alpha1.ClusterList{}
+	if err := r.cfg.K8s.List(ctx, clusterList); err != nil {
+		return "", "", false, err
+	}
+	if len(clusterList.Items) == 0 {
+		return defaultNS, defaultName, false, nil
+	}
+
+	cluster := clusterList.Items[0]
+	if !cluster.DeletionTimestamp.IsZero() {
+		return "", "", false, nil
+	}
+	if ref := cluster.Status.CredentialsSecretRef; ref != nil && strings.TrimSpace(ref.Name) != "" {
+		ns := strings.TrimSpace(ref.Namespace)
+		if ns == "" {
+			ns = defaultNS
+		}
+		return ns, strings.TrimSpace(ref.Name), true, nil
+	}
+	return defaultNS, defaultName, true, nil
+}
+
+func (r *Runtime) setEventBatcherClient(c Client) {
+	if r.cfg.EventBatcher == nil {
+		return
+	}
+	r.cfg.EventBatcher.Client = c
 }
 
 func (r *Runtime) stopPoller() {
@@ -145,4 +199,5 @@ func (r *Runtime) stopPollerLocked() {
 	}
 	r.running = false
 	r.clusterID = ""
+	r.setEventBatcherClient(nil)
 }
