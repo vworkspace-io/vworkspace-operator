@@ -16,6 +16,6 @@ kubectl get cluster cluster-local -w
 
 The reconciler exchanges the token, writes `Secret/vworkspace-agent-credentials`, and the Pull-mode agent starts automatically.
 
-Server-side manifest rendering (from an issued token) is planned in vworkspace-server PR 4. Until then, copy these templates and fill in the placeholders.
+Server-side rendering: [`vworkspace-server/hack/render-cluster-bootstrap.sh`](https://github.com/vworkspace-io/vworkspace-server/blob/main/hack/render-cluster-bootstrap.sh) (merged [PR #58](https://github.com/vworkspace-io/vworkspace-server/pull/58)). `hack/dev-integration.sh` also writes matching files under `hack/out/cluster-bootstrap/`. Copy these chart templates when you prefer to edit placeholders by hand.
 
 Break-glass: `kubectl exec` with `/manager register` — see [docs/install/cluster-bootstrap.md](../../../../docs/install/cluster-bootstrap.md#break-glass-register-cli).

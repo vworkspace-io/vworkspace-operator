@@ -1,7 +1,7 @@
 # Quickstart
 
 **Status:** Alpha
-**Last Updated:** 2026-06-02
+**Last Updated:** 2026-06-06
 
 This is the supported install path. Two commands install the operator, three more verify it, and the rest of this document describes what to check if something goes wrong. The complete bootstrap procedure (including issuing the registration token in Odoo) is in [cluster-bootstrap.md](cluster-bootstrap.md).
 
@@ -23,15 +23,7 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
   --set image.tag=latest
 ```
 
-Enable Pull-mode against mock or real Odoo:
-
-```
-helm upgrade vworkspace-operator ./charts/vworkspace-operator \
-  -n vworkspace-system \
-  --reuse-values \
-  --set agent.enabled=true \
-  --set agent.controlPlaneBaseUrl=https://workspace.example.org
-```
+Connectivity is **not** a Helm value — no `agent.enabled` or `controlPlaneBaseUrl` flags. The operator idles until you apply a token `Secret` and `Cluster` CR in Step 2.
 
 Wait until the operator pod reports `Ready`:
 
@@ -47,8 +39,8 @@ See [charts/vworkspace-operator/README.md](https://github.com/vworkspace-io/vwor
 For local development against the [vWorkspace Server](https://github.com/vworkspace-io/vworkspace-server) docker-compose stack (not the in-repo mock):
 
 1. Start the server: `make up && make init-db` in the server repo ([DEV_ENVIRONMENT.md](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/development/DEV_ENVIRONMENT.md)).
-2. Issue a registration token in **Cluster Registry**.
-3. Run server `./hack/dev-integration.sh` for `CLUSTER_ID` (UUID) and a registration token, then `./hack/dev-real-control-plane.sh` for `CONTROL_PLANE_BASE_URL`, register, and Helm agent flags (kind on Linux needs the host gateway IP — see [../development/real-control-plane.md](../development/real-control-plane.md)).
+2. Run `./hack/dev-integration.sh` for `CLUSTER_ID`, `REGISTRATION_TOKEN`, and bootstrap manifests under `hack/out/cluster-bootstrap/` (or `./hack/render-cluster-bootstrap.sh` with env vars).
+3. Set `CONTROL_PLANE_BASE_URL` to the URL **reachable from operator pods** (kind on Linux needs the host gateway IP — see [../development/real-control-plane.md](../development/real-control-plane.md)), then apply manifests in Step 2.
 
 Use the mock control plane instead when you do not need Odoo: [../development/mock-control-plane.md](../development/mock-control-plane.md).
 
@@ -72,12 +64,52 @@ Wait until the operator's pod reports `Ready` (Option B example):
 kubectl -n vworkspace-system rollout status deploy/vworkspace-app-operator --timeout=180s
 ```
 
-## Step 2: register the cluster with Odoo
+## Step 2: connect the cluster (declarative golden path)
 
-The operator needs to know who it is. Generate a one-time registration token in Odoo (Cluster Registry → New Cluster → Issue registration token) and exchange it via either the CLI helper:
+Generate a one-time registration token in Odoo (Cluster Registry → New Cluster → Issue registration token), then apply a token `Secret` and a `Cluster` CR. Example templates ship at `charts/vworkspace-operator/examples/cluster-bootstrap/`; the server repo can render the same shape via [`hack/render-cluster-bootstrap.sh`](https://github.com/vworkspace-io/vworkspace-server/blob/main/hack/render-cluster-bootstrap.sh).
 
 ```
-kubectl -n vworkspace-system exec deploy/controller-manager -- \
+kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/registration-token.secret.yaml
+kubectl apply -f charts/vworkspace-operator/examples/cluster-bootstrap/cluster.yaml
+kubectl get cluster cluster-prod-1 -w
+```
+
+Or inline (replace placeholders; use the UUID from Cluster Registry for `clusterId` when the token is cluster-bound):
+
+```
+cat <<'EOF' | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-prod-1-registration
+  namespace: vworkspace-system
+type: Opaque
+stringData:
+  registrationToken: <one-time-token>
+---
+apiVersion: ops.vworkspace.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-prod-1
+spec:
+  controlPlaneEndpoint: https://workspace.example.org
+  clusterId: <server-issued-uuid>
+  registrationTokenSecretRef:
+    name: cluster-prod-1-registration
+    key: registrationToken
+EOF
+```
+
+The `Cluster` reconciler exchanges the token for a long-lived bootstrap credential ([../security/authentication.md](../security/authentication.md)), writes `Secret/vworkspace-agent-credentials`, and the Pull-mode agent starts automatically — no second `helm upgrade`, no Deployment patch.
+
+Full procedure and validation: [cluster-bootstrap.md](cluster-bootstrap.md#step-4-connect-the-cluster-declarative-golden-path).
+
+### Break-glass: register CLI
+
+For debugging only — not the supported path:
+
+```
+kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
   /manager register \
     --token=<one-time-token> \
     --control-plane-endpoint=https://workspace.example.org \
@@ -85,61 +117,14 @@ kubectl -n vworkspace-system exec deploy/controller-manager -- \
     --cluster-id=<server-issued-uuid>
 ```
 
-`--cluster-id` is the UUID from Cluster Registry (not the display slug). Omit it only when the registration token is not yet bound to a cluster.
-
-…or by applying a `Cluster` CR that carries the token:
-
-```
-cat <<'EOF' | kubectl apply -f -
-apiVersion: ops.vworkspace.io/v1alpha1
-kind: Cluster
-metadata:
-  name: cluster-prod-1
-spec:
-  clusterId: <server-issued-uuid>
-  controlPlaneBaseUrl: https://workspace.example.org
-  registrationToken: <one-time-token>
-EOF
-```
-
-The two paths produce identical results. The CLI helper is convenient for terminals; the CR path is convenient for GitOps and for the air-gapped install where the token is delivered out of band.
-
-The operator's `Cluster` reconciler exchanges the token for a long-lived bootstrap credential ([../security/authentication.md](../security/authentication.md)), persists it in `Secret/vworkspace-agent-credentials`, clears `spec.registrationToken`, and sets `status.credentialStatus.registrationTokenConsumed=true`.
-
-### Enable the Pull-mode agent
-
-Patch the operator Deployment to enable the agent loop (credentials are loaded from the Secret written during registration):
-
-```bash
-kubectl -n vworkspace-system patch deploy controller-manager \
-  --type=json -p='[
-    {"op":"replace","path":"/spec/template/spec/containers/0/args","value":[
-      "--leader-elect",
-      "--health-probe-bind-address=:8081",
-      "--agent-enabled=true",
-      "--agent-credentials-secret=vworkspace-agent-credentials"
-    ]}
-  ]'
-```
-
-After registration completes, the agent runtime reloads credentials from the Secret automatically; no manual Secret creation is required when using the registration flow above.
-
-See [../connectivity/pull-mode.md](../connectivity/pull-mode.md) for the full flag and Secret key reference.
-
-Install the published image with kustomize:
-
-```bash
-make deploy IMG=docker.io/vworkspace/vworkspace-operator:latest
-```
-
-See [container-images.md](container-images.md) for Docker Hub tags and CI publishing.
+See [cluster-bootstrap.md#break-glass-register-cli](cluster-bootstrap.md#break-glass-register-cli).
 
 ## Step 3: validate
 
 The operator publishes its overall health on the `Cluster` CR's `status.conditions[Connected]`. The expected steady-state output:
 
 ```
-kubectl get cluster -n vworkspace-system cluster-prod-1 -o jsonpath='{.status.conditions[?(@.type=="Connected")]}'
+kubectl get cluster cluster-prod-1 -o jsonpath='{.status.conditions[?(@.type=="Connected")]}'
 {"type":"Connected","status":"True","reason":"ControlPlaneReachable","message":"Last successful round-trip 4s ago"}
 ```
 
@@ -156,7 +141,7 @@ kubectl get pods -n cert-manager
 kubectl get pods -n external-secrets
 
 # Cluster's overall readiness from the operator's perspective
-kubectl get cluster -n vworkspace-system cluster-prod-1 -o yaml
+kubectl get cluster cluster-prod-1 -o yaml
 ```
 
 `Cluster.status` aggregates all the prerequisites the operator checks at startup (CRDs present, RBAC present, bundled controllers reconciling). A missing prerequisite shows up as `Cluster.status.conditions[ControllerMissing]=True` with an actionable message.
@@ -240,7 +225,7 @@ helm upgrade vworkspace-operator ./charts/vworkspace-operator \
 
 If `Cluster.status.conditions[Connected]` is `False`:
 
-- `ControlPlaneUnreachable`: the operator cannot reach `Cluster.spec.controlPlaneBaseUrl`. Check DNS, the egress firewall, and the proxy (`Cluster.spec (egress proxy — see pull-mode docs)`) if you set one.
+- `ControlPlaneUnreachable`: the operator cannot reach `Cluster.spec.controlPlaneEndpoint`. Check DNS, the egress firewall, and the proxy (`Cluster.spec (egress proxy — see pull-mode docs)`) if you set one.
 - `RegistrationTokenInvalid`: the token is expired, already-used, or does not match Odoo's expected hash. Re-issue and try again.
 - `CredentialMissing`: the operator started but the bootstrap credential Secret has been deleted. Re-run the registration step.
 - `ControlPlaneAuthenticationFailed`: the credential is present but control plane rejected it. Likely the credential was revoked from the control-plane side; re-register.
