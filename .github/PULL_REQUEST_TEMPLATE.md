@@ -6,6 +6,17 @@ are signed off with the Developer Certificate of Origin (DCO):
   git commit -s -m "feat(scope): your change"
 -->
 
+## Tracking
+
+Link this PR to the hub backlog. Task IDs and issues come from
+[`docs/tracking/phase-*/tasks.md`](https://github.com/vworkspace-io/vworkspace/tree/main/docs/tracking)
+after merge ([WORKFLOW.md](https://github.com/vworkspace-io/vworkspace/blob/main/docs/tracking/WORKFLOW.md)).
+
+- **Task ID:** P4-T### (or other `P#-T###` from hub `tasks.md`)
+- **Tracked by:** vworkspace-io/vworkspace#N (hub issue `**GitHub:** #N` on the task)
+
+See [cross-repo PR conventions](https://github.com/vworkspace-io/vworkspace/blob/main/docs/cursor-rules/cross-repo-prs.mdc).
+
 ## Summary
 
 What does this PR do, in one or two sentences.
