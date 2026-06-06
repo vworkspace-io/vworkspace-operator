@@ -125,7 +125,7 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 	// Seed the fingerprint without re-exchanging the consumed one-time token, so it
 	// does not spuriously flip to Error. Gated on a proven prior registration so a
 	// genuinely new token (no prior registration recorded) still triggers exchange.
-	// Skipped when ops.vworkspace.io/rotate-credentials is set (admin swapped the
+	// Skipped when ops.vworkspace.io/reregister is set (admin swapped the
 	// token Secret and wants a deliberate re-exchange).
 	if !forceReRegister && cluster.Status.ObservedToken == "" && registrationConsumed(cluster) {
 		if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr == nil {
@@ -481,7 +481,7 @@ func registrationConsumed(cluster *opsv1alpha1.Cluster) bool {
 	return cluster.Status.CredentialStatus != nil && cluster.Status.CredentialStatus.RegistrationTokenConsumed
 }
 
-// reRegisterRequested reports whether the admin set ops.vworkspace.io/rotate-credentials
+// reRegisterRequested reports whether the admin set ops.vworkspace.io/reregister
 // to force a registration-token re-exchange (for example after swapping the token Secret).
 func reRegisterRequested(cluster *opsv1alpha1.Cluster) bool {
 	if cluster.Annotations == nil {

@@ -41,7 +41,7 @@ const (
 	// re-exchange (for example after swapping the token Secret). Cleared after
 	// a successful registration. Distinct from spec.rotateCredentials, which
 	// rotates the long-lived bootstrap credential.
-	ClusterReRegisterAnnotation = "ops.vworkspace.io/rotate-credentials"
+	ClusterReRegisterAnnotation = "ops.vworkspace.io/reregister"
 )
 
 // Cluster lifecycle phases reported in status.phase. They are a coarse,
