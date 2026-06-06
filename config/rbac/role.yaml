@@ -122,17 +122,18 @@ rules:
 - apiGroups:
   - ops.vworkspace.io
   resources:
+  - clusters/finalizers
+  - operations/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ops.vworkspace.io
+  resources:
   - clusters/status
   - operations/status
   verbs:
   - get
   - patch
-  - update
-- apiGroups:
-  - ops.vworkspace.io
-  resources:
-  - operations/finalizers
-  verbs:
   - update
 - apiGroups:
   - source.toolkit.fluxcd.io
