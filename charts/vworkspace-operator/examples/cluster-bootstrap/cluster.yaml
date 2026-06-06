@@ -1,5 +1,6 @@
 # Declarative cluster registration (cluster-bootstrap v2 golden path).
-# Apply after helm install and the registration-token Secret above.
+# Cluster is cluster-scoped (no metadata.namespace). The token Secret must live in
+# the operator namespace (vworkspace-system) — see registration-token.secret.yaml.
 apiVersion: ops.vworkspace.io/v1alpha1
 kind: Cluster
 metadata:

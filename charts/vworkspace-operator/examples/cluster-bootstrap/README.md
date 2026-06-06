@@ -5,11 +5,11 @@ Templates for the declarative golden path after `helm install`. Connectivity is 
 1. Issue a one-time registration token in vWorkspace Server (Cluster Registry → New Cluster → Issue registration token).
 2. Edit `registration-token.secret.yaml` — set `stringData.registrationToken`.
 3. Edit `cluster.yaml` — set `spec.controlPlaneEndpoint` to the URL **reachable from operator pods** (on kind/Linux this is often the host gateway, not `127.0.0.1`).
-4. Apply:
+4. Apply (Secret namespace is set in the manifest; `Cluster` is cluster-scoped):
 
 ```bash
-kubectl apply -f registration-token.secret.yaml
-kubectl apply -f cluster.yaml
+kubectl apply -f registration-token.secret.yaml   # → vworkspace-system
+kubectl apply -f cluster.yaml                     # cluster-scoped CR
 kubectl get cluster cluster-local -w
 ```
 
