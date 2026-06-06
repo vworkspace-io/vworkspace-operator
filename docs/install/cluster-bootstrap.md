@@ -1,7 +1,7 @@
 # Cluster bootstrap
 
 **Status:** Alpha
-**Last Updated:** 2026-06-02
+**Last Updated:** 2026-06-06
 
 This is the full bootstrap procedure for connecting a new Kubernetes cluster to an Odoo vWorkspace control plane in the default Pull-mode connectivity. It expands the six steps that appear in the source-of-truth design note into a complete procedure with the actual commands and the actual control-plane-side actions. Push-mode and GitOps-mode equivalents are noted at the end.
 
@@ -85,14 +85,62 @@ Odoo creates the identity record (status: `Pending`) and shows you the token onc
 
 The token has the shape `vwksp-reg-<hex>`; the prefix lets the operator validate the format before sending it.
 
-## Step 4: register the operator with the token
+## Step 4: connect the cluster (declarative golden path)
 
-You have two equivalent paths.
+After `helm install`, connectivity is **not** a Helm value. Apply two manifests: a token `Secret` and a `Cluster` CR that references it. The operator idles until those exist; no second `helm upgrade`, no `agent.enabled` toggle, no `kubectl exec`.
 
-### Path A: CLI helper
+Example templates ship with the chart at `charts/vworkspace-operator/examples/cluster-bootstrap/`. Edit placeholders, then apply:
 
 ```
-kubectl -n vworkspace-system exec deploy/controller-manager -- \
+kubectl apply -f registration-token.secret.yaml
+kubectl apply -f cluster.yaml
+```
+
+Or inline (replace placeholders):
+
+```
+cat <<'EOF' | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-prod-1-registration
+  namespace: vworkspace-system
+type: Opaque
+stringData:
+  registrationToken: <one-time-token>
+---
+apiVersion: ops.vworkspace.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-prod-1
+spec:
+  controlPlaneEndpoint: https://workspace.example.org
+  clusterId: <server-issued-uuid>   # optional on first registration; required when token is cluster-bound
+  registrationTokenSecretRef:
+    name: cluster-prod-1-registration
+    key: registrationToken
+EOF
+```
+
+Use the UUID shown in Cluster Registry for `clusterId` when the token is bound to a known cluster — not the human slug.
+
+The `Cluster` reconciler resolves the token from the `Secret`, calls `POST /api/agent/register`, writes `Secret/vworkspace-system/vworkspace-agent-credentials` (owned by the `Cluster`), records `status.credentialsSecretRef` and `status.observedToken`, and the Pull-mode agent starts automatically when credentials exist.
+
+Watch convergence:
+
+```
+kubectl get cluster cluster-prod-1 -w
+kubectl get cluster cluster-prod-1 -o yaml | grep -E 'phase:|type: Connected' -A2
+```
+
+You expect `status.phase=Connected` and `Connected=True` within a minute. Set `spec.controlPlaneEndpoint` to the URL **reachable from operator pods** (on kind/Linux this is often the host gateway, not `127.0.0.1`).
+
+### Break-glass: register CLI
+
+For debugging only — not the supported golden path. The `register` subcommand applies a `Cluster` CR and waits for credential exchange; prefer the declarative manifests above.
+
+```
+kubectl -n vworkspace-system exec deploy/vworkspace-operator -- \
   /manager register \
     --token=<one-time-token> \
     --control-plane-endpoint=https://workspace.example.org \
@@ -100,41 +148,9 @@ kubectl -n vworkspace-system exec deploy/controller-manager -- \
     --cluster-id=<server-issued-uuid>
 ```
 
-Use the UUID shown in Cluster Registry for `clusterId`, not the human slug.
+### Deprecated: inline token in Cluster spec
 
-The CLI helper applies a `Cluster` CR for you and waits up to two minutes for the credential exchange to complete. Output on success:
-
-```
-registering cluster cluster-prod-1 with https://workspace.example.org ...
-exchanged registration token for bootstrap credential
-credential persisted to Secret vworkspace-system/vworkspace-agent-credentials
-Cluster cluster-prod-1 condition Connected=True (ControlPlaneReachable)
-```
-
-### Path B: apply a `Cluster` CR directly
-
-```
-cat <<'EOF' | kubectl apply -f -
-apiVersion: ops.vworkspace.io/v1alpha1
-kind: Cluster
-metadata:
-  name: cluster-prod-1
-spec:
-  clusterId: <server-issued-uuid>
-  controlPlaneBaseUrl: https://workspace.example.org
-  registrationToken: <one-time-token>
-EOF
-```
-
-The operator's `Cluster` reconciler picks up the CR, calls `POST /api/agent/register`, persists the resulting credential to `Secret/vworkspace-system/vworkspace-agent-credentials`, clears `spec.registrationToken`, and sets `status.credentialStatus.registrationTokenConsumed=true`.
-
-Watch the exchange:
-
-```
-kubectl get cluster cluster-prod-1 -o yaml | grep -A5 conditions:
-```
-
-You expect to see `Connected: True` with reason `ControlPlaneReachable` within a minute.
+`spec.registrationToken` and `spec.controlPlaneBaseUrl` are still accepted for one deprecation minor but emit warnings. Use `registrationTokenSecretRef` and `controlPlaneEndpoint` instead.
 
 ## Step 5: verify the cluster's health
 
