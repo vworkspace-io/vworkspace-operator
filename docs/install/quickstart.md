@@ -71,7 +71,7 @@ The Helm release name (`vworkspace-operator`) and the namespace (`vworkspace-sys
 Wait until the operator pod reports `Ready` (Options A–C):
 
 ```
-kubectl -n vworkspace-system rollout status deploy/vworkspace-app-operator --timeout=180s
+kubectl -n vworkspace-system rollout status deploy/vworkspace-operator --timeout=180s
 ```
 
 ## Step 2: connect the cluster (declarative golden path)

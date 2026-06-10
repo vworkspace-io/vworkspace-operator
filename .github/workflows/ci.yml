@@ -572,7 +572,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body_path: ${{ steps.notes.outputs.notes_file }}
-          generate_release_notes: ${{ steps.notes.outputs.use_changelog == 'false' }}
+          generate_release_notes: false
           files: |
             release/dist/release/vworkspace-operator-*.tgz
             release/dist/release/crds.yaml
