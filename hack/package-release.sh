@@ -63,6 +63,7 @@ sed -i \
   -e "s/^version:.*/version: ${CHART_VERSION}/" \
   -e "s/^appVersion:.*/appVersion: \"${APP_VERSION}\"/" \
   "${STAGING}/Chart.yaml"
+sed -i "s/^  tag:.*/  tag: \"${IMAGE_TAG}\"/" "${STAGING}/values.yaml"
 
 helm dependency update "${STAGING}" >/dev/null
 helm lint "${STAGING}" --set "image.tag=${IMAGE_TAG}"

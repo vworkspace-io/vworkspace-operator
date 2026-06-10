@@ -34,8 +34,7 @@ helm upgrade --install vworkspace-operator \
   https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/vworkspace-operator-0.0.6.tgz \
   --version 0.0.6 \
   -n vworkspace-system \
-  --create-namespace \
-  --set image.tag=v0.0.6
+  --create-namespace
 ```
 
 The chart pins `image.tag` to the git tag (`v0.0.6`) because container images use the `v`-prefixed tag on Docker Hub while chart `appVersion` is bare SemVer.
