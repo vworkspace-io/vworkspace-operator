@@ -7,11 +7,33 @@ This is the supported install path. Two commands install the operator, three mor
 
 Before you start, work through [prerequisites.md](prerequisites.md). The quickstart assumes you have a running Kubernetes cluster, `cluster-admin` access via `kubectl`, an control plane URL you can reach, and the ability to issue a one-time registration token in Odoo.
 
-The version number `0.0.0` below is a placeholder for the chart version you actually install; substitute the real one from the project's releases page when the operator has its first tagged release.
+The version number `0.0.6` below matches the latest tagged release; pick the version you need from [GitHub Releases](https://github.com/vworkspace-io/vworkspace-operator/releases).
 
 ## Step 1: install the operator bundle
 
-### Option A — Helm chart (in-repo)
+### Option A — Helm chart (GitHub Release)
+
+No repository clone required:
+
+```
+helm upgrade --install vworkspace-operator \
+  https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/vworkspace-operator-0.0.6.tgz \
+  --version 0.0.6 \
+  -n vworkspace-system \
+  --create-namespace \
+  --set image.tag=v0.0.6
+```
+
+### Option B — kubectl manifests (GitHub Release)
+
+```
+kubectl apply -f https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/crds.yaml
+kubectl apply -f https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/operator.yaml
+```
+
+Manifests are rendered from the same Helm chart as Option A (operator-only defaults; no Flux/Velero bundle).
+
+### Option C — Helm chart (in-repo checkout)
 
 From a clone of this repository (tested on kind — see [helm.md](helm.md)):
 
@@ -44,21 +66,9 @@ For local development against the [vWorkspace Server](https://github.com/vworksp
 
 Use the mock control plane instead when you do not need Odoo: [../development/mock-control-plane.md](../development/mock-control-plane.md).
 
-### Option B — OCI chart (future release)
+The Helm release name (`vworkspace-operator`) and the namespace (`vworkspace-system`) are conventions. The chart works with any release name; the namespace must match `Cluster.spec.namespace` if you change it.
 
-```
-helm install vworkspace-app-operator \
-  oci://registry.example.com/charts/vworkspace-app-operator \
-  --version 0.0.0 \
-  -n vworkspace-system \
-  --create-namespace
-```
-
-This installs the operator, its CRDs, its RBAC, and the bundled controllers (Flux Helm Controller, Source Controller, cert-manager, external-secrets, Velero). It does not install Argo Workflows or an ingress controller; bring those yourself when you need them ([prerequisites.md](prerequisites.md)).
-
-The Helm release name (`vworkspace-operator` for the in-repo chart) and the namespace (`vworkspace-system`) are conventions. The chart works with any release name; the namespace must match `Cluster.spec.namespace` if you change it.
-
-Wait until the operator's pod reports `Ready` (Option B example):
+Wait until the operator pod reports `Ready` (Options A–C):
 
 ```
 kubectl -n vworkspace-system rollout status deploy/vworkspace-app-operator --timeout=180s

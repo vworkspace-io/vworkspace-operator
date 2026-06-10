@@ -9,7 +9,20 @@ Published images:
 
 | Repository | Tags |
 |------------|------|
-| `docker.io/vworkspace/vworkspace-operator` | `:latest` (main branch), `:<git-sha>`, `:<semver>` (git tags `v*`) |
+| `docker.io/vworkspace/vworkspace-operator` | `:latest` (main branch), `:<git-sha>`, `:v<semver>` (git tags `v*`, e.g. `:v0.0.6`) |
+
+## Helm chart and kubectl manifests
+
+On every `v*` git tag, CI attaches to the [GitHub Release](https://github.com/vworkspace-io/vworkspace-operator/releases):
+
+| Asset | Purpose |
+|-------|---------|
+| `vworkspace-operator-X.Y.Z.tgz` | `helm install` without cloning the repo |
+| `crds.yaml` | CRDs only (`kubectl apply`) |
+| `operator.yaml` | Namespace, RBAC, Deployment (`kubectl apply` after CRDs) |
+| `SHA256SUMS` | Verify downloads |
+
+See [helm.md](helm.md#install-from-github-release) for install commands.
 
 Build locally:
 

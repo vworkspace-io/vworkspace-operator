@@ -23,6 +23,36 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
   --set image.tag=latest
 ```
 
+## Install from GitHub Release
+
+Published on every `v*` git tag ([release process](../development/release-process.md)). Replace `0.0.6` with the version you are installing ([releases page](https://github.com/vworkspace-io/vworkspace-operator/releases)).
+
+**Helm** (operator + CRDs + RBAC; default bundle flags off):
+
+```bash
+helm upgrade --install vworkspace-operator \
+  https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/vworkspace-operator-0.0.6.tgz \
+  --version 0.0.6 \
+  -n vworkspace-system \
+  --create-namespace \
+  --set image.tag=v0.0.6
+```
+
+The chart pins `image.tag` to the git tag (`v0.0.6`) because container images use the `v`-prefixed tag on Docker Hub while chart `appVersion` is bare SemVer.
+
+**kubectl** (no Helm; operator-only profile — apply CRDs first):
+
+```bash
+kubectl apply -f https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/crds.yaml
+kubectl apply -f https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/operator.yaml
+kubectl -n vworkspace-system wait --for=condition=Available \
+  deployment/vworkspace-operator --timeout=300s
+```
+
+Verify checksums: download `SHA256SUMS` from the same release assets.
+
+Maintainers package locally: `VERSION=0.0.6 make package-release` (outputs under `dist/release/`).
+
 The release name (`vworkspace-operator`) and namespace (`vworkspace-system`) are conventions. The chart works with any release name; if you change the namespace, set `Cluster.spec` and registration commands to match.
 
 ### Tested values (kind validation)

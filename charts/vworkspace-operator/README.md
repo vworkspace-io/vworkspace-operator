@@ -15,6 +15,19 @@ helm install vworkspace-operator ./charts/vworkspace-operator \
   --set image.tag=latest
 ```
 
+## Install from GitHub Release
+
+```bash
+helm upgrade --install vworkspace-operator \
+  https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/vworkspace-operator-0.0.6.tgz \
+  --version 0.0.6 \
+  -n vworkspace-system \
+  --create-namespace \
+  --set image.tag=v0.0.6
+```
+
+kubectl alternative and maintainer packaging: [docs/install/helm.md](../../docs/install/helm.md#install-from-github-release).
+
 Session 3 bundle (Flux + Velero + MinIO + metrics on kind):
 
 ```bash
