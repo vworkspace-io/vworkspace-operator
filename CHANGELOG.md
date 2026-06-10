@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Added
+
+- Helm chart release artifacts on GitHub Releases: packaged `.tgz`, `crds.yaml`, `operator.yaml`, and `SHA256SUMS` (via `hack/package-release.sh` and CI `release` job on `v*` tags). Install without cloning this repository — see [docs/install/helm.md](docs/install/helm.md#install-from-github-release).
+
 ### Changed
 
 - CI: Cursor code review fails the workflow when **Findings** include `critical`, `major`, or `minor` (configurable via `REVIEW_FAIL_SEVERITIES`).

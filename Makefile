@@ -101,6 +101,16 @@ validate-helm-kind: ## Validate Helm chart install on kind (see hack/validate-he
 	chmod +x hack/validate-helm-kind.sh
 	./hack/validate-helm-kind.sh
 
+.PHONY: lint-chart
+lint-chart: ## Lint the Helm chart (requires helm)
+	helm dependency update charts/vworkspace-operator
+	helm lint charts/vworkspace-operator
+
+.PHONY: package-release
+package-release: ## Package chart + kubectl manifests for a release (VERSION=0.0.6 or git tag)
+	chmod +x hack/package-release.sh
+	./hack/package-release.sh
+
 .PHONY: test-integration-real
 test-integration-real: ## Live vWorkspace Server smoke test (-tags=integration; needs CONTROL_PLANE_BASE_URL + VWORKSPACE_REGISTRATION_TOKEN)
 	go test -tags=integration ./test/integration/... -run TestRealControlPlane -count=1 -v

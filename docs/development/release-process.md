@@ -27,12 +27,12 @@ A release produces four artifacts:
 
 1. **A Git tag.** Signed (`git tag -s vX.Y.Z`) by a maintainer whose key is in the project's `KEYS` file at the repository root.
 2. **A container image.** Pushed to the project's OCI image registry. Multi-arch (`linux/amd64`, `linux/arm64`). Signed with `cosign` against a transparency log; the signature lives next to the image in the registry.
-3. **A Helm chart.** Packaged as an OCI artifact and pushed to the project's OCI chart registry. The chart's `Chart.yaml` records the operator image tag the chart deploys; `appVersion` matches the operator's SemVer.
-4. **A GitHub release.** With the auto-generated release notes (sourced from `CHANGELOG.md`), the binary `SHA256SUMS` file, and a link to the container image and Helm chart.
+3. **A Helm chart.** Packaged as a `.tgz` and published to **GitHub Releases** on every `v*` tag (along with `crds.yaml`, `operator.yaml`, and `SHA256SUMS`). The chart's `appVersion` matches operator SemVer; the packaged chart defaults `image.tag` to the `v`-prefixed git tag (e.g. `v0.0.6`) to match Docker Hub. OCI chart registry (`ghcr.io`) remains on the roadmap — see [../install/helm.md](../install/helm.md#install-from-github-release).
+4. **A GitHub release.** With notes from `CHANGELOG.md`, the chart tarball, kubectl manifests, and checksums. Container image link: `docker.io/vworkspace/vworkspace-operator:vX.Y.Z`.
 
 Container images for development and CI are published to **Docker Hub**: `docker.io/vworkspace/vworkspace-operator` (`:latest` on `main`, `:<git-sha>`, and `:<tag>` for `v*` git tags). Configure repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` for the `docker` job in `.github/workflows/ci.yml`. See [../install/container-images.md](../install/container-images.md).
 
-Helm chart OCI registry hostnames remain placeholders until the chart packaging pipeline is wired.
+Helm charts and kubectl manifests are published by the `release` job in the same workflow when a `v*` tag is pushed (after the container image job). Package locally with `VERSION=X.Y.Z make package-release`.
 
 ## Signing
 
@@ -111,7 +111,7 @@ For a hand-curated release:
 6. Open the release PR (`release: vX.Y.Z`); get one review.
 7. Merge the PR.
 8. Tag the merge commit: `git tag -s vX.Y.Z -m "Release vX.Y.Z"`. Push the tag.
-9. The release workflow builds the multi-arch image, signs it, pushes it; packages the Helm chart, signs it, pushes it; opens the GitHub release with the notes pulled from `CHANGELOG.md`.
+9. CI builds and pushes the container image, then runs `hack/package-release.sh` and creates the GitHub Release with chart + manifest assets. Release notes are taken from the matching `CHANGELOG.md` section when present.
 10. Announce on the project's communication channels.
 
 For an automated release (when adopted), steps 3 through 7 are done by the bot's release PR; the maintainer reviews and merges it.

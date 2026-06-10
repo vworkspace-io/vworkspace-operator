@@ -39,11 +39,25 @@ The operator is **Helm-first**: every application is deployed from an upstream H
 ## Quick start
 
 1. Install prerequisites ([docs/install/prerequisites.md](docs/install/prerequisites.md)).
-2. Deploy the operator ([docs/install/quickstart.md](docs/install/quickstart.md)):
+2. Deploy the operator — **without cloning this repo**, use a [GitHub Release](https://github.com/vworkspace-io/vworkspace-operator/releases) chart or kubectl manifests ([docs/install/helm.md](docs/install/helm.md#install-from-github-release)):
 
 ```bash
-make deploy IMG=docker.io/vworkspace/vworkspace-operator:latest
+helm upgrade --install vworkspace-operator \
+  https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/vworkspace-operator-0.0.6.tgz \
+  --version 0.0.6 \
+  -n vworkspace-system \
+  --create-namespace \
+  --set image.tag=v0.0.6
 ```
+
+Or apply manifests:
+
+```bash
+kubectl apply -f https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/crds.yaml
+kubectl apply -f https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.6/operator.yaml
+```
+
+For development from a checkout: `make deploy IMG=docker.io/vworkspace/vworkspace-operator:latest` ([docs/install/quickstart.md](docs/install/quickstart.md)).
 
 3. Register the cluster with vWorkspace Server and enable Pull mode ([docs/connectivity/pull-mode.md](docs/connectivity/pull-mode.md)):
 
