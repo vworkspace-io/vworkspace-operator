@@ -239,7 +239,7 @@ jobs:
     env:
       # Pin vworkspace-server commit with matching agent API + seed protocol. Bump in this file when
       # operator integration or server seed protocol changes (workflow_dispatch can override for replay).
-      SERVER_REF: ${{ github.event.inputs.server_ref != '' && github.event.inputs.server_ref || '3d8d5db980641986964122dbe0a7db2472c21669' }}
+      SERVER_REF: ${{ github.event.inputs.server_ref != '' && github.event.inputs.server_ref || 'da5243243cef37a9b58b9e4494958f47304f9cc4' }}
       COMPOSE_PROJECT_NAME: vws-contract-op-${{ github.run_id }}
       IMAGE_TAG: ci-contract-op-${{ github.run_id }}
       ARTIFACT_DIR: ${{ github.workspace }}/contract-integration-artifacts
