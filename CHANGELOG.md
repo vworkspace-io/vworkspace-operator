@@ -6,22 +6,24 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-06-11
+
+Phase 2 pre-release — first GitHub Release with installable Helm chart and kubectl manifests.
+
 ### Added
 
 - Helm chart release artifacts on GitHub Releases: packaged `.tgz`, `crds.yaml`, `operator.yaml`, and `SHA256SUMS` (via `hack/package-release.sh` and CI `release` job on `v*` tags). Install without cloning this repository — see [docs/install/helm.md](docs/install/helm.md#install-from-github-release).
+- Operation engines: `job`, `workflow`, and `helmHookJob` runtime materialization and status polling in the operation reconciler (Hub #9 spoke 4).
+- Operation admission: typed concurrency conflict matrix (shared with reconciler) and `vws1` approval-claim HMAC verification via `--approval-claim-secret` / `VWORKSPACE_APPROVAL_CLAIM_SECRET` (aligned with server `vws_operations.approval_claim_secret`).
+- Built-in `restore.velero` template marks `RequiresApproval`; reconciler blocks with `AwaitingApproval` until a valid claim is present.
+- CI: Cursor Agent automated PR code review workflow (`.github/workflows/code-review.yml`, `hack/code-review.sh`).
 
 ### Changed
 
 - CI: Cursor code review fails the workflow when **Findings** include `critical`, `major`, or `minor` (configurable via `REVIEW_FAIL_SEVERITIES`).
 - CI: code review uses PR head SHA in comments, caps previous-review history, fails the job on agent errors, surfaces diff truncation, and documents untrusted-PR handling in CONTRIBUTING/SECURITY.
 - CI: extracted the findings severity parser into `hack/code_review_findings.py` with unit tests (`hack/test_code_review_findings.py`, run in the verify job); the parser ignores illustrative `### [severity]` examples quoted under **Suggested fix** so it no longer fails CI on its own quoted markdown.
-
-### Added
-
-- Operation engines: `job`, `workflow`, and `helmHookJob` runtime materialization and status polling in the operation reconciler (Hub #9 spoke 4).
-- Operation admission: typed concurrency conflict matrix (shared with reconciler) and `vws1` approval-claim HMAC verification via `--approval-claim-secret` / `VWORKSPACE_APPROVAL_CLAIM_SECRET` (aligned with server `vws_operations.approval_claim_secret`).
-- Built-in `restore.velero` template marks `RequiresApproval`; reconciler blocks with `AwaitingApproval` until a valid claim is present.
-- CI: Cursor Agent automated PR code review workflow (`.github/workflows/code-review.yml`, `hack/code-review.sh`).
+- CI: pin `softprops/action-gh-release` to a valid v2.2.1 commit so tagged releases publish successfully ([#71](https://github.com/vworkspace-io/vworkspace-operator/pull/71)).
 
 ## [0.0.6] - 2026-06-02
 
@@ -49,4 +51,3 @@ Phase 1 joint pre-release — Pull-mode agent contract aligned with [vworkspace-
 ### Added
 
 - Initial project scaffold: documentation, governance, license, ADRs, RFC process, issue and PR templates. No code yet.
-

@@ -548,29 +548,22 @@ jobs:
         working-directory: release
         env:
           VERSION: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           ver="${VERSION#v}"
           notes_file="${RUNNER_TEMP}/release-notes.md"
-          if awk -v ver="${ver}" '
-            $0 ~ "^## \\[" ver "\\]" { found=1 }
-            found && $0 ~ "^## \\[" && $0 !~ "^## \\[" ver "\\]" { exit }
-            found { print }
-          ' CHANGELOG.md > "${notes_file}" && [[ -s "${notes_file}" ]]; then
-            echo "use_changelog=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "use_changelog=false" >> "$GITHUB_OUTPUT"
-            printf '%s\n' "Release ${VERSION}" > "${notes_file}"
-            printf '%s\n' "" >> "${notes_file}"
-            printf '%s\n' "Helm chart and kubectl manifests for \`${VERSION}\`. Container image: \`docker.io/vworkspace/vworkspace-operator:${VERSION}\`." >> "${notes_file}"
-          fi
+          chmod +x hack/render-release-notes.sh
+          ./hack/render-release-notes.sh "${ver}" > "${notes_file}"
+          title="$(./hack/render-release-notes.sh "${ver}" --print-title)"
           echo "notes_file=${notes_file}" >> "$GITHUB_OUTPUT"
+          echo "title=${title}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: ${{ steps.notes.outputs.title }}
           body_path: ${{ steps.notes.outputs.notes_file }}
           generate_release_notes: false
           files: |
