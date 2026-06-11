@@ -5,7 +5,7 @@ GitHub Release bodies are **generated automatically** on every `v*` tag by `hack
 ## Maintainer checklist (before tagging)
 
 1. Move `[Unreleased]` entries into a new `## [X.Y.Z] - YYYY-MM-DD` section.
-2. Add a **one-line summary** immediately under the version heading (before `### Added`). This becomes the release subtitle, e.g. `v0.0.7 — Phase 2 pre-release`.
+2. Add a **one-line summary** immediately under the version heading (before `### Added`). It opens the generated release body; the GitHub Release **title** is only the tag (e.g. `v0.0.7`).
 3. Group changes under Keep a Changelog headings: `### Added`, `### Changed`, `### Fixed`, etc.
 4. Tag and push; CI publishes assets and the formatted release page.
 
