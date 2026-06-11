@@ -111,7 +111,7 @@ For a hand-curated release:
 6. Open the release PR (`release: vX.Y.Z`); get one review.
 7. Merge the PR.
 8. Tag the merge commit: `git tag -s vX.Y.Z -m "Release vX.Y.Z"`. Push the tag.
-9. CI builds and pushes the container image, then runs `hack/package-release.sh` and creates the GitHub Release with chart + manifest assets. Release notes are taken from the matching `CHANGELOG.md` section when present.
+9. CI builds and pushes the container image, then runs `hack/package-release.sh` and creates the GitHub Release with chart + manifest assets. `hack/render-release-notes.sh` assembles the release title and body (install commands, asset table, and the matching `CHANGELOG.md` section). Preview locally: `VERSION=X.Y.Z ./hack/render-release-notes.sh`.
 10. Announce on the project's communication channels.
 
 For an automated release (when adopted), steps 3 through 7 are done by the bot's release PR; the maintainer reviews and merges it.
