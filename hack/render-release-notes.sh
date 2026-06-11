@@ -76,14 +76,7 @@ if [[ -z "${summary}" ]]; then
 fi
 
 release_title() {
-  local subtitle
-  if [[ "${summary}" == *" — "* ]]; then
-    subtitle="${summary%% — *}"
-  else
-    subtitle="$(printf '%s' "${summary}" | cut -c1-72)"
-  fi
-  subtitle="${subtitle%.}"
-  printf '%s — %s\n' "${TAG}" "${subtitle}"
+  printf '%s\n' "${TAG}"
 }
 
 if [[ "${PRINT_TITLE}" == "true" ]]; then
