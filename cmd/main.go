@@ -205,7 +205,9 @@ func main() {
 		OperatorNamespace: credNamespace,
 		Reporter:          statusReporter,
 		EventBatcher:      eventBatcher,
-		Recorder:          mgr.GetEventRecorderFor("cluster-controller"),
+		// ClusterReconciler.Recorder is a record.EventRecorder (old events API); keep using
+		// GetEventRecorderFor until the reconciler migrates to the new events.EventRecorder API.
+		Recorder: mgr.GetEventRecorderFor("cluster-controller"), //nolint:staticcheck // SA1019: old events API still in use
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
 		os.Exit(1)
