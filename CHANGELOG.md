@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Fixed
+
+- Cluster registration is now idempotent against existing bootstrap credentials. The reconciler treats a present, valid `vworkspace-agent-credentials` Secret as proof of registration and no longer re-exchanges the spent one-time token, and the post-registration status write retries on optimistic-concurrency conflicts. Previously a transient `the object has been modified` conflict during a successful registration left `status.phase` unset, so the next reconcile re-exchanged the consumed token and pinned the Cluster to `Error` (`RegistrationTokenInvalid`) until a new token was issued. A 401 with credentials already present is now treated as benign. Surfaced during Rancher real-cluster validation; tracked under hub golden-path task P4-T001.
+
 ## [0.0.7] - 2026-06-11
 
 Phase 2 pre-release — first GitHub Release with installable Helm chart and kubectl manifests.

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -15,9 +16,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const agentEventsAPIPath = "/api/agent/events"
@@ -486,6 +490,216 @@ func TestClusterReconcilerReRegisterAnnotationSkipsAdoption(t *testing.T) {
 	}
 	if string(secret.Data[agent.SecretKeyToken]) != "new-bootstrap-token" {
 		t.Fatalf("expected rotated bootstrap token, got %q", secret.Data[agent.SecretKeyToken])
+	}
+}
+
+// TestClusterReconcilerCredentialsExistSkipRegister reproduces the Rancher
+// real-cluster bug: a prior reconcile registered successfully and persisted the
+// credentials Secret, but its success status write lost an optimistic-concurrency
+// race, so status.phase / observedToken / RegistrationTokenConsumed were never
+// recorded. The reconciler must treat the existing valid credentials as proof of
+// registration, NOT re-exchange the now-spent one-time token (which would 401),
+// and settle to Connected.
+func TestClusterReconcilerCredentialsExistSkipRegister(t *testing.T) {
+	server := newEventsServer(t)
+	defer server.Close()
+
+	scheme := newClusterTestScheme(t)
+
+	credsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: agent.DefaultCredentialsSecret, Namespace: "vworkspace-system"},
+		Data: map[string][]byte{
+			agent.SecretKeyControlPlaneBaseURL: []byte(server.URL),
+			agent.SecretKeyClusterID:           []byte("dev-cluster-1"),
+			agent.SecretKeyToken:               []byte("bootstrap-token"),
+		},
+	}
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "dev-cluster-1-registration", Namespace: "vworkspace-system"},
+		Data:       map[string][]byte{opsv1alpha1.DefaultRegistrationTokenKey: []byte("vwksp-reg-spent-token")},
+	}
+	// No CredentialStatus and no ObservedToken: the success status write was lost.
+	cluster := &opsv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "dev-cluster-1"},
+		Spec: opsv1alpha1.ClusterSpec{
+			ControlPlaneEndpoint:       server.URL,
+			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{Name: "dev-cluster-1-registration"},
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, tokenSecret, credsSecret).WithStatusSubresource(cluster).Build()
+	httpClient, err := agent.NewHTTPClient(agent.Config{BaseURL: server.URL, ClusterID: "dev-cluster-1", Token: "bootstrap-token"})
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	// A 401 here would pin the cluster to Error; the reconciler must never call it.
+	regClient := &fakeRegistrationClient{err: errors.New("register API error (401): RegistrationTokenInvalid: invalid or expired registration token")}
+
+	reconciler := &ClusterReconciler{
+		Client:             cl,
+		Scheme:             scheme,
+		AgentClient:        httpClient,
+		RegistrationClient: regClient,
+		CredentialsSecret:  agent.DefaultCredentialsSecret,
+		OperatorNamespace:  "vworkspace-system",
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if regClient.calls != 0 {
+		t.Fatalf("expected no register call when credentials already exist, got %d", regClient.calls)
+	}
+	updated := &opsv1alpha1.Cluster{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if updated.Status.Phase != opsv1alpha1.ClusterPhaseConnected {
+		t.Fatalf("expected phase Connected from existing credentials, got %q", updated.Status.Phase)
+	}
+	if updated.Status.ObservedToken == "" {
+		t.Fatal("expected observedToken to be seeded on credentials adoption")
+	}
+	if updated.Status.CredentialStatus == nil || !updated.Status.CredentialStatus.RegistrationTokenConsumed {
+		t.Fatal("expected RegistrationTokenConsumed recorded on adoption")
+	}
+}
+
+// TestClusterReconcilerRegistrationStatusConflictRetried proves the success status
+// write survives a transient optimistic-concurrency conflict: the registration
+// exchange happens once, the first status subresource write returns Conflict, and
+// retry-on-conflict re-applies it so the cluster ends Connected (not Error) with
+// the consumed token recorded — preventing the next reconcile from re-exchanging
+// the spent token.
+func TestClusterReconcilerRegistrationStatusConflictRetried(t *testing.T) {
+	server := newEventsServer(t)
+	defer server.Close()
+
+	scheme := newClusterTestScheme(t)
+
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "dev-cluster-1-registration", Namespace: "vworkspace-system"},
+		Data:       map[string][]byte{opsv1alpha1.DefaultRegistrationTokenKey: []byte("vwksp-reg-fresh-token")},
+	}
+	cluster := &opsv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "dev-cluster-1"},
+		Spec: opsv1alpha1.ClusterSpec{
+			ControlPlaneEndpoint:       server.URL,
+			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{Name: "dev-cluster-1-registration"},
+		},
+	}
+
+	var statusWrites int
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, tokenSecret).WithStatusSubresource(cluster).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+				statusWrites++
+				if statusWrites == 1 {
+					// Simulate the lost-race the live cluster hit on the success write.
+					return apierrors.NewConflict(
+						schema.GroupResource{Group: "ops.vworkspace.io", Resource: "clusters"},
+						obj.GetName(),
+						errors.New("the object has been modified; please apply your changes to the latest version and try again"),
+					)
+				}
+				return c.Status().Update(ctx, obj, opts...)
+			},
+		}).Build()
+
+	httpClient, err := agent.NewHTTPClient(agent.Config{BaseURL: server.URL, ClusterID: "dev-cluster-1", Token: "bootstrap-token"})
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	regClient := &fakeRegistrationClient{resp: agent.RegisterResponse{ClusterID: "dev-cluster-1", Token: "bootstrap-token"}}
+
+	reconciler := &ClusterReconciler{
+		Client:             cl,
+		Scheme:             scheme,
+		AgentClient:        httpClient,
+		RegistrationClient: regClient,
+		CredentialsSecret:  agent.DefaultCredentialsSecret,
+		OperatorNamespace:  "vworkspace-system",
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if statusWrites < 2 {
+		t.Fatalf("expected the status write to be retried after a conflict, got %d writes", statusWrites)
+	}
+	if regClient.calls != 1 {
+		t.Fatalf("expected exactly one registration exchange, got %d", regClient.calls)
+	}
+	updated := &opsv1alpha1.Cluster{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if updated.Status.Phase == opsv1alpha1.ClusterPhaseError {
+		t.Fatal("expected a transient status conflict not to leave the cluster in Error")
+	}
+	if updated.Status.Phase != opsv1alpha1.ClusterPhaseConnected {
+		t.Fatalf("expected phase Connected after retried status write, got %q", updated.Status.Phase)
+	}
+	if updated.Status.ObservedToken == "" {
+		t.Fatal("expected observedToken recorded so the spent token is not re-exchanged")
+	}
+	if updated.Status.CredentialStatus == nil || !updated.Status.CredentialStatus.RegistrationTokenConsumed {
+		t.Fatal("expected RegistrationTokenConsumed recorded after retried status write")
+	}
+}
+
+// TestClusterReconcilerNoCredentialsInvalidTokenErrors guards the genuine failure
+// path: with no bootstrap credentials present and an invalid/expired token, the
+// cluster correctly reports Error (the 401 is surfaced, not swallowed).
+func TestClusterReconcilerNoCredentialsInvalidTokenErrors(t *testing.T) {
+	scheme := newClusterTestScheme(t)
+
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "dev-cluster-1-registration", Namespace: "vworkspace-system"},
+		Data:       map[string][]byte{opsv1alpha1.DefaultRegistrationTokenKey: []byte("vwksp-reg-expired")},
+	}
+	cluster := &opsv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "dev-cluster-1"},
+		Spec: opsv1alpha1.ClusterSpec{
+			ControlPlaneEndpoint:       "https://workspace.example.org",
+			RegistrationTokenSecretRef: &opsv1alpha1.SecretKeyRef{Name: "dev-cluster-1-registration"},
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, tokenSecret).WithStatusSubresource(cluster).Build()
+	regClient := &fakeRegistrationClient{err: errors.New("register API error (401): RegistrationTokenInvalid: invalid or expired registration token")}
+
+	reconciler := &ClusterReconciler{
+		Client:             cl,
+		Scheme:             scheme,
+		RegistrationClient: regClient,
+		CredentialsSecret:  agent.DefaultCredentialsSecret,
+		OperatorNamespace:  "vworkspace-system",
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: cluster.Name}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if regClient.calls == 0 {
+		t.Fatal("expected a registration attempt when no credentials exist")
+	}
+	updated := &opsv1alpha1.Cluster{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: cluster.Name}, updated); err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if updated.Status.Phase != opsv1alpha1.ClusterPhaseError {
+		t.Fatalf("expected phase Error for invalid token without credentials, got %q", updated.Status.Phase)
+	}
+	cond, ok := conditions.Get(updated.Status.Conditions, opsv1alpha1.ConditionAuthenticated)
+	if !ok || cond.Status != metav1.ConditionFalse || cond.Reason != "RegistrationFailed" {
+		t.Fatalf("expected Authenticated=False/RegistrationFailed, got %+v", cond)
+	}
+	credSecret := &corev1.Secret{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Namespace: "vworkspace-system", Name: agent.DefaultCredentialsSecret}, credSecret); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected no credentials secret to be created on failed registration, got %v", err)
 	}
 }
 

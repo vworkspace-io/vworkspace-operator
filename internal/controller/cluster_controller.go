@@ -33,6 +33,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -120,14 +121,17 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 		return ctrl.Result{}, false, nil
 	}
 
-	// Adoption: a cluster this operator already registered (RegistrationTokenConsumed)
-	// has an empty observedToken after upgrade but still holds bootstrap credentials.
-	// Seed the fingerprint without re-exchanging the consumed one-time token, so it
-	// does not spuriously flip to Error. Gated on a proven prior registration so a
-	// genuinely new token (no prior registration recorded) still triggers exchange.
-	// Skipped when ops.vworkspace.io/reregister is set (admin swapped the
-	// token Secret and wants a deliberate re-exchange).
-	if !forceReRegister && cluster.Status.ObservedToken == "" && registrationConsumed(cluster) {
+	// Idempotency guard: valid bootstrap credentials already on disk are proof that
+	// the one-time registration token was already exchanged successfully — possibly
+	// on a prior reconcile whose success status write lost an optimistic-concurrency
+	// race ("object has been modified"), so observedToken / RegistrationTokenConsumed
+	// were never persisted. Re-exchanging the now-spent token would fail with
+	// RegistrationTokenInvalid (401) and pin the cluster to Error even though it is
+	// genuinely registered with working credentials. Treat existing credentials as
+	// "already registered": seed the fingerprint and adopt without calling
+	// /api/agent/register. Skipped only when ops.vworkspace.io/reregister is set
+	// (admin deliberately swapped the token Secret and wants a fresh exchange).
+	if !forceReRegister {
 		if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr == nil {
 			if err := r.adoptExistingRegistration(ctx, cluster, tokenFingerprint(token), secretName, namespace); err != nil {
 				return ctrl.Result{}, true, err
@@ -140,6 +144,24 @@ func (r *ClusterReconciler) reconcileRegistration(ctx context.Context, req ctrl.
 	}
 
 	if err := r.registerCluster(ctx, cluster, token, tokenSource, secretName, namespace); err != nil {
+		// Defense in depth for the idempotency guard above: a token exchange that
+		// fails after credentials were already materialized (for example the
+		// register call succeeded and wrote the Secret on a prior reconcile, then a
+		// retried exchange of the spent token returns 401) must not knock an
+		// already-registered cluster offline. If credentials exist, the 401 is
+		// benign — adopt instead of reporting a terminal Error.
+		if !forceReRegister {
+			if _, credErr := r.loadStoredCredentials(ctx, namespace, secretName); credErr == nil {
+				log.Info("registration token exchange failed but bootstrap credentials exist; treating cluster as already registered", "registerError", err.Error())
+				if adoptErr := r.adoptExistingRegistration(ctx, cluster, tokenFingerprint(token), secretName, namespace); adoptErr != nil {
+					return ctrl.Result{}, true, adoptErr
+				}
+				if getErr := r.Get(ctx, req.NamespacedName, cluster); getErr != nil {
+					return ctrl.Result{}, true, fmt.Errorf("reload cluster after adoption: %w", getErr)
+				}
+				return ctrl.Result{}, false, nil
+			}
+		}
 		log.Error(err, "cluster registration failed")
 		cluster.Status.Phase = opsv1alpha1.ClusterPhaseError
 		cluster.Status.Conditions = conditions.Set(cluster.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionFalse, "RegistrationFailed", err.Error())
@@ -372,22 +394,31 @@ func (r *ClusterReconciler) registerCluster(ctx context.Context, cluster *opsv1a
 		}
 	}
 
-	fresh := &opsv1alpha1.Cluster{}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), fresh); err != nil {
-		return fmt.Errorf("reload cluster after registration: %w", err)
-	}
-	fresh.Status.Phase = opsv1alpha1.ClusterPhaseRegistering
-	fresh.Status.ObservedToken = tokenFingerprint(token)
-	fresh.Status.CredentialsSecretRef = &opsv1alpha1.SecretReference{Name: secretName, Namespace: namespace}
-	fresh.Status.CredentialStatus = &opsv1alpha1.ClusterCredentialStatus{
-		SecretName:                secretName,
-		SecretNamespace:           namespace,
-		RegisteredAt:              &now,
-		RegistrationTokenConsumed: true,
-	}
-	fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionTrue, "RegistrationComplete", "registration token exchanged for bootstrap credential")
-	fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "ControlPlaneReachable", "registration exchange succeeded")
-	return r.Status().Update(ctx, fresh)
+	fingerprint := tokenFingerprint(token)
+	// Registration already succeeded and the bootstrap credentials are persisted.
+	// Make the success status write resilient to optimistic-concurrency conflicts:
+	// a transient "object has been modified" must not lose the registered result,
+	// otherwise the next reconcile would re-exchange the now-spent one-time token
+	// and pin the cluster to Error. Re-GET the latest object on every attempt so we
+	// update the status subresource with a fresh resourceVersion.
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fresh := &opsv1alpha1.Cluster{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), fresh); err != nil {
+			return fmt.Errorf("reload cluster after registration: %w", err)
+		}
+		fresh.Status.Phase = opsv1alpha1.ClusterPhaseRegistering
+		fresh.Status.ObservedToken = fingerprint
+		fresh.Status.CredentialsSecretRef = &opsv1alpha1.SecretReference{Name: secretName, Namespace: namespace}
+		fresh.Status.CredentialStatus = &opsv1alpha1.ClusterCredentialStatus{
+			SecretName:                secretName,
+			SecretNamespace:           namespace,
+			RegisteredAt:              &now,
+			RegistrationTokenConsumed: true,
+		}
+		fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionAuthenticated, metav1.ConditionTrue, "RegistrationComplete", "registration token exchanged for bootstrap credential")
+		fresh.Status.Conditions = conditions.Set(fresh.Status.Conditions, opsv1alpha1.ConditionConnected, metav1.ConditionTrue, "ControlPlaneReachable", "registration exchange succeeded")
+		return r.Status().Update(ctx, fresh)
+	})
 }
 
 const (
@@ -432,15 +463,31 @@ func (r *ClusterReconciler) resolveRegistrationToken(ctx context.Context, cluste
 // for a cluster whose bootstrap credentials predate the observedToken field,
 // without re-exchanging the token.
 func (r *ClusterReconciler) adoptExistingRegistration(ctx context.Context, cluster *opsv1alpha1.Cluster, fingerprint, secretName, namespace string) error {
-	fresh := &opsv1alpha1.Cluster{}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), fresh); err != nil {
-		return fmt.Errorf("reload cluster for adoption: %w", err)
-	}
-	fresh.Status.ObservedToken = fingerprint
-	if fresh.Status.CredentialsSecretRef == nil {
-		fresh.Status.CredentialsSecretRef = &opsv1alpha1.SecretReference{Name: secretName, Namespace: namespace}
-	}
-	return r.Status().Update(ctx, fresh)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fresh := &opsv1alpha1.Cluster{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), fresh); err != nil {
+			return fmt.Errorf("reload cluster for adoption: %w", err)
+		}
+		fresh.Status.ObservedToken = fingerprint
+		if fresh.Status.CredentialsSecretRef == nil {
+			fresh.Status.CredentialsSecretRef = &opsv1alpha1.SecretReference{Name: secretName, Namespace: namespace}
+		}
+		// Record the consumed registration so subsequent reconciles recognize this
+		// cluster as already registered without depending on the heartbeat path or
+		// re-reading the credentials Secret.
+		if fresh.Status.CredentialStatus == nil {
+			now := metav1.Now()
+			fresh.Status.CredentialStatus = &opsv1alpha1.ClusterCredentialStatus{
+				SecretName:                secretName,
+				SecretNamespace:           namespace,
+				RegisteredAt:              &now,
+				RegistrationTokenConsumed: true,
+			}
+		} else {
+			fresh.Status.CredentialStatus.RegistrationTokenConsumed = true
+		}
+		return r.Status().Update(ctx, fresh)
+	})
 }
 
 // finalizeCluster runs best-effort cleanup before the Cluster is removed. The
@@ -473,12 +520,6 @@ func controlPlaneEndpoint(cluster *opsv1alpha1.Cluster) string {
 		return endpoint
 	}
 	return strings.TrimSpace(cluster.Spec.ControlPlaneBaseURL)
-}
-
-// registrationConsumed reports whether this operator already exchanged a
-// registration token for the cluster (a proven prior registration).
-func registrationConsumed(cluster *opsv1alpha1.Cluster) bool {
-	return cluster.Status.CredentialStatus != nil && cluster.Status.CredentialStatus.RegistrationTokenConsumed
 }
 
 // reRegisterRequested reports whether the admin set ops.vworkspace.io/reregister
