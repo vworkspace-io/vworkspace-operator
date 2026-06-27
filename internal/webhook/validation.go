@@ -211,6 +211,28 @@ func validateOperationApprovalClaim(secret string, op *opsv1alpha1.Operation) er
 	return nil
 }
 
+// validatePlaceholderSpec enforces the placeholder (cluster-ops) contract at
+// admission time. A placeholder owns no Helm release, so it must not declare a
+// chart or values, and a release (if set) must stay bound to
+// metadata.namespace. This mirrors the controller's reconcile-time check so
+// forbidden specs are rejected up front instead of only landing in a
+// ValidationFailed status. The inline-secret scan is intentionally skipped
+// because placeholders carry no chart values.
+func validatePlaceholderSpec(namespace string, spec appsv1alpha1.ApplicationInstanceSpec) error {
+	if spec.Chart != nil {
+		return fmt.Errorf("spec.chart must not be set in placeholder mode")
+	}
+	if spec.Values != nil {
+		return fmt.Errorf("spec.values must not be set in placeholder mode")
+	}
+	if spec.Release != nil {
+		if strings.TrimSpace(spec.Release.Namespace) != "" && spec.Release.Namespace != namespace {
+			return fmt.Errorf("spec.release.namespace must match metadata.namespace")
+		}
+	}
+	return nil
+}
+
 func validateInlineValues(values appsv1alpha1.ValuesSpec) error {
 	switch values.Source {
 	case appsv1alpha1.ValuesSourceInline:

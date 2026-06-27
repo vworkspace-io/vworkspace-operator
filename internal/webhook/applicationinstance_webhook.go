@@ -53,10 +53,12 @@ func (w *ApplicationInstanceWebhook) ValidateUpdate(_ context.Context, _, app *a
 
 // validateApplicationInstance runs admission-time checks. Placeholder
 // (cluster-ops) instances own no Helm release and carry no chart values, so the
-// inline-secret scan is skipped for them.
+// inline-secret scan is skipped for them; forbidden fields (chart/values) and an
+// out-of-namespace release are still rejected at admission rather than only at
+// reconcile time.
 func validateApplicationInstance(app *appsv1alpha1.ApplicationInstance) error {
 	if app.Spec.IsPlaceholder() {
-		return nil
+		return validatePlaceholderSpec(app.Namespace, app.Spec)
 	}
 	if app.Spec.Values == nil {
 		return nil
