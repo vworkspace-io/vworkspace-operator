@@ -47,7 +47,10 @@ func (w *ApplicationInstanceWebhook) ValidateCreate(_ context.Context, app *apps
 	return nil, validateApplicationInstance(app)
 }
 
-func (w *ApplicationInstanceWebhook) ValidateUpdate(_ context.Context, _, app *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
+func (w *ApplicationInstanceWebhook) ValidateUpdate(_ context.Context, oldObj, app *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
+	if err := validateModeTransition(oldObj, app); err != nil {
+		return nil, err
+	}
 	return nil, validateApplicationInstance(app)
 }
 

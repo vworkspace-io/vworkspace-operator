@@ -211,6 +211,29 @@ func validateOperationApprovalClaim(secret string, op *opsv1alpha1.Operation) er
 	return nil
 }
 
+// validateModeTransition blocks switching an existing managed instance to
+// placeholder mode while it still owns a Helm release. The placeholder reconcile
+// path performs no Helm work (it never calls DeleteRelease), so allowing the
+// switch would orphan the release. Callers must delete the instance — which
+// uninstalls the release through the managed finalizer — and recreate it as a
+// placeholder instead.
+func validateModeTransition(oldApp, newApp *appsv1alpha1.ApplicationInstance) error {
+	if oldApp == nil || newApp == nil {
+		return nil
+	}
+	// Only the managed -> placeholder direction can orphan a release.
+	if oldApp.Spec.IsPlaceholder() || !newApp.Spec.IsPlaceholder() {
+		return nil
+	}
+	if newApp.Status.HelmReleaseRef != nil {
+		return fmt.Errorf(
+			"cannot switch a managed instance with an existing Helm release (status.helmReleaseRef=%s) to placeholder mode; delete and recreate as a placeholder instead",
+			newApp.Status.HelmReleaseRef.Name,
+		)
+	}
+	return nil
+}
+
 // validatePlaceholderSpec enforces the placeholder (cluster-ops) contract at
 // admission time. A placeholder owns no Helm release, so it must not declare a
 // chart or values, and a release (if set) must stay bound to

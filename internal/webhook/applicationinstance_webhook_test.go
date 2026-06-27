@@ -102,6 +102,48 @@ func TestApplicationInstanceWebhookAdmitsManagedInstance(t *testing.T) {
 	}
 }
 
+func TestApplicationInstanceWebhookRejectsManagedToPlaceholderWithRelease(t *testing.T) {
+	hook := newAppInstanceWebhook(t)
+	oldApp := sampleApplicationInstance("team-a", "app")
+	newApp := placeholderApplicationInstance("team-a", "app")
+	newApp.Status.HelmReleaseRef = &appsv1alpha1.HelmReleaseRef{Name: "app", Namespace: "team-a"}
+	_, err := hook.ValidateUpdate(context.Background(), oldApp, newApp)
+	if err == nil {
+		t.Fatal("expected managed->placeholder transition with existing release to be rejected")
+	}
+	if !strings.Contains(err.Error(), "delete and recreate as a placeholder") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplicationInstanceWebhookAllowsManagedToPlaceholderWithoutRelease(t *testing.T) {
+	hook := newAppInstanceWebhook(t)
+	oldApp := sampleApplicationInstance("team-a", "app")
+	newApp := placeholderApplicationInstance("team-a", "app")
+	if _, err := hook.ValidateUpdate(context.Background(), oldApp, newApp); err != nil {
+		t.Fatalf("expected managed->placeholder transition without a release to be admitted: %v", err)
+	}
+}
+
+func TestApplicationInstanceWebhookAllowsPlaceholderUpdate(t *testing.T) {
+	hook := newAppInstanceWebhook(t)
+	oldApp := placeholderApplicationInstance("team-a", "app")
+	newApp := placeholderApplicationInstance("team-a", "app")
+	if _, err := hook.ValidateUpdate(context.Background(), oldApp, newApp); err != nil {
+		t.Fatalf("expected placeholder update to be admitted: %v", err)
+	}
+}
+
+func TestApplicationInstanceWebhookAllowsManagedUpdate(t *testing.T) {
+	hook := newAppInstanceWebhook(t)
+	oldApp := sampleApplicationInstance("team-a", "app")
+	newApp := sampleApplicationInstance("team-a", "app")
+	newApp.Status.HelmReleaseRef = &appsv1alpha1.HelmReleaseRef{Name: "app", Namespace: "team-a"}
+	if _, err := hook.ValidateUpdate(context.Background(), oldApp, newApp); err != nil {
+		t.Fatalf("expected managed update to be admitted: %v", err)
+	}
+}
+
 func TestApplicationInstanceWebhookRejectsManagedInlineSecret(t *testing.T) {
 	hook := newAppInstanceWebhook(t)
 	app := sampleApplicationInstance("team-a", "app")

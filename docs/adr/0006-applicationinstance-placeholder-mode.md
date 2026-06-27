@@ -62,8 +62,17 @@ Reconciler behaviour for `mode: placeholder`:
 - keep finalizer handling clean — nothing to uninstall.
 
 `managed` keeps the existing Helm-first behaviour from ADR 0002 verbatim. The
-admission webhook skips the inline-secret scan for placeholder instances (they
-carry no chart values) and is unchanged for managed instances.
+admission webhook applies the same placeholder contract as the reconciler —
+rejecting forbidden `chart`/`values` and an out-of-namespace `release` at
+admission time — while skipping only the inline-secret scan for placeholders
+(they carry no chart values). It is unchanged for managed instances.
+
+To avoid orphaning a Helm release, the webhook also **rejects a managed →
+placeholder update while the instance still owns a release** (`status.helmReleaseRef`
+is set): the placeholder reconcile path performs no Helm work, so it would never
+uninstall the existing release. Operators must delete the instance — which
+uninstalls the release through the managed finalizer — and recreate it as a
+placeholder.
 
 This is **Option B** from the hub design — the recommended target end-state.
 Option A (empty/raw chart) is not implemented.
