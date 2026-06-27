@@ -225,10 +225,17 @@ func validateModeTransition(oldApp, newApp *appsv1alpha1.ApplicationInstance) er
 	if oldApp.Spec.IsPlaceholder() || !newApp.Spec.IsPlaceholder() {
 		return nil
 	}
-	if newApp.Status.HelmReleaseRef != nil {
+	// status.helmReleaseRef on the stored (old) object is the authoritative
+	// signal that a managed release still exists; a spec-only update may submit
+	// an object whose status has not been populated by the client.
+	ref := oldApp.Status.HelmReleaseRef
+	if ref == nil {
+		ref = newApp.Status.HelmReleaseRef
+	}
+	if ref != nil {
 		return fmt.Errorf(
 			"cannot switch a managed instance with an existing Helm release (status.helmReleaseRef=%s) to placeholder mode; delete and recreate as a placeholder instead",
-			newApp.Status.HelmReleaseRef.Name,
+			ref.Name,
 		)
 	}
 	return nil

@@ -152,6 +152,52 @@ var _ = Describe("ApplicationInstance Controller", func() {
 		Expect(updated.Annotations).To(HaveKeyWithValue("ops.vworkspace.io/runbook", "workflow"))
 	})
 
+	It("clears stale Helm status when reconciling a placeholder", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "cluster-ops-stale", Namespace: "default"}
+
+		app := &appsv1alpha1.ApplicationInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       name.Name,
+				Namespace:  name.Namespace,
+				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
+			},
+			Spec: appsv1alpha1.ApplicationInstanceSpec{
+				AppRef: appsv1alpha1.AppRef{CatalogID: "cluster-ops"},
+				Mode:   appsv1alpha1.InstanceModePlaceholder,
+			},
+		}
+		Expect(k8sClient.Create(ctx, app)).To(Succeed())
+
+		app.Status.HelmReleaseRef = &appsv1alpha1.HelmReleaseRef{Name: "leftover", Namespace: "default"}
+		app.Status.LastAppliedChart = &appsv1alpha1.ChartSnapshot{
+			SourceType: appsv1alpha1.ChartSourceHelm,
+			URL:        "https://charts.example.com",
+			Name:       "leftover",
+			Version:    "1.0.0",
+		}
+		Expect(k8sClient.Status().Update(ctx, app)).To(Succeed())
+
+		engine := &recordingHelmEngine{}
+		reconciler := &ApplicationInstanceReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+			Engine: engine,
+		}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &appsv1alpha1.ApplicationInstance{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+
+		status, reason := conditionStatus(updated.Status.Conditions, appsv1alpha1.ConditionReady)
+		Expect(status).To(Equal(metav1.ConditionTrue))
+		Expect(reason).To(Equal("Placeholder"))
+		Expect(engine.deleteCalls).To(Equal(0))
+		Expect(updated.Status.HelmReleaseRef).To(BeNil())
+		Expect(updated.Status.LastAppliedChart).To(BeNil())
+	})
+
 	It("finalizes a placeholder instance cleanly without uninstalling a release", func() {
 		ctx := context.Background()
 		name := types.NamespacedName{Name: "cluster-ops-del", Namespace: "default"}

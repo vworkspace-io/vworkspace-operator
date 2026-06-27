@@ -105,8 +105,10 @@ func TestApplicationInstanceWebhookAdmitsManagedInstance(t *testing.T) {
 func TestApplicationInstanceWebhookRejectsManagedToPlaceholderWithRelease(t *testing.T) {
 	hook := newAppInstanceWebhook(t)
 	oldApp := sampleApplicationInstance("team-a", "app")
+	// Authoritative status lives on the stored (old) object; a spec-only update
+	// may submit an object whose status is empty.
+	oldApp.Status.HelmReleaseRef = &appsv1alpha1.HelmReleaseRef{Name: "app", Namespace: "team-a"}
 	newApp := placeholderApplicationInstance("team-a", "app")
-	newApp.Status.HelmReleaseRef = &appsv1alpha1.HelmReleaseRef{Name: "app", Namespace: "team-a"}
 	_, err := hook.ValidateUpdate(context.Background(), oldApp, newApp)
 	if err == nil {
 		t.Fatal("expected managed->placeholder transition with existing release to be rejected")

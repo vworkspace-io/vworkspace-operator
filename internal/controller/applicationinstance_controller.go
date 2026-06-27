@@ -140,6 +140,11 @@ func (r *ApplicationInstanceReconciler) reconcilePlaceholder(ctx context.Context
 	app.Status.ObservedGeneration = app.Generation
 	now := metav1.Now()
 	app.Status.LastReconcileTime = &now
+	// A placeholder owns no Helm release; clear any Helm-derived status left over
+	// from a prior managed lifecycle so we never report Ready alongside a stale
+	// release reference.
+	app.Status.HelmReleaseRef = nil
+	app.Status.LastAppliedChart = nil
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "Stable", "Placeholder instance has no reconciliation in flight")
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Recovered", "Placeholder instance owns no workload")
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionTrue, "Placeholder", "Placeholder instance is ready (no Helm release)")
