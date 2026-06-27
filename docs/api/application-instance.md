@@ -103,9 +103,9 @@ Identifies the Helm chart to deploy. **Required in `managed` mode; must be omitt
 | Field                | Type   | Required | Description |
 |----------------------|--------|----------|-------------|
 | `chart.sourceType`   | enum   | Yes (managed) | One of `oci` (an OCI registry hosting Helm charts) or `helm` (a classic Helm chart repository). The admission webhook rejects any other value. |
-| `chart.url`          | string | Yes      | The base URL of the chart source. For `oci`, an `oci://` URL pointing at the registry path (e.g., `oci://registry.example.com/charts`). For `helm`, an `https://` URL pointing at the chart repository index. |
-| `chart.name`         | string | Yes      | The chart name within the source. |
-| `chart.version`      | string | Yes      | Exact chart version (semver). Version ranges are not allowed; the catalog is responsible for resolving "latest" or "recommended" to a concrete version before emitting the `ApplicationInstance`. |
+| `chart.url`          | string | Yes (managed) | The base URL of the chart source. For `oci`, an `oci://` URL pointing at the registry path (e.g., `oci://registry.example.com/charts`). For `helm`, an `https://` URL pointing at the chart repository index. |
+| `chart.name`         | string | Yes (managed) | The chart name within the source. |
+| `chart.version`      | string | Yes (managed) | Exact chart version (semver). Version ranges are not allowed; the catalog is responsible for resolving "latest" or "recommended" to a concrete version before emitting the `ApplicationInstance`. |
 
 ### `release`
 
