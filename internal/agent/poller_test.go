@@ -30,9 +30,9 @@ func TestAgentPollerProcessesJob(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "app1", Namespace: "ns1"},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
 			AppRef:  appsv1alpha1.AppRef{CatalogID: "x"},
-			Chart:   appsv1alpha1.ChartSpec{SourceType: appsv1alpha1.ChartSourceHelm, URL: "https://example.com", Name: "c", Version: "1.0.0"},
-			Release: appsv1alpha1.ReleaseSpec{Name: "app1", Namespace: "ns1"},
-			Values:  appsv1alpha1.ValuesSpec{Source: appsv1alpha1.ValuesSourceInline},
+			Chart:   &appsv1alpha1.ChartSpec{SourceType: appsv1alpha1.ChartSourceHelm, URL: "https://example.com", Name: "c", Version: "1.0.0"},
+			Release: &appsv1alpha1.ReleaseSpec{Name: "app1", Namespace: "ns1"},
+			Values:  &appsv1alpha1.ValuesSpec{Source: appsv1alpha1.ValuesSourceInline},
 		},
 	}
 	payload, _ := json.Marshal(app)

@@ -23,6 +23,23 @@ import (
 
 const ApplicationInstanceFinalizer = "apps.vworkspace.io/finalizer"
 
+// InstanceMode controls how the reconciler manages an ApplicationInstance.
+//
+//   - "managed" (default) installs and reconciles a Helm release through the
+//     configured engine; chart/release/values are required.
+//   - "placeholder" owns no Helm release. The reconciler skips all Helm
+//     interaction and sets Ready directly. Used for the per-cluster cluster-ops
+//     sentinel instance that advertises infra capabilities (runcommand, runbook,
+//     …) so it can be the targetRef for cluster-scoped Operations.
+//
+// +kubebuilder:validation:Enum=managed;placeholder
+type InstanceMode string
+
+const (
+	InstanceModeManaged     InstanceMode = "managed"
+	InstanceModePlaceholder InstanceMode = "placeholder"
+)
+
 // ChartSourceType identifies how the chart is fetched.
 // +kubebuilder:validation:Enum=oci;helm
 type ChartSourceType string
@@ -97,11 +114,27 @@ type IntegrationsSpec struct {
 
 // ApplicationInstanceSpec defines the desired state of ApplicationInstance.
 type ApplicationInstanceSpec struct {
-	AppRef       AppRef            `json:"appRef"`
-	Chart        ChartSpec         `json:"chart"`
-	Release      ReleaseSpec       `json:"release"`
-	Values       ValuesSpec        `json:"values"`
+	AppRef AppRef `json:"appRef"`
+	// Mode selects the reconcile strategy. Empty defaults to "managed".
+	// +kubebuilder:default=managed
+	// +optional
+	Mode InstanceMode `json:"mode,omitempty"`
+	// Chart is required in managed mode and must be omitted in placeholder mode.
+	// +optional
+	Chart *ChartSpec `json:"chart,omitempty"`
+	// Release is required in managed mode and must be omitted in placeholder mode.
+	// +optional
+	Release *ReleaseSpec `json:"release,omitempty"`
+	// Values is required in managed mode and must be omitted in placeholder mode.
+	// +optional
+	Values       *ValuesSpec       `json:"values,omitempty"`
 	Integrations *IntegrationsSpec `json:"integrations,omitempty"`
+}
+
+// IsPlaceholder reports whether the instance is a placeholder (cluster-ops
+// sentinel) that owns no Helm release.
+func (s ApplicationInstanceSpec) IsPlaceholder() bool {
+	return s.Mode == InstanceModePlaceholder
 }
 
 type HelmReleaseRef struct {

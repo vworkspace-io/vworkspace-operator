@@ -103,9 +103,21 @@ func (in *ApplicationInstanceList) DeepCopyObject() runtime.Object {
 func (in *ApplicationInstanceSpec) DeepCopyInto(out *ApplicationInstanceSpec) {
 	*out = *in
 	out.AppRef = in.AppRef
-	out.Chart = in.Chart
-	out.Release = in.Release
-	in.Values.DeepCopyInto(&out.Values)
+	if in.Chart != nil {
+		in, out := &in.Chart, &out.Chart
+		*out = new(ChartSpec)
+		**out = **in
+	}
+	if in.Release != nil {
+		in, out := &in.Release, &out.Release
+		*out = new(ReleaseSpec)
+		**out = **in
+	}
+	if in.Values != nil {
+		in, out := &in.Values, &out.Values
+		*out = new(ValuesSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.Integrations != nil {
 		in, out := &in.Integrations, &out.Integrations
 		*out = new(IntegrationsSpec)

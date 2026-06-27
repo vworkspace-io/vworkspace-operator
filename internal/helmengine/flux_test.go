@@ -62,7 +62,7 @@ func TestFluxEngineValuesFromSecret(t *testing.T) {
 		Data:       map[string][]byte{"values.yaml": []byte(`{"replicaCount": 3}`)},
 	}
 	app := sampleApp()
-	app.Spec.Values = appsv1alpha1.ValuesSpec{
+	app.Spec.Values = &appsv1alpha1.ValuesSpec{
 		Source:    appsv1alpha1.ValuesSourceSecretRef,
 		SecretRef: &appsv1alpha1.ObjectKeyRef{Name: "app-values", Key: "values.yaml"},
 	}
@@ -93,7 +93,7 @@ func TestFluxEngineValuesFromConfigMap(t *testing.T) {
 		Data:       map[string]string{"values.yaml": "ingress:\n  enabled: true\n"},
 	}
 	app := sampleApp()
-	app.Spec.Values = appsv1alpha1.ValuesSpec{
+	app.Spec.Values = &appsv1alpha1.ValuesSpec{
 		Source:       appsv1alpha1.ValuesSourceConfigMapRef,
 		ConfigMapRef: &appsv1alpha1.ObjectKeyRef{Name: "app-values", Key: "values.yaml"},
 	}
@@ -135,14 +135,14 @@ func sampleApp() *appsv1alpha1.ApplicationInstance {
 		ObjectMeta: metav1.ObjectMeta{Name: "nextcloud", Namespace: "team-a"},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
 			AppRef: appsv1alpha1.AppRef{CatalogID: "nextcloud"},
-			Chart: appsv1alpha1.ChartSpec{
+			Chart: &appsv1alpha1.ChartSpec{
 				SourceType: appsv1alpha1.ChartSourceHelm,
 				URL:        "https://charts.example.com",
 				Name:       "nextcloud",
 				Version:    "6.6.0",
 			},
-			Release: appsv1alpha1.ReleaseSpec{Name: "nextcloud", Namespace: "team-a"},
-			Values: appsv1alpha1.ValuesSpec{
+			Release: &appsv1alpha1.ReleaseSpec{Name: "nextcloud", Namespace: "team-a"},
+			Values: &appsv1alpha1.ValuesSpec{
 				Source: appsv1alpha1.ValuesSourceInline,
 				Inline: &runtime.RawExtension{Raw: []byte(`{}`)},
 			},

@@ -44,11 +44,29 @@ func (w *ApplicationInstanceWebhook) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (w *ApplicationInstanceWebhook) ValidateCreate(_ context.Context, app *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
-	return nil, validateInlineValues(app.Spec.Values)
+	return nil, validateApplicationInstance(app)
 }
 
-func (w *ApplicationInstanceWebhook) ValidateUpdate(_ context.Context, _, app *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
-	return nil, validateInlineValues(app.Spec.Values)
+func (w *ApplicationInstanceWebhook) ValidateUpdate(_ context.Context, oldObj, app *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
+	if err := validateModeTransition(oldObj, app); err != nil {
+		return nil, err
+	}
+	return nil, validateApplicationInstance(app)
+}
+
+// validateApplicationInstance runs admission-time checks. Placeholder
+// (cluster-ops) instances own no Helm release and carry no chart values, so the
+// inline-secret scan is skipped for them; forbidden fields (chart/values) and an
+// out-of-namespace release are still rejected at admission rather than only at
+// reconcile time.
+func validateApplicationInstance(app *appsv1alpha1.ApplicationInstance) error {
+	if app.Spec.IsPlaceholder() {
+		return validatePlaceholderSpec(app.Namespace, app.Spec)
+	}
+	if app.Spec.Values == nil {
+		return nil
+	}
+	return validateInlineValues(*app.Spec.Values)
 }
 
 func (w *ApplicationInstanceWebhook) ValidateDelete(_ context.Context, _ *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {

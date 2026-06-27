@@ -186,7 +186,7 @@ func statusFromJob(job *batchv1.Job) Status {
 }
 
 func targetNamespace(target *appsv1alpha1.ApplicationInstance) string {
-	if target.Spec.Release.Namespace != "" {
+	if target.Spec.Release != nil && target.Spec.Release.Namespace != "" {
 		return target.Spec.Release.Namespace
 	}
 	return target.Namespace

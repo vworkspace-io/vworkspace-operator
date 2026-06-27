@@ -55,7 +55,7 @@ func TestVeleroEngineCreatesBackup(t *testing.T) {
 	}
 	target := &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
-		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: &appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
 	}
 
 	if err := engine.Materialize(context.Background(), op, target); err != nil {
@@ -101,7 +101,7 @@ func TestVeleroEngineCreatesBackupWithDocumentedParameters(t *testing.T) {
 	}
 	target := &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
-		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: &appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
 	}
 
 	if err := engine.Materialize(context.Background(), op, target); err != nil {
@@ -158,7 +158,7 @@ func TestJobEngineCreatesJob(t *testing.T) {
 	}
 	target := &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
-		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: &appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
 	}
 
 	if err := engine.Materialize(context.Background(), op, target); err != nil {
@@ -541,7 +541,7 @@ func TestWorkflowEngineCreatesWorkflow(t *testing.T) {
 	}
 	target := &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
-		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: &appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
 	}
 
 	if err := engine.Materialize(context.Background(), op, target); err != nil {
@@ -570,7 +570,7 @@ func TestHelmHookJobEngineRequiresHookName(t *testing.T) {
 	}
 	target := &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
-		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: &appsv1alpha1.ReleaseSpec{Namespace: "team-a"}},
 	}
 	if err := engine.Materialize(context.Background(), op, target); err == nil {
 		t.Fatal("expected hookName error")
@@ -628,7 +628,7 @@ func TestValidateRuntimeParametersRejectsPrivilegedServiceAccount(t *testing.T) 
 func testTarget(releaseNamespace string) *appsv1alpha1.ApplicationInstance {
 	return &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
-		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: appsv1alpha1.ReleaseSpec{Namespace: releaseNamespace}},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{Release: &appsv1alpha1.ReleaseSpec{Namespace: releaseNamespace}},
 	}
 }
 

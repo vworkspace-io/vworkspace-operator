@@ -240,14 +240,14 @@ func sampleApplicationInstance(name, namespace string) *appsv1alpha1.Application
 		},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
 			AppRef: appsv1alpha1.AppRef{CatalogID: "nextcloud"},
-			Chart: appsv1alpha1.ChartSpec{
+			Chart: &appsv1alpha1.ChartSpec{
 				SourceType: appsv1alpha1.ChartSourceHelm,
 				URL:        "https://charts.example.com",
 				Name:       "nextcloud",
 				Version:    "6.6.0",
 			},
-			Release: appsv1alpha1.ReleaseSpec{Name: name, Namespace: namespace},
-			Values: appsv1alpha1.ValuesSpec{
+			Release: &appsv1alpha1.ReleaseSpec{Name: name, Namespace: namespace},
+			Values: &appsv1alpha1.ValuesSpec{
 				Source: appsv1alpha1.ValuesSourceInline,
 				Inline: &runtime.RawExtension{Raw: []byte(`{}`)},
 			},
