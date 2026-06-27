@@ -44,11 +44,24 @@ func (w *ApplicationInstanceWebhook) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (w *ApplicationInstanceWebhook) ValidateCreate(_ context.Context, app *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
-	return nil, validateInlineValues(app.Spec.Values)
+	return nil, validateApplicationInstance(app)
 }
 
 func (w *ApplicationInstanceWebhook) ValidateUpdate(_ context.Context, _, app *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
-	return nil, validateInlineValues(app.Spec.Values)
+	return nil, validateApplicationInstance(app)
+}
+
+// validateApplicationInstance runs admission-time checks. Placeholder
+// (cluster-ops) instances own no Helm release and carry no chart values, so the
+// inline-secret scan is skipped for them.
+func validateApplicationInstance(app *appsv1alpha1.ApplicationInstance) error {
+	if app.Spec.IsPlaceholder() {
+		return nil
+	}
+	if app.Spec.Values == nil {
+		return nil
+	}
+	return validateInlineValues(*app.Spec.Values)
 }
 
 func (w *ApplicationInstanceWebhook) ValidateDelete(_ context.Context, _ *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {

@@ -38,6 +38,9 @@ func (e *HelmEngine) Materialize(ctx context.Context, op *opsv1alpha1.Operation,
 	if err != nil {
 		return err
 	}
+	if target.Spec.Release == nil {
+		return fmt.Errorf("target %q has no release (placeholder instances do not support helm upgrade)", target.Name)
+	}
 	hr := &unstructured.Unstructured{}
 	hr.SetGroupVersionKind(schema.GroupVersionKind{Group: "helm.toolkit.fluxcd.io", Version: "v2", Kind: "HelmRelease"})
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: target.Namespace, Name: target.Spec.Release.Name}, hr); err != nil {

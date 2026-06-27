@@ -262,7 +262,10 @@ func (a *Applier) ensureNamespacesForApplicationInstance(ctx context.Context, ap
 	if err := a.ensureTargetNamespace(ctx, app.GetNamespace()); err != nil {
 		return err
 	}
-	releaseNS := strings.TrimSpace(app.Spec.Release.Namespace)
+	releaseNS := ""
+	if app.Spec.Release != nil {
+		releaseNS = strings.TrimSpace(app.Spec.Release.Namespace)
+	}
 	if releaseNS != "" && releaseNS != app.GetNamespace() {
 		if err := a.ensureTargetNamespace(ctx, releaseNS); err != nil {
 			return err

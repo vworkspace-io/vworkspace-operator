@@ -15,13 +15,45 @@ func ValidateApplicationInstanceSpec(app *appsv1alpha1.ApplicationInstance) erro
 	if strings.TrimSpace(spec.AppRef.CatalogID) == "" {
 		return fmt.Errorf("spec.appRef.catalogId is required")
 	}
-	if err := validateChart(spec.Chart); err != nil {
+	if spec.IsPlaceholder() {
+		return validatePlaceholderSpec(app.Namespace, spec)
+	}
+	if spec.Chart == nil {
+		return fmt.Errorf("spec.chart is required")
+	}
+	if err := validateChart(*spec.Chart); err != nil {
 		return err
 	}
-	if err := validateRelease(app.Namespace, spec.Release); err != nil {
+	if spec.Release == nil {
+		return fmt.Errorf("spec.release is required")
+	}
+	if err := validateRelease(app.Namespace, *spec.Release); err != nil {
 		return err
 	}
-	return validateValues(spec.Values)
+	if spec.Values == nil {
+		return fmt.Errorf("spec.values is required")
+	}
+	return validateValues(*spec.Values)
+}
+
+// validatePlaceholderSpec relaxes chart/release/values requirements for a
+// placeholder (cluster-ops) instance, which owns no Helm release. A placeholder
+// must not declare a chart or values, and if a release is set its namespace must
+// still match metadata.namespace so capability-scoped engines (velero) stay
+// namespace-bound.
+func validatePlaceholderSpec(namespace string, spec appsv1alpha1.ApplicationInstanceSpec) error {
+	if spec.Chart != nil {
+		return fmt.Errorf("spec.chart must not be set in placeholder mode")
+	}
+	if spec.Values != nil {
+		return fmt.Errorf("spec.values must not be set in placeholder mode")
+	}
+	if spec.Release != nil {
+		if strings.TrimSpace(spec.Release.Namespace) != "" && spec.Release.Namespace != namespace {
+			return fmt.Errorf("spec.release.namespace must match metadata.namespace")
+		}
+	}
+	return nil
 }
 
 func validateChart(chart appsv1alpha1.ChartSpec) error {

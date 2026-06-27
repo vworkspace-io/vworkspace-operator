@@ -77,6 +77,10 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 		return r.setBlocked(ctx, app, "ValidationFailed", err.Error())
 	}
 
+	if app.Spec.IsPlaceholder() {
+		return r.reconcilePlaceholder(ctx, app)
+	}
+
 	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
 
 	if r.Engine == nil {
@@ -127,9 +131,45 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 	return ctrl.Result{}, nil
 }
 
+// reconcilePlaceholder brings a placeholder (cluster-ops) instance to Ready
+// without any Helm interaction. The instance owns no workload; it only needs to
+// exist, advertise its capability annotations, and report Ready so cluster-scoped
+// Operations can target it.
+func (r *ApplicationInstanceReconciler) reconcilePlaceholder(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
+	app.Status.ObservedGeneration = app.Generation
+	now := metav1.Now()
+	app.Status.LastReconcileTime = &now
+	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "Stable", "Placeholder instance has no reconciliation in flight")
+	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Recovered", "Placeholder instance owns no workload")
+	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionTrue, "Placeholder", "Placeholder instance is ready (no Helm release)")
+	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
+	if err := r.Status().Update(ctx, app); err != nil {
+		return ctrl.Result{}, fmt.Errorf("update placeholder status: %w", err)
+	}
+	r.reportConditions(app, prevConditions)
+	return ctrl.Result{}, nil
+}
+
 func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
+
+	// Placeholder instances own no Helm release; finalize is a clean no-op
+	// beyond removing the finalizer.
+	if app.Spec.IsPlaceholder() {
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Deleting", "Removing placeholder instance (nothing to uninstall)")
+		if err := r.Status().Update(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
+		}
+		r.reportConditions(app, prevConditions)
+		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
+		if err := r.Update(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+		}
+		return ctrl.Result{}, nil
+	}
+
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Uninstalling", "Removing HelmRelease")
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)

@@ -64,6 +64,8 @@ spec:
                 - catalogId
                 type: object
               chart:
+                description: Chart is required in managed mode and must be omitted
+                  in placeholder mode.
                 properties:
                   name:
                     minLength: 1
@@ -106,7 +108,17 @@ spec:
                         type: string
                     type: object
                 type: object
+              mode:
+                default: managed
+                description: Mode selects the reconcile strategy. Empty defaults to
+                  "managed".
+                enum:
+                - managed
+                - placeholder
+                type: string
               release:
+                description: Release is required in managed mode and must be omitted
+                  in placeholder mode.
                 properties:
                   name:
                     minLength: 1
@@ -119,6 +131,8 @@ spec:
                 - namespace
                 type: object
               values:
+                description: Values is required in managed mode and must be omitted
+                  in placeholder mode.
                 properties:
                   configMapRef:
                     properties:
@@ -155,9 +169,6 @@ spec:
                 type: object
             required:
             - appRef
-            - chart
-            - release
-            - values
             type: object
           status:
             description: ApplicationInstanceStatus defines the observed state of ApplicationInstance.

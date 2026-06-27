@@ -470,6 +470,24 @@ func TestWebhookInlineSecretRejected(t *testing.T) {
 	}
 }
 
+func TestWebhookAdmitsRunCommandAgainstPlaceholder(t *testing.T) {
+	ctx := context.Background()
+	ns := "webhook-placeholder-" + uniqueSuffix()
+	createTestNamespace(t, ctx, ns, "")
+
+	app := placeholderEnvtestApplicationInstance(ns, "cluster-ops")
+	if err := envtestClient.Create(ctx, app); err != nil {
+		t.Fatalf("create placeholder ApplicationInstance: %v", err)
+	}
+
+	op := sampleEnvtestOperation(ns, "run-1", "cluster-ops", opsv1alpha1.OperationTypeRunCommand)
+	op.Spec.Engine = opsv1alpha1.EngineJob
+	op.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"image":"alpine:3.20"}`)}
+	if err := envtestClient.Create(ctx, op); err != nil {
+		t.Fatalf("expected RunCommand against placeholder to be admitted: %v", err)
+	}
+}
+
 func createTestNamespace(t *testing.T, ctx context.Context, name, allowedTypes string) {
 	t.Helper()
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
@@ -500,17 +518,34 @@ func sampleEnvtestApplicationInstance(namespace, name string) *appsv1alpha1.Appl
 		},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
 			AppRef: appsv1alpha1.AppRef{CatalogID: "nextcloud"},
-			Chart: appsv1alpha1.ChartSpec{
+			Chart: &appsv1alpha1.ChartSpec{
 				SourceType: appsv1alpha1.ChartSourceOCI,
 				URL:        "oci://registry.example.com/charts",
 				Name:       "nextcloud",
 				Version:    "6.6.0",
 			},
-			Release: appsv1alpha1.ReleaseSpec{Name: name, Namespace: namespace},
-			Values: appsv1alpha1.ValuesSpec{
+			Release: &appsv1alpha1.ReleaseSpec{Name: name, Namespace: namespace},
+			Values: &appsv1alpha1.ValuesSpec{
 				Source: appsv1alpha1.ValuesSourceInline,
 				Inline: &runtime.RawExtension{Raw: []byte(`{"ingress":{"enabled":true}}`)},
 			},
+		},
+	}
+}
+
+func placeholderEnvtestApplicationInstance(namespace, name string) *appsv1alpha1.ApplicationInstance { //nolint:unparam // test fixture
+	return &appsv1alpha1.ApplicationInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Annotations: map[string]string{
+				"ops.vworkspace.io/runcommand": "job",
+				"ops.vworkspace.io/runbook":    "workflow",
+			},
+		},
+		Spec: appsv1alpha1.ApplicationInstanceSpec{
+			AppRef: appsv1alpha1.AppRef{CatalogID: "cluster-ops"},
+			Mode:   appsv1alpha1.InstanceModePlaceholder,
 		},
 	}
 }
