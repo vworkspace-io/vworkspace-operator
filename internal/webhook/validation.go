@@ -225,20 +225,21 @@ func validateModeTransition(oldApp, newApp *appsv1alpha1.ApplicationInstance) er
 	if oldApp.Spec.IsPlaceholder() || !newApp.Spec.IsPlaceholder() {
 		return nil
 	}
-	// status.helmReleaseRef on the stored (old) object is the authoritative
-	// signal that a managed release still exists; a spec-only update may submit
-	// an object whose status has not been populated by the client.
-	ref := oldApp.Status.HelmReleaseRef
-	if ref == nil {
-		ref = newApp.Status.HelmReleaseRef
+	// status.helmReleaseRef is the confirmed signal that a release exists, but it
+	// is only written after EnsureRelease succeeds. A managed instance that has
+	// chart/release configured may already own (or be mid-materialization of) a
+	// release before that status is persisted, so treat a configured managed spec
+	// as release-owning too. The placeholder reconcile path never uninstalls,
+	// so allowing the switch would orphan the release.
+	if oldApp.Status.HelmReleaseRef == nil &&
+		newApp.Status.HelmReleaseRef == nil &&
+		oldApp.Spec.Chart == nil &&
+		oldApp.Spec.Release == nil {
+		return nil
 	}
-	if ref != nil {
-		return fmt.Errorf(
-			"cannot switch a managed instance with an existing Helm release (status.helmReleaseRef=%s) to placeholder mode; delete and recreate as a placeholder instead",
-			ref.Name,
-		)
-	}
-	return nil
+	return fmt.Errorf(
+		"cannot switch a managed instance that owns (or may own) a Helm release to placeholder mode; delete and recreate as a placeholder instead",
+	)
 }
 
 // validatePlaceholderSpec enforces the placeholder (cluster-ops) contract at

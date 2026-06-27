@@ -68,11 +68,17 @@ admission time — while skipping only the inline-secret scan for placeholders
 (they carry no chart values). It is unchanged for managed instances.
 
 To avoid orphaning a Helm release, the webhook also **rejects a managed →
-placeholder update while the instance still owns a release** (`status.helmReleaseRef`
-is set): the placeholder reconcile path performs no Helm work, so it would never
-uninstall the existing release. Operators must delete the instance — which
+placeholder update for any instance that owns (or may own) a release** — i.e.
+`status.helmReleaseRef` is set, or the old managed spec has `chart`/`release`
+configured (a release may already be materializing before its status is
+written). The placeholder reconcile path performs no Helm work, so it would
+never uninstall the release. Operators must delete the instance — which
 uninstalls the release through the managed finalizer — and recreate it as a
-placeholder.
+placeholder. Only an unconfigured managed instance (no chart/release and no
+release status) may be converted in place. As defence-in-depth,
+`reconcilePlaceholder` also clears any leftover `status.helmReleaseRef` /
+`lastAppliedChart` so a placeholder never reports `Ready` next to a stale
+release reference.
 
 This is **Option B** from the hub design — the recommended target end-state.
 Option A (empty/raw chart) is not implemented.

@@ -118,12 +118,32 @@ func TestApplicationInstanceWebhookRejectsManagedToPlaceholderWithRelease(t *tes
 	}
 }
 
-func TestApplicationInstanceWebhookAllowsManagedToPlaceholderWithoutRelease(t *testing.T) {
+func TestApplicationInstanceWebhookRejectsConfiguredManagedToPlaceholder(t *testing.T) {
 	hook := newAppInstanceWebhook(t)
+	// A configured managed instance (chart/release set) may already own a release
+	// even before status.helmReleaseRef is written, so the transition is rejected.
 	oldApp := sampleApplicationInstance("team-a", "app")
 	newApp := placeholderApplicationInstance("team-a", "app")
+	_, err := hook.ValidateUpdate(context.Background(), oldApp, newApp)
+	if err == nil {
+		t.Fatal("expected configured managed->placeholder transition to be rejected")
+	}
+	if !strings.Contains(err.Error(), "delete and recreate as a placeholder") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplicationInstanceWebhookAllowsBareManagedToPlaceholder(t *testing.T) {
+	hook := newAppInstanceWebhook(t)
+	// An unconfigured instance (no chart/release/values, no status) cannot own a
+	// release, so converting it to a placeholder is safe.
+	oldApp := &appsv1alpha1.ApplicationInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team-a"},
+		Spec:       appsv1alpha1.ApplicationInstanceSpec{AppRef: appsv1alpha1.AppRef{CatalogID: "cluster-ops"}},
+	}
+	newApp := placeholderApplicationInstance("team-a", "app")
 	if _, err := hook.ValidateUpdate(context.Background(), oldApp, newApp); err != nil {
-		t.Fatalf("expected managed->placeholder transition without a release to be admitted: %v", err)
+		t.Fatalf("expected bare managed->placeholder transition to be admitted: %v", err)
 	}
 }
 
