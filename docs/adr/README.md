@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-27
 
 This directory contains the Architecture Decision Records (ADRs) for `vworkspace-operator`. An ADR records a decision the project has made about its architecture, why the decision was made, and what its consequences are. ADRs are not specifications and not RFCs (see [../rfcs/README.md](../rfcs/README.md) for that distinction); they are the project's institutional memory.
 
@@ -49,6 +49,7 @@ The title in the filename is a short kebab-case slug; the actual title in the fi
 | 0003   | [Pull mode as default connectivity](0003-pull-mode-as-default-connectivity.md)                              | Accepted   |
 | 0004   | [Two CRDs: ApplicationInstance and Operation](0004-two-crds-applicationinstance-and-operation.md)            | Accepted   |
 | 0005   | [One operator per cluster](0005-one-operator-per-cluster.md)                                                | Accepted   |
+| 0006   | [ApplicationInstance placeholder mode](0006-applicationinstance-placeholder-mode.md)                        | Accepted   |
 
 ## When to write an ADR vs an RFC vs a PR description
 

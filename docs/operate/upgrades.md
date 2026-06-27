@@ -1,7 +1,7 @@
 # Upgrading the operator
 
 **Status:** Alpha — APIs are at `v1alpha1` and may evolve.
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-27
 
 This document covers upgrading the operator itself. Application upgrades — bumping `ApplicationInstance.spec.chart.version` — are a different topic and are documented in [../operations/upgrades-and-migrations.md](../operations/upgrades-and-migrations.md).
 
@@ -101,6 +101,10 @@ The release notes for each operator version include a compatibility matrix. The 
 | v0.5.0           | v1alpha1, v1beta1   | 1.28           | k3s 1.30, Talos 1.30, EKS 1.30, AKS 1.30 | v2.3    | v1.14      | v1.15            | v0.10                |
 
 The numbers above are illustrative; the canonical matrix lives in `CHANGELOG.md` for each release. The compatibility matrix is the contract Odoo's Cluster Registry uses to decide whether a particular chart version is admissible for a particular cluster (Kubernetes version, distro, existing controller versions).
+
+### Phase 6 — placeholder mode skew
+
+`ApplicationInstance.spec.mode: placeholder` ships in operator **v0.0.10+**. The control plane may emit placeholder instances only after the cluster runs that operator version (CRDs include the `mode` field and the reconciler/webhook enforce the placeholder contract). **Upgrade order: operator first, then enable cluster-ops placeholder lifecycle from the server.** Applying a placeholder `ApplicationInstance` to a cluster on **v0.0.9 or earlier** fails CRD validation or admission because `spec.mode` is unknown.
 
 ## How to upgrade in practice
 
