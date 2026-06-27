@@ -1,7 +1,7 @@
 # Conditions
 
 **Status:** Alpha
-**Last Updated:** 2026-05-30
+**Last Updated:** 2026-06-27
 
 The operator emits standard Kubernetes condition objects on three places:
 
@@ -15,10 +15,11 @@ Every condition has the standard fields `type`, `status` (`True` / `False` / `Un
 
 ### `Ready`
 
-`Ready=True` means the application is available — its `HelmRelease` reports `Ready=True` and any optional generic readiness checks pass. `Ready=False` is the default during install and during failures.
+`Ready=True` means the application is available — its `HelmRelease` reports `Ready=True` and any optional generic readiness checks pass, or (for `spec.mode: placeholder`) the cluster-ops sentinel is ready with no Helm release. `Ready=False` is the default during install and during failures.
 
 | `status` | Reasons | Meaning |
 |----------|---------|---------|
+| True     | `Placeholder` | Placeholder instance (`spec.mode: placeholder`) is ready; no Helm release is owned. |
 | True     | `HelmReleaseReady` | The underlying `HelmRelease` reports `Ready=True` and the operator is satisfied. |
 | True     | `HelmReleaseReadyWithWarnings` | Ready, but a non-fatal warning was raised (e.g., a deprecated values key). The `message` carries the warning text. |
 | False    | `HelmReleaseFailed` | The `HelmRelease` failed (install error, upgrade error, drift remediation error). `message` carries the underlying error. |

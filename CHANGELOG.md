@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-06-27
+
+Phase 6 operator release — adds `ApplicationInstance.spec.mode: placeholder` for per-cluster cluster-ops sentinel instances (Option B from the hub design). **Upgrade the operator (CRDs + controller) before enabling placeholder mode from the control plane** — the server emits `spec.mode: placeholder` only after operator **v0.0.10+** is installed.
+
+### Added
+
+- `ApplicationInstanceSpec.mode` enum (`managed` default | `placeholder`). Placeholder instances reach `Ready=True` (`Reason=Placeholder`) without Helm; they advertise infra capability annotations (`ops.vworkspace.io/runcommand`, `runbook`, …) as the `targetRef` for cluster-scoped `Operation`s. Reconciler skips `EnsureRelease`/`DeleteRelease`; webhook rejects `chart`/`values`/`release` on placeholders and blocks managed→placeholder transitions when a Helm release may exist ([#77](https://github.com/vworkspace-io/vworkspace-operator/pull/77), hub `P6-T001`).
+- ADR [0006 — ApplicationInstance placeholder mode](docs/adr/0006-applicationinstance-placeholder-mode.md).
+
+### Upgrade note
+
+Apply CRDs first, then roll the operator Deployment:
+
+```bash
+kubectl apply -f https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.10/crds.yaml
+helm upgrade vworkspace-operator \
+  https://github.com/vworkspace-io/vworkspace-operator/releases/download/v0.0.10/vworkspace-operator-0.0.10.tgz \
+  --version 0.0.10 -n vworkspace-system --reuse-values --set image.tag=v0.0.10
+```
+
+Existing `ApplicationInstance` objects without `spec.mode` continue to reconcile as `managed` (CRD default).
+
 ## [0.0.9] - 2026-06-17
 
 Bugfix release — makes cluster registration idempotent so a transient status-write conflict during a successful registration no longer pins the Cluster to `Error`. Surfaced during Rancher real-cluster validation.
