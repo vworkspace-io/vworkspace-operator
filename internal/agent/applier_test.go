@@ -319,7 +319,36 @@ func TestApplierBSLAvailableTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !strings.Contains(err.Error(), "timed out") {
+	if !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "no status.phase yet") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplierBSLAvailableTimeoutWithPhase(t *testing.T) {
+	prevTimeout, prevPoll := bslAvailableTimeout, bslAvailablePoll
+	bslAvailableTimeout = 50 * time.Millisecond
+	bslAvailablePoll = 10 * time.Millisecond
+	t.Cleanup(func() {
+		bslAvailableTimeout = prevTimeout
+		bslAvailablePoll = prevPoll
+	})
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{Client: base, phase: "New", message: "still provisioning"}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	_, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-timeout-phase",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-timeout-phase"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "phase=New") || !strings.Contains(err.Error(), "still provisioning") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
