@@ -388,6 +388,35 @@ func TestApplierBSLAvailableContextCancel(t *testing.T) {
 	}
 }
 
+func TestApplierBSLWaitRespectsJobExpiresAt(t *testing.T) {
+	prevTimeout, prevPoll := bslAvailableTimeout, bslAvailablePoll
+	bslAvailableTimeout = 5 * time.Second
+	bslAvailablePoll = 10 * time.Millisecond
+	t.Cleanup(func() {
+		bslAvailableTimeout = prevTimeout
+		bslAvailablePoll = prevPoll
+	})
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{Client: base, phase: ""}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	_, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-expires",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-expires"),
+		ExpiresAt: time.Now().Add(40 * time.Millisecond),
+	})
+	if err == nil {
+		t.Fatal("expected job-expired error")
+	}
+	if !strings.Contains(err.Error(), "job expired while waiting for Available") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func sampleApplicationInstance() *appsv1alpha1.ApplicationInstance {
 	return &appsv1alpha1.ApplicationInstance{
 		TypeMeta: metav1.TypeMeta{

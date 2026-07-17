@@ -75,7 +75,7 @@ func (a *Applier) ApplyJob(ctx context.Context, job Job) (ApplyOutcome, error) {
 
 	switch job.Kind {
 	case "apply":
-		ref, err := a.applyManifest(ctx, job.Payload)
+		ref, err := a.applyManifest(ctx, job)
 		if err != nil {
 			applyErr = err
 		} else {
@@ -129,9 +129,9 @@ var (
 	bslAvailablePoll    = 2 * time.Second
 )
 
-func (a *Applier) applyManifest(ctx context.Context, payload json.RawMessage) (*AppliedRef, error) {
+func (a *Applier) applyManifest(ctx context.Context, job Job) (*AppliedRef, error) {
 	obj := &unstructured.Unstructured{}
-	if err := json.Unmarshal(payload, obj); err != nil {
+	if err := json.Unmarshal(job.Payload, obj); err != nil {
 		return nil, fmt.Errorf("decode apply payload: %w", err)
 	}
 	a.ensureManagedLabels(obj)
@@ -151,7 +151,7 @@ func (a *Applier) applyManifest(ctx context.Context, payload json.RawMessage) (*
 	}
 
 	if isVeleroBackupStorageLocation(latest) {
-		ready, err := a.waitForBSLAvailable(ctx, latest)
+		ready, err := a.waitForBSLAvailable(ctx, latest, job.ExpiresAt)
 		if err != nil {
 			return nil, err
 		}
@@ -167,9 +167,15 @@ func isVeleroBackupStorageLocation(obj *unstructured.Unstructured) bool {
 
 // waitForBSLAvailable polls until Velero reports status.phase=Available.
 // Fails fast on Unavailable so control-plane Validate can surface Velero errors.
-func (a *Applier) waitForBSLAvailable(ctx context.Context, obj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+// The wait is bounded by min(bslAvailableTimeout, time until expiresAt).
+func (a *Applier) waitForBSLAvailable(ctx context.Context, obj *unstructured.Unstructured, expiresAt time.Time) (*unstructured.Unstructured, error) {
 	key := client.ObjectKeyFromObject(obj)
 	deadline := time.Now().Add(bslAvailableTimeout)
+	boundByExpiry := false
+	if !expiresAt.IsZero() && expiresAt.Before(deadline) {
+		deadline = expiresAt
+		boundByExpiry = true
+	}
 	var lastPhase, lastMessage string
 	for {
 		latest := &unstructured.Unstructured{}
@@ -190,6 +196,12 @@ func (a *Applier) waitForBSLAvailable(ctx context.Context, obj *unstructured.Uns
 			return nil, fmt.Errorf("BackupStorageLocation %s/%s Unavailable: %s", key.Namespace, key.Name, message)
 		}
 		if time.Now().After(deadline) {
+			if boundByExpiry {
+				return nil, fmt.Errorf(
+					"BackupStorageLocation %s/%s: job expired while waiting for Available",
+					key.Namespace, key.Name,
+				)
+			}
 			if lastPhase == "" {
 				return nil, fmt.Errorf(
 					"timed out waiting for BackupStorageLocation %s/%s Available (no status.phase yet)",
