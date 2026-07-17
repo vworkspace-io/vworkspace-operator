@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -196,6 +198,111 @@ func TestApplierEnsureIntent(t *testing.T) {
 	}
 	if outcome.Result.Outcome != OutcomeSucceeded {
 		t.Fatalf("expected succeeded, got %s", outcome.Result.Outcome)
+	}
+}
+
+type bslPhaseClient struct {
+	client.Client
+	phase   string
+	message string
+}
+
+func (c *bslPhaseClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if err := c.Client.Get(ctx, key, obj, opts...); err != nil {
+		return err
+	}
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok || !isVeleroBackupStorageLocation(u) {
+		return nil
+	}
+	_ = unstructured.SetNestedField(u.Object, c.phase, "status", "phase")
+	if c.message != "" {
+		_ = unstructured.SetNestedField(u.Object, c.message, "status", "message")
+	}
+	return nil
+}
+
+func TestApplierWaitsForBSLAvailable(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"apiVersion": "velero.io/v1",
+		"kind":       "BackupStorageLocation",
+		"metadata": map[string]interface{}{
+			"name":      "byo-platform-backup",
+			"namespace": "velero",
+		},
+		"spec": map[string]interface{}{
+			"provider": "aws",
+			"objectStorage": map[string]interface{}{
+				"bucket": "vw-velero",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{Client: base, phase: "Available"}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	outcome, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-1",
+		Kind:      "apply",
+		Payload:   payload,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ApplyJob: %v", err)
+	}
+	if outcome.Result.Outcome != OutcomeSucceeded {
+		t.Fatalf("expected succeeded, got %s", outcome.Result.Outcome)
+	}
+	if outcome.Result.AppliedRef == nil || outcome.Result.AppliedRef.Kind != "BackupStorageLocation" {
+		t.Fatalf("expected BSL appliedRef, got %+v", outcome.Result.AppliedRef)
+	}
+}
+
+func TestApplierFailsWhenBSLUnavailable(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	payload, _ := json.Marshal(map[string]interface{}{
+		"apiVersion": "velero.io/v1",
+		"kind":       "BackupStorageLocation",
+		"metadata": map[string]interface{}{
+			"name":      "byo-bad",
+			"namespace": "velero",
+		},
+		"spec": map[string]interface{}{
+			"provider": "aws",
+			"objectStorage": map[string]interface{}{
+				"bucket": "missing",
+			},
+		},
+	})
+
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{
+		Client:  base,
+		phase:   "Unavailable",
+		message: "access denied",
+	}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	_, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-2",
+		Kind:      "apply",
+		Payload:   payload,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err == nil {
+		t.Fatal("expected Unavailable error")
+	}
+	if !strings.Contains(err.Error(), "Unavailable") || !strings.Contains(err.Error(), "access denied") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
