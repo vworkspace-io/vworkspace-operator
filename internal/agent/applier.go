@@ -123,7 +123,8 @@ func (a *Applier) ApplyJob(ctx context.Context, job Job) (ApplyOutcome, error) {
 	return result, nil
 }
 
-const (
+// Overridable in unit tests (defaults suit production agent apply jobs).
+var (
 	bslAvailableTimeout = 90 * time.Second
 	bslAvailablePoll    = 2 * time.Second
 )
