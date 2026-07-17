@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Added
+
+- **P8-T014:** Pull-mode `apply` of `velero.io/v1 BackupStorageLocation` waits
+  until `status.phase=Available` (fails fast on `Unavailable`) so control-plane
+  BYO S3 BSL validation can rely on agent job success.
+
 ## [0.0.10] - 2026-06-27
 
 Phase 6 operator release — adds `ApplicationInstance.spec.mode: placeholder` for per-cluster cluster-ops sentinel instances (Option B from the hub design). **Upgrade the operator (CRDs + controller) before enabling placeholder mode from the control plane** — the server emits `spec.mode: placeholder` only after operator **v0.0.10+** is installed.

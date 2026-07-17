@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -196,6 +198,222 @@ func TestApplierEnsureIntent(t *testing.T) {
 	}
 	if outcome.Result.Outcome != OutcomeSucceeded {
 		t.Fatalf("expected succeeded, got %s", outcome.Result.Outcome)
+	}
+}
+
+type bslPhaseClient struct {
+	client.Client
+	phase   string
+	message string
+}
+
+func (c *bslPhaseClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if err := c.Client.Get(ctx, key, obj, opts...); err != nil {
+		return err
+	}
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok || !isVeleroBackupStorageLocation(u) {
+		return nil
+	}
+	_ = unstructured.SetNestedField(u.Object, c.phase, "status", "phase")
+	if c.message != "" {
+		_ = unstructured.SetNestedField(u.Object, c.message, "status", "message")
+	}
+	return nil
+}
+
+func bslApplyPayload(name string) json.RawMessage {
+	payload, err := json.Marshal(map[string]any{
+		"apiVersion": "velero.io/v1",
+		"kind":       "BackupStorageLocation",
+		"metadata": map[string]any{
+			"name":      name,
+			"namespace": "velero",
+		},
+		"spec": map[string]any{
+			"provider": "aws",
+			"objectStorage": map[string]any{
+				"bucket": "vw-velero",
+			},
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return payload
+}
+
+func TestApplierWaitsForBSLAvailable(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{Client: base, phase: "Available"}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	outcome, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-1",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-platform-backup"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ApplyJob: %v", err)
+	}
+	if outcome.Result.Outcome != OutcomeSucceeded {
+		t.Fatalf("expected succeeded, got %s", outcome.Result.Outcome)
+	}
+	if outcome.Result.AppliedRef == nil || outcome.Result.AppliedRef.Kind != "BackupStorageLocation" {
+		t.Fatalf("expected BSL appliedRef, got %+v", outcome.Result.AppliedRef)
+	}
+}
+
+func TestApplierFailsWhenBSLUnavailable(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{
+		Client:  base,
+		phase:   "Unavailable",
+		message: "access denied",
+	}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	_, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-2",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-bad"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err == nil {
+		t.Fatal("expected Unavailable error")
+	}
+	if !strings.Contains(err.Error(), "Unavailable") || !strings.Contains(err.Error(), "access denied") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplierBSLAvailableTimeout(t *testing.T) {
+	prevTimeout, prevPoll := bslAvailableTimeout, bslAvailablePoll
+	bslAvailableTimeout = 50 * time.Millisecond
+	bslAvailablePoll = 10 * time.Millisecond
+	t.Cleanup(func() {
+		bslAvailableTimeout = prevTimeout
+		bslAvailablePoll = prevPoll
+	})
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	// Empty phase never becomes Available/Unavailable.
+	cl := &bslPhaseClient{Client: base, phase: ""}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	_, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-timeout",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-timeout"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "no status.phase yet") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplierBSLAvailableTimeoutWithPhase(t *testing.T) {
+	prevTimeout, prevPoll := bslAvailableTimeout, bslAvailablePoll
+	bslAvailableTimeout = 50 * time.Millisecond
+	bslAvailablePoll = 10 * time.Millisecond
+	t.Cleanup(func() {
+		bslAvailableTimeout = prevTimeout
+		bslAvailablePoll = prevPoll
+	})
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{Client: base, phase: "New", message: "still provisioning"}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	_, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-timeout-phase",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-timeout-phase"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "phase=New") || !strings.Contains(err.Error(), "still provisioning") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplierBSLAvailableContextCancel(t *testing.T) {
+	prevTimeout, prevPoll := bslAvailableTimeout, bslAvailablePoll
+	bslAvailableTimeout = 5 * time.Second
+	bslAvailablePoll = 50 * time.Millisecond
+	t.Cleanup(func() {
+		bslAvailableTimeout = prevTimeout
+		bslAvailablePoll = prevPoll
+	})
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{Client: base, phase: ""}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := applier.ApplyJob(ctx, Job{
+		ID:        "j-bsl-cancel",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-cancel"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+	if !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplierBSLWaitRespectsJobExpiresAt(t *testing.T) {
+	prevTimeout, prevPoll := bslAvailableTimeout, bslAvailablePoll
+	bslAvailableTimeout = 5 * time.Second
+	bslAvailablePoll = 10 * time.Millisecond
+	t.Cleanup(func() {
+		bslAvailableTimeout = prevTimeout
+		bslAvailablePoll = prevPoll
+	})
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	base := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cl := &bslPhaseClient{Client: base, phase: ""}
+	applier := &Applier{Client: cl, Scheme: scheme, ClusterID: "cluster-1"}
+
+	_, err := applier.ApplyJob(context.Background(), Job{
+		ID:        "j-bsl-expires",
+		Kind:      "apply",
+		Payload:   bslApplyPayload("byo-expires"),
+		ExpiresAt: time.Now().Add(40 * time.Millisecond),
+	})
+	if err == nil {
+		t.Fatal("expected job-expired error")
+	}
+	if !strings.Contains(err.Error(), "job expired while waiting for Available") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

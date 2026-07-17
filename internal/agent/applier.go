@@ -75,7 +75,7 @@ func (a *Applier) ApplyJob(ctx context.Context, job Job) (ApplyOutcome, error) {
 
 	switch job.Kind {
 	case "apply":
-		ref, err := a.applyManifest(ctx, job.Payload)
+		ref, err := a.applyManifest(ctx, job)
 		if err != nil {
 			applyErr = err
 		} else {
@@ -123,9 +123,15 @@ func (a *Applier) ApplyJob(ctx context.Context, job Job) (ApplyOutcome, error) {
 	return result, nil
 }
 
-func (a *Applier) applyManifest(ctx context.Context, payload json.RawMessage) (*AppliedRef, error) {
+// Overridable in unit tests (defaults suit production agent apply jobs).
+var (
+	bslAvailableTimeout = 90 * time.Second
+	bslAvailablePoll    = 2 * time.Second
+)
+
+func (a *Applier) applyManifest(ctx context.Context, job Job) (*AppliedRef, error) {
 	obj := &unstructured.Unstructured{}
-	if err := json.Unmarshal(payload, obj); err != nil {
+	if err := json.Unmarshal(job.Payload, obj); err != nil {
 		return nil, fmt.Errorf("decode apply payload: %w", err)
 	}
 	a.ensureManagedLabels(obj)
@@ -143,7 +149,78 @@ func (a *Applier) applyManifest(ctx context.Context, payload json.RawMessage) (*
 	if err := a.Client.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
 		return nil, fmt.Errorf("get applied object: %w", err)
 	}
+
+	if isVeleroBackupStorageLocation(latest) {
+		ready, err := a.waitForBSLAvailable(ctx, latest, job.ExpiresAt)
+		if err != nil {
+			return nil, err
+		}
+		return objectRef(ready), nil
+	}
 	return objectRef(latest), nil
+}
+
+func isVeleroBackupStorageLocation(obj *unstructured.Unstructured) bool {
+	gvk := obj.GroupVersionKind()
+	return gvk.Group == "velero.io" && gvk.Kind == "BackupStorageLocation"
+}
+
+// waitForBSLAvailable polls until Velero reports status.phase=Available.
+// Fails fast on Unavailable so control-plane Validate can surface Velero errors.
+// The wait is bounded by min(bslAvailableTimeout, time until expiresAt).
+func (a *Applier) waitForBSLAvailable(ctx context.Context, obj *unstructured.Unstructured, expiresAt time.Time) (*unstructured.Unstructured, error) {
+	key := client.ObjectKeyFromObject(obj)
+	deadline := time.Now().Add(bslAvailableTimeout)
+	boundByExpiry := false
+	if !expiresAt.IsZero() && expiresAt.Before(deadline) {
+		deadline = expiresAt
+		boundByExpiry = true
+	}
+	var lastPhase, lastMessage string
+	for {
+		latest := &unstructured.Unstructured{}
+		latest.SetGroupVersionKind(obj.GroupVersionKind())
+		if err := a.Client.Get(ctx, key, latest); err != nil {
+			return nil, fmt.Errorf("get BackupStorageLocation %s/%s: %w", key.Namespace, key.Name, err)
+		}
+		phase, _, _ := unstructured.NestedString(latest.Object, "status", "phase")
+		message, _, _ := unstructured.NestedString(latest.Object, "status", "message")
+		lastPhase, lastMessage = phase, message
+		switch strings.ToLower(strings.TrimSpace(phase)) {
+		case "available":
+			return latest, nil
+		case "unavailable":
+			if strings.TrimSpace(message) == "" {
+				message = "BackupStorageLocation is Unavailable"
+			}
+			return nil, fmt.Errorf("BackupStorageLocation %s/%s Unavailable: %s", key.Namespace, key.Name, message)
+		}
+		if time.Now().After(deadline) {
+			if boundByExpiry {
+				return nil, fmt.Errorf(
+					"BackupStorageLocation %s/%s: job expired while waiting for Available",
+					key.Namespace, key.Name,
+				)
+			}
+			if lastPhase == "" {
+				return nil, fmt.Errorf(
+					"timed out waiting for BackupStorageLocation %s/%s Available (no status.phase yet)",
+					key.Namespace, key.Name,
+				)
+			}
+			return nil, fmt.Errorf(
+				"timed out waiting for BackupStorageLocation %s/%s Available (phase=%s message=%s)",
+				key.Namespace, key.Name, lastPhase, lastMessage,
+			)
+		}
+		timer := time.NewTimer(bslAvailablePoll)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (a *Applier) deleteObject(ctx context.Context, payload json.RawMessage) (*AppliedRef, error) {
