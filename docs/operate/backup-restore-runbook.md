@@ -255,6 +255,33 @@ These are abbreviated; the long-form discussion is in [../operations/backups-and
 - **`Restore` succeeds but TLS certificates are not re-issued.** cert-manager needs to see the new Ingress and request a fresh cert; this can take a minute or two. If it never happens, check `kubectl get certificaterequest -n org-myteam-staging`.
 - **Restored application logs in with the wrong configuration.** The chart's rendered Secret may reference the original namespace's external-secrets target. Re-render values, force a sync, or set `spec.values.inline.ingress.host` to the staging hostname so the chart's reconcile produces a fresh config.
 
+## BYO S3 BackupStorageLocation (P8-T015)
+
+When the control plane has Applied a customer BYO BSL (hub **P8-T014**), set
+`parameters.storageLocation` to that BSL’s `metadata.name` (the Odoo
+`bsl_name`). The Velero engine already honors this field (defaults to
+`default` when omitted).
+
+```yaml
+spec:
+  type: Backup
+  engine: velero
+  parameters:
+    storageLocation: byo-platform-backup   # Applied BYO BSL name
+```
+
+Server smoke enqueue + bucket/restore verification checklist:
+
+- [vworkspace-server BACKUP_E2E — BYO smoke](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/development/BACKUP_E2E.md)
+- Hub playbook: `docs/dogfooding/byo-s3-backup-restore-smoke.md` in **vworkspace**
+
+Confirm before relying on the path:
+
+```bash
+kubectl get backupstoragelocation -n velero
+# BYO row: status.phase=Available
+```
+
 ## Related material
 
 - [../operations/backups-and-restores.md](../operations/backups-and-restores.md) — Narrative for the same procedure with more context.

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **P8-T015:** Document BYO S3 `storageLocation` usage in
+  [backup-restore-runbook.md](docs/operate/backup-restore-runbook.md) (links
+  control-plane smoke + hub playbook).
 - **P8-T014:** Pull-mode `apply` of `velero.io/v1 BackupStorageLocation` waits
   until `status.phase=Available` (fails fast on `Unavailable`) so control-plane
   BYO S3 BSL validation can rely on agent job success.
