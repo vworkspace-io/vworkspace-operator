@@ -27,16 +27,24 @@ func NewSeaweedEngine(c client.Client) *SeaweedEngine {
 	return &SeaweedEngine{Client: c}
 }
 
+func releaseNamespace(app *appsv1alpha1.ApplicationInstance) string {
+	if app.Spec.Release != nil && app.Spec.Release.Namespace != "" {
+		return app.Spec.Release.Namespace
+	}
+	return app.Namespace
+}
+
 func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
 	values, err := loadValues(ctx, e.Client, app)
 	if err != nil {
 		return fmt.Errorf("load values: %w", err)
 	}
 
+	ns := releaseNamespace(app)
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
 	sw.SetName(app.Spec.Release.Name)
-	sw.SetNamespace(app.Namespace)
+	sw.SetNamespace(ns)
 
 	_, err = controllerutil.CreateOrUpdate(ctx, e.Client, sw, func() error {
 		if err := controllerutil.SetControllerReference(app, sw, e.Client.Scheme()); err != nil {
@@ -58,10 +66,11 @@ func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.App
 }
 
 func (e *SeaweedEngine) DeleteSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
+	ns := releaseNamespace(app)
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
 	sw.SetName(app.Spec.Release.Name)
-	sw.SetNamespace(app.Namespace)
+	sw.SetNamespace(ns)
 	if err := e.Client.Delete(ctx, sw); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("delete Seaweed/%s: %w", sw.GetName(), err)
 	}
@@ -69,15 +78,14 @@ func (e *SeaweedEngine) DeleteSeaweed(ctx context.Context, app *appsv1alpha1.App
 }
 
 func (e *SeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*StatusSnapshot, error) {
+	ns := releaseNamespace(app)
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
-	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: app.Spec.Release.Name}, sw); err != nil {
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: app.Spec.Release.Name}, sw); err != nil {
 		return nil, fmt.Errorf("get Seaweed: %w", err)
 	}
 
-	snapshot := &StatusSnapshot{
-		S3Endpoint: S3Endpoint(app.Spec.Release.Name, app.Namespace),
-	}
+	snapshot := &StatusSnapshot{}
 	conditions, found, err := unstructured.NestedSlice(sw.Object, "status", "conditions")
 	if err != nil || !found {
 		snapshot.Reason = "Reconciling"
@@ -85,7 +93,19 @@ func (e *SeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.Applic
 		return snapshot, nil
 	}
 	snapshot.Reason, snapshot.Message, snapshot.Ready, snapshot.Reconciling, snapshot.Degraded = mapSeaweedConditions(conditions)
+	if snapshot.Ready && hasS3Spec(sw) {
+		snapshot.S3Endpoint = S3Endpoint(app.Spec.Release.Name, ns)
+	}
 	return snapshot, nil
+}
+
+func hasS3Spec(sw *unstructured.Unstructured) bool {
+	spec, found, err := unstructured.NestedMap(sw.Object, "spec")
+	if err != nil || !found {
+		return false
+	}
+	_, ok := spec["s3"]
+	return ok
 }
 
 func mapSeaweedConditions(conditions []any) (reason, message string, ready, reconciling, degraded bool) {
@@ -142,6 +162,9 @@ func S3Endpoint(releaseName, namespace string) string {
 }
 
 func loadValues(ctx context.Context, c client.Client, app *appsv1alpha1.ApplicationInstance) (map[string]any, error) {
+	if app.Spec.Values == nil {
+		return nil, fmt.Errorf("spec.values is required for Seaweed workload")
+	}
 	switch app.Spec.Values.Source {
 	case appsv1alpha1.ValuesSourceInline:
 		if app.Spec.Values.Inline == nil {
@@ -223,7 +246,7 @@ func MaterializeSeaweedForTest(app *appsv1alpha1.ApplicationInstance, values map
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
 	sw.SetName(app.Spec.Release.Name)
-	sw.SetNamespace(app.Namespace)
+	sw.SetNamespace(releaseNamespace(app))
 	_ = unstructured.SetNestedMap(sw.Object, values, "spec")
 	return sw
 }

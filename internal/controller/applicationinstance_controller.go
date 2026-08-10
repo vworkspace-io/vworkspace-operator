@@ -166,7 +166,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
 		r.reportConditions(app, prevConditions)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	snapshot, err := r.SeaweedEngine.SyncStatus(ctx, app)
@@ -237,11 +237,12 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 		}
 		r.reportConditions(app, prevConditions)
-		if r.SeaweedEngine != nil {
-			if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
-				log.Error(err, "delete Seaweed CR failed")
-				return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-			}
+		if r.SeaweedEngine == nil {
+			return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("seaweed engine is not configured")
+		}
+		if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
+			log.Error(err, "delete Seaweed CR failed")
+			return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 		}
 		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
 		if err := r.Update(ctx, app); err != nil {
