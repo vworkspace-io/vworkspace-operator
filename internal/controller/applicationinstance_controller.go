@@ -169,6 +169,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 			if err := r.Status().Update(ctx, app); err != nil {
 				return ctrl.Result{}, fmt.Errorf("update status after helm migration: %w", err)
 			}
+			r.reportConditions(app, prevConditions)
 			return ctrl.Result{Requeue: true}, nil
 		}
 	}

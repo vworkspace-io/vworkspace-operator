@@ -51,9 +51,10 @@ func (stubHelmEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.Applicat
 // recordingHelmEngine counts engine calls so tests can assert that placeholder
 // reconciliation performs no Helm interaction.
 type recordingHelmEngine struct {
-	ensureCalls int
-	deleteCalls int
-	syncCalls   int
+	ensureCalls            int
+	deleteCalls            int
+	syncCalls              int
+	releaseExistsRemaining int
 }
 
 func (e *recordingHelmEngine) EnsureRelease(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
@@ -65,6 +66,10 @@ func (e *recordingHelmEngine) DeleteRelease(ctx context.Context, app *appsv1alph
 	return nil
 }
 func (e *recordingHelmEngine) ReleaseExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	if e.releaseExistsRemaining > 0 {
+		e.releaseExistsRemaining--
+		return true, nil
+	}
 	return false, nil
 }
 func (e *recordingHelmEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*helmengine.StatusSnapshot, error) {
@@ -452,5 +457,59 @@ var _ = Describe("ApplicationInstance Controller", func() {
 
 		err = k8sClient.Get(ctx, client.ObjectKeyFromObject(sw), sw)
 		Expect(err).To(HaveOccurred())
+	})
+
+	It("migrates legacy Helm releases before reconciling Seaweed CRs", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "seaweedfs-migrate", Namespace: "default"}
+
+		app := &appsv1alpha1.ApplicationInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       name.Name,
+				Namespace:  name.Namespace,
+				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
+			},
+			Spec: appsv1alpha1.ApplicationInstanceSpec{
+				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				Chart: &appsv1alpha1.ChartSpec{
+					SourceType: appsv1alpha1.ChartSourceHelm,
+					URL:        "https://vworkspace-io.github.io/vworkspace-server/charts/",
+					Name:       "seaweedfs",
+					Version:    "0.1.0",
+				},
+				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-migrate", Namespace: "default"},
+				Values: &appsv1alpha1.ValuesSpec{
+					Source: appsv1alpha1.ValuesSourceInline,
+					Inline: &runtime.RawExtension{Raw: []byte(`{"master":{"replicas":1},"volume":{"replicas":1,"requests":{"storage":"10Gi"}},"filer":{"replicas":1},"s3":{"replicas":1}}`)},
+				},
+			},
+		}
+		app.Status.HelmReleaseRef = &appsv1alpha1.HelmReleaseRef{Name: "seaweedfs-migrate", Namespace: "default"}
+		Expect(k8sClient.Create(ctx, app)).To(Succeed())
+
+		helmEngine := &recordingHelmEngine{releaseExistsRemaining: 1}
+		seaweedEngine := &recordingSeaweedEngine{}
+		reconciler := &ApplicationInstanceReconciler{
+			Client:        k8sClient,
+			Scheme:        k8sClient.Scheme(),
+			Engine:        helmEngine,
+			SeaweedEngine: seaweedEngine,
+		}
+
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(helmEngine.deleteCalls).To(Equal(1))
+		Expect(seaweedEngine.ensureCalls).To(Equal(0))
+
+		updated := &appsv1alpha1.ApplicationInstance{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		Expect(updated.Status.HelmReleaseRef).To(BeNil())
+		status, reason := readyConditionStatus(updated.Status.Conditions)
+		Expect(status).To(Equal(metav1.ConditionUnknown))
+		Expect(reason).To(Equal("SeaweedMigrating"))
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(seaweedEngine.ensureCalls).To(Equal(1))
 	})
 })
