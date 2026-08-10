@@ -25,7 +25,7 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/agent"
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
-	"github.com/vworkspace-io/vworkspace-operator/internal/labels"
+	"github.com/vworkspace-io/vworkspace-operator/internal/seaweedengine"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,9 +38,10 @@ import (
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
 type ApplicationInstanceReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Engine   helmengine.Engine
-	Reporter agent.StatusReporter
+	Scheme        *runtime.Scheme
+	Engine        helmengine.Engine
+	SeaweedEngine seaweedengine.Engine
+	Reporter      agent.StatusReporter
 }
 
 // +kubebuilder:rbac:groups=apps.vworkspace.io,resources=applicationinstances,verbs=get;list;watch;create;update;patch;delete
@@ -48,14 +49,11 @@ type ApplicationInstanceReconciler struct {
 // +kubebuilder:rbac:groups=apps.vworkspace.io,resources=applicationinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories;ocirepositories,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=buckets;s3credentials,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx).WithValues(
-		"cluster_id", req.Namespace,
-		"applicationinstance", req.Name,
-		"namespace", req.Namespace,
-	)
-
 	app := &appsv1alpha1.ApplicationInstance{}
 	if err := r.Get(ctx, req.NamespacedName, app); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -81,6 +79,15 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 		return r.reconcilePlaceholder(ctx, app)
 	}
 
+	if seaweedengine.IsSeaweedWorkload(app) {
+		return r.reconcileSeaweed(ctx, app)
+	}
+
+	return r.reconcileHelm(ctx, app)
+}
+
+func (r *ApplicationInstanceReconciler) reconcileHelm(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
 
 	if r.Engine == nil {
@@ -118,7 +125,55 @@ func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("sync helm status: %w", err)
 	}
-	r.applyStatusSnapshot(app, snapshot)
+	r.applyHelmStatusSnapshot(app, snapshot)
+
+	if err := r.Status().Update(ctx, app); err != nil {
+		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
+	}
+	r.reportConditions(app, prevConditions)
+
+	if snapshot != nil && !snapshot.Ready {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	prevConditions := append([]metav1.Condition(nil), app.Status.Conditions...)
+
+	if r.SeaweedEngine == nil {
+		return r.setBlocked(ctx, app, "MissingDependencies", "seaweed engine is not configured")
+	}
+
+	app.Status.ObservedGeneration = app.Generation
+	now := metav1.Now()
+	app.Status.LastReconcileTime = &now
+	app.Status.HelmReleaseRef = nil
+	app.Status.LastAppliedChart = &appsv1alpha1.ChartSnapshot{
+		SourceType: app.Spec.Chart.SourceType,
+		URL:        app.Spec.Chart.URL,
+		Name:       app.Spec.Chart.Name,
+		Version:    app.Spec.Chart.Version,
+	}
+	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "SeaweedReconciling", "Ensuring Seaweed CR")
+
+	if err := r.SeaweedEngine.EnsureSeaweed(ctx, app); err != nil {
+		log.Error(err, "ensure Seaweed CR failed")
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionFalse, "SeaweedFailed", err.Error())
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "Stable", "Reconciliation failed")
+		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
+			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
+		}
+		r.reportConditions(app, prevConditions)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+
+	snapshot, err := r.SeaweedEngine.SyncStatus(ctx, app)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf("sync Seaweed status: %w", err)
+	}
+	r.applySeaweedStatusSnapshot(app, snapshot)
 
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
@@ -145,6 +200,7 @@ func (r *ApplicationInstanceReconciler) reconcilePlaceholder(ctx context.Context
 	// release reference.
 	app.Status.HelmReleaseRef = nil
 	app.Status.LastAppliedChart = nil
+	app.Status.Endpoints = nil
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "Stable", "Placeholder instance has no reconciliation in flight")
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Recovered", "Placeholder instance owns no workload")
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionTrue, "Placeholder", "Placeholder instance is ready (no Helm release)")
@@ -168,6 +224,25 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 		}
 		r.reportConditions(app, prevConditions)
+		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
+		if err := r.Update(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if seaweedengine.IsSeaweedWorkload(app) {
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Uninstalling", "Removing Seaweed CR")
+		if err := r.Status().Update(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
+		}
+		r.reportConditions(app, prevConditions)
+		if r.SeaweedEngine != nil {
+			if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
+				log.Error(err, "delete Seaweed CR failed")
+				return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+			}
+		}
 		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
 		if err := r.Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
@@ -209,7 +284,7 @@ func (r *ApplicationInstanceReconciler) reportConditions(app *appsv1alpha1.Appli
 	r.Reporter.ReportConditionTransitions(ref, prev, app.Status.Conditions)
 }
 
-func (r *ApplicationInstanceReconciler) applyStatusSnapshot(app *appsv1alpha1.ApplicationInstance, snapshot *helmengine.StatusSnapshot) {
+func (r *ApplicationInstanceReconciler) applyHelmStatusSnapshot(app *appsv1alpha1.ApplicationInstance, snapshot *helmengine.StatusSnapshot) {
 	if snapshot == nil {
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, "Reconciling", "Waiting for HelmRelease status")
 		return
@@ -234,7 +309,42 @@ func (r *ApplicationInstanceReconciler) applyStatusSnapshot(app *appsv1alpha1.Ap
 		}
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, reason, snapshot.Message)
 	}
-	_ = labels.ManagedByOperator
+}
+
+func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1alpha1.ApplicationInstance, snapshot *seaweedengine.StatusSnapshot) {
+	if snapshot == nil {
+		app.Status.Endpoints = nil
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, "Reconciling", "Waiting for Seaweed status")
+		return
+	}
+	if snapshot.S3Endpoint != "" {
+		app.Status.Endpoints = []appsv1alpha1.EndpointStatus{{
+			Name:  "s3",
+			URL:   snapshot.S3Endpoint,
+			Type:  "s3",
+			Notes: "In-cluster SeaweedFS S3 gateway (port 8333)",
+		}}
+	}
+	if snapshot.Reconciling {
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, snapshot.Reason, snapshot.Message)
+	} else {
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "Stable", "No reconciliation in flight")
+	}
+	if snapshot.Degraded {
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionTrue, snapshot.Reason, snapshot.Message)
+	} else {
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Recovered", "Seaweed cluster is healthy")
+	}
+	if snapshot.Ready {
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionTrue, "SeaweedReady", snapshot.Message)
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
+	} else {
+		reason := snapshot.Reason
+		if reason == "" {
+			reason = "Reconciling"
+		}
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, reason, snapshot.Message)
+	}
 }
 
 func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {

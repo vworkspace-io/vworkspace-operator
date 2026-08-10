@@ -33,6 +33,7 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/controller"
 	"github.com/vworkspace-io/vworkspace-operator/internal/engines"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
+	"github.com/vworkspace-io/vworkspace-operator/internal/seaweedengine"
 	"github.com/vworkspace-io/vworkspace-operator/internal/webhook"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -158,6 +159,7 @@ func main() {
 	}
 
 	fluxEngine := helmengine.NewFluxEngine(mgr.GetClient())
+	seaweedEngine := seaweedengine.NewSeaweedEngine(mgr.GetClient())
 
 	credNamespace := strings.TrimSpace(agentCredentialsNamespace)
 	if credNamespace == "" {
@@ -171,10 +173,11 @@ func main() {
 	statusReporter := agent.NewStatusReporter(eventBatcher)
 
 	if err := (&controller.ApplicationInstanceReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Engine:   fluxEngine,
-		Reporter: statusReporter,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Engine:        fluxEngine,
+		SeaweedEngine: seaweedEngine,
+		Reporter:      statusReporter,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApplicationInstance")
 		os.Exit(1)

@@ -136,6 +136,26 @@ rules:
   - patch
   - update
 - apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - buckets
+  - s3credentials
+  - seaweeds
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - seaweed.seaweedfs.com
+  resources:
+  - seaweeds/status
+  verbs:
+  - get
+- apiGroups:
   - source.toolkit.fluxcd.io
   resources:
   - helmrepositories
