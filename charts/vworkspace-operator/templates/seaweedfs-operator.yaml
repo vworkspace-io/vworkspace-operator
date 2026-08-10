@@ -1,3 +1,8 @@
+{{- if .Values.seaweedfsOperator.enabled }}
+{{- if not .Values.flux.enabled }}
+{{- fail "seaweedfsOperator.enabled requires flux.enabled=true (HelmRelease reconciliation needs Flux controllers)" }}
+{{- end }}
+{{- end }}
 {{- if and .Values.seaweedfsOperator.enabled .Values.seaweedfsOperator.installed .Values.flux.enabled }}
 {{- $ns := .Values.seaweedfsOperator.namespace }}
 ---

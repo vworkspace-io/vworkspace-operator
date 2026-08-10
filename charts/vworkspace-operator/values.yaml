@@ -77,7 +77,7 @@ velero:
 seaweedfsOperator:
   enabled: false
   # When true with enabled, Flux reconciles HelmRepository + HelmRelease in
-  # seaweedfsOperator.namespace. Requires flux.enabled=true (controllers running).
+  # seaweedfsOperator.namespace. Requires flux.enabled=true (hard fail if omitted).
   installed: true
   namespace: seaweedfs-operator
   chartVersion: "0.1.37"

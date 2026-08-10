@@ -125,8 +125,11 @@ if [[ "${VALIDATE_BUNDLE}" == "true" ]]; then
   kubectl -n velero wait --for=condition=Available deployment/velero --timeout=300s
   kubectl get crd backups.velero.io
   kubectl get backupstoragelocation -n velero
-  log "waiting for SeaweedFS operator CRD and controller"
-  kubectl wait --for=condition=Established crd/seaweeds.seaweed.seaweedfs.com --timeout=300s
+  log "waiting for SeaweedFS operator CRDs"
+  for crd in $(kubectl get crd -o name | grep '\.seaweed\.seaweedfs\.com$'); do
+    kubectl wait --for=condition=Established "${crd}" --timeout=300s
+  done
+  log "waiting for SeaweedFS operator HelmRelease and controller"
   kubectl -n seaweedfs-operator wait --for=condition=Ready helmrelease/seaweedfs-operator --timeout=600s
   if kubectl -n seaweedfs-operator get job seaweedfs-operator-update-webhook-certificates >/dev/null 2>&1; then
     log "waiting for SeaweedFS operator webhook certgen job"
