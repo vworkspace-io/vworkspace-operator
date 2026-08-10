@@ -591,8 +591,8 @@ var _ = Describe("ApplicationInstance Controller", func() {
 
 		seaweedEngine := &recordingSeaweedEngine{
 			syncSnapshot: &seaweedengine.StatusSnapshot{
-				Ready: true,
-				HasS3: true,
+				Ready:  true,
+				HasS3:  true,
 				Reason: "SeaweedReady",
 			},
 		}

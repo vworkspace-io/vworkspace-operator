@@ -33,6 +33,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - apps.vworkspace.io
   resources:
   - applicationinstances

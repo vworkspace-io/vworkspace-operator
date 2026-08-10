@@ -51,6 +51,7 @@ type ApplicationInstanceReconciler struct {
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories;ocirepositories,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 
 func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues(
