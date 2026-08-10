@@ -151,11 +151,20 @@ func (e *SeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.Applic
 
 func s3ServiceExists(ctx context.Context, c client.Client, releaseName, namespace string) bool {
 	svc := &corev1.Service{}
-	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: releaseName + "-s3"}, svc); err != nil {
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: s3ServiceName(releaseName)}, svc); err != nil {
 		return false
 	}
 	return true
 }
+
+// s3ServiceName returns the in-cluster Service name for the SeaweedFS S3 gateway.
+// The seaweedfs-operator creates "{releaseName}-s3" on port 8333 when spec.s3 is
+// enabled on the Seaweed CR (seaweed.seaweedfs.com/v1).
+func s3ServiceName(releaseName string) string {
+	return releaseName + "-s3"
+}
+
+const s3GatewayPort = 8333
 
 func hasS3Spec(sw *unstructured.Unstructured) bool {
 	spec, found, err := unstructured.NestedMap(sw.Object, "spec")
@@ -236,10 +245,10 @@ func mapSeaweedConditions(conditions []any) (reason, message string, ready, reco
 }
 
 // S3Endpoint returns the in-cluster S3 gateway URL for a Seaweed cluster.
-// The Seaweed CR status does not publish service URLs; upstream operator names
-// the gateway Service "{releaseName}-s3" on port 8333.
+// The Seaweed CR status does not publish service URLs; the seaweedfs-operator
+// names the gateway Service s3ServiceName(releaseName) on port s3GatewayPort.
 func S3Endpoint(releaseName, namespace string) string {
-	return fmt.Sprintf("http://%s-s3.%s.svc:8333", releaseName, namespace)
+	return fmt.Sprintf("http://%s.%s.svc:%d", s3ServiceName(releaseName), namespace, s3GatewayPort)
 }
 
 var seaweedValueWrapperKeys = []string{"seaweedfs", "seaweed"}

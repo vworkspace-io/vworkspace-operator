@@ -152,16 +152,17 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	if r.SeaweedEngine == nil {
 		return r.setBlocked(ctx, app, "MissingDependencies", "seaweed engine is not configured")
 	}
+	if r.Engine == nil {
+		return r.setBlocked(ctx, app, "MissingDependencies", "helm engine is not configured; required to detect legacy Helm releases during Seaweed migration")
+	}
 
-	if r.Engine != nil {
-		exists, err := r.Engine.ReleaseExists(ctx, app)
-		if err != nil {
-			return r.setBlocked(ctx, app, "HelmMigrationFailed", fmt.Sprintf("check legacy Helm release: %v", err))
-		}
-		if exists {
-			return r.setBlocked(ctx, app, "HelmMigrationRequired",
-				"legacy Helm release detected; remove the HelmRelease manually or recreate the ApplicationInstance before native Seaweed reconciliation")
-		}
+	exists, err := r.Engine.ReleaseExists(ctx, app)
+	if err != nil {
+		return r.setBlocked(ctx, app, "HelmMigrationFailed", fmt.Sprintf("check legacy Helm release: %v", err))
+	}
+	if exists {
+		return r.setBlocked(ctx, app, "HelmMigrationRequired",
+			"legacy Helm release detected; remove the HelmRelease manually or recreate the ApplicationInstance before native Seaweed reconciliation")
 	}
 
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")

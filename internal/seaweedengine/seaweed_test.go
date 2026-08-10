@@ -132,6 +132,9 @@ func TestS3Endpoint(t *testing.T) {
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
+	if s3ServiceName("seaweedfs-dev") != "seaweedfs-dev-s3" {
+		t.Fatalf("unexpected s3 service naming contract")
+	}
 }
 
 func TestS3EnabledInSpec(t *testing.T) {
