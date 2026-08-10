@@ -85,6 +85,10 @@ seaweedfsOperator:
   # Install SeaweedFS CRDs from the seaweedfs-crds subchart. Set false when CRDs
   # already exist; HelmRelease uses crds.create=false to avoid ownership fights.
   crdsInstall: true
+  # Admission webhooks (upstream default). Set false only on airgapped clusters
+  # where certgen cannot pull from registry.k8s.io.
+  webhook:
+    enabled: true
 
 # Placeholders — out of scope for bundle v1 (Session 3 design).
 certManager:

@@ -128,6 +128,10 @@ if [[ "${VALIDATE_BUNDLE}" == "true" ]]; then
   log "waiting for SeaweedFS operator CRD and controller"
   kubectl wait --for=condition=Established crd/seaweeds.seaweed.seaweedfs.com --timeout=300s
   kubectl -n seaweedfs-operator wait --for=condition=Ready helmrelease/seaweedfs-operator --timeout=600s
+  if kubectl -n seaweedfs-operator get job seaweedfs-operator-update-webhook-certificates >/dev/null 2>&1; then
+    log "waiting for SeaweedFS operator webhook certgen job"
+    kubectl -n seaweedfs-operator wait --for=condition=complete job/seaweedfs-operator-update-webhook-certificates --timeout=300s
+  fi
   kubectl -n seaweedfs-operator wait --for=condition=Available deployment/seaweedfs-operator --timeout=300s
 elif [[ "${INSTALL_FLUX_CRDS}" == "true" ]]; then
   log "installing minimal Flux CRDs (${FLUX_VERSION}) for HelmRelease support"

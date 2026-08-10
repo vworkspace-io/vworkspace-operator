@@ -54,4 +54,6 @@ spec:
   values:
     crds:
       create: false
+    webhook:
+      enabled: {{ .Values.seaweedfsOperator.webhook.enabled }}
 {{- end }}

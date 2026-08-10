@@ -80,6 +80,7 @@ kubectl get cluster cluster-local -w
 | `velero.enabled` | `false` | Bundle: Velero server + CRDs |
 | `velero.minio.enabled` | `false` | Bundle: in-cluster MinIO for kind |
 | `seaweedfsOperator.enabled` | `false` | Bundle: Flux HelmRelease for seaweedfs-operator (requires `flux.enabled`) |
+| `seaweedfsOperator.webhook.enabled` | `true` | SeaweedFS admission webhooks; set `false` on airgapped clusters without certgen access |
 | `manager.metricsBindAddress` | `0` (off) | Set `:8443` for HTTPS `/metrics` |
 
 See [values.yaml](values.yaml) and [values-kind.yaml](values-kind.yaml) for the full list.
@@ -88,5 +89,5 @@ See [values.yaml](values.yaml) and [values-kind.yaml](values-kind.yaml) for the 
 
 - Default values install **only** the operator. Optional bundle flags add Flux, Velero, and SeaweedFS operator — [prerequisites.md](../../docs/install/prerequisites.md).
 - CRD files live under `files/crds/` (operator), `charts/velero-crds/crds/` (Velero bundle), and `charts/seaweedfs-crds/crds/` (SeaweedFS operator bundle); Flux manifests are under `files/flux/`.
-- **SeaweedFS operator bundle:** CRDs ship in the subchart with `helm.sh/resource-policy: keep`. The Flux `HelmRelease` sets `crds.create=false` so upgrades do not fight GitOps ownership. Upstream chart ≥ 0.1.15 documents the same split — pin `seaweedfsOperator.chartVersion` and bump the subchart CRDs together on upgrade. Admission webhooks use the upstream chart default (`webhook.enabled=true`); certgen runs a short-lived Job to mint TLS certs for the validating webhook.
+- **SeaweedFS operator bundle:** CRDs ship in the subchart with `helm.sh/resource-policy: keep`. The Flux `HelmRelease` sets `crds.create=false` so upgrades do not fight GitOps ownership. Upstream chart ≥ 0.1.15 documents the same split — pin `seaweedfsOperator.chartVersion` and bump the subchart CRDs together on upgrade. Admission webhooks default on (`seaweedfsOperator.webhook.enabled=true`); certgen runs a short-lived Job to mint TLS certs. Bundle validation (`VALIDATE_BUNDLE=true ./hack/validate-helm-kind.sh`) waits for the certgen Job and operator Deployment Ready on kind.
 - Post-install hints are rendered in `templates/NOTES.txt`.
