@@ -68,9 +68,12 @@ func TestSeaweedEngineSyncStatus(t *testing.T) {
 	_ = unstructured.SetNestedSlice(sw.Object, []any{
 		map[string]any{"type": "Ready", "status": "True", "message": "all components ready"},
 	}, "status", "conditions")
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: app.Spec.Release.Name + "-s3", Namespace: app.Namespace},
+	}
 
 	scheme := testSchemeWithCore()
-	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme).WithObjects(sw).Build())
+	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme).WithObjects(sw, svc).Build())
 	snapshot, err := engine.SyncStatus(context.Background(), app)
 	if err != nil {
 		t.Fatalf("SyncStatus: %v", err)

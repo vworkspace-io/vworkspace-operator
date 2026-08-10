@@ -138,10 +138,18 @@ func (e *SeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.Applic
 		return snapshot, nil
 	}
 	snapshot.Reason, snapshot.Message, snapshot.Ready, snapshot.Reconciling, snapshot.Degraded = mapSeaweedConditions(conditions)
-	if snapshot.Ready && hasS3Spec(sw) {
+	if snapshot.Ready && hasS3Spec(sw) && s3ServiceExists(ctx, e.Client, app.Spec.Release.Name, ns) {
 		snapshot.S3Endpoint = S3Endpoint(app.Spec.Release.Name, ns)
 	}
 	return snapshot, nil
+}
+
+func s3ServiceExists(ctx context.Context, c client.Client, releaseName, namespace string) bool {
+	svc := &corev1.Service{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: releaseName + "-s3"}, svc); err != nil {
+		return false
+	}
+	return true
 }
 
 func hasS3Spec(sw *unstructured.Unstructured) bool {

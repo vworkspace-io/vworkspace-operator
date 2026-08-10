@@ -164,6 +164,8 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 			app.Status.HelmReleaseRef = nil
 			app.Status.Endpoints = nil
 			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "SeaweedMigrating", "Removing legacy Helm release")
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, "SeaweedMigrating", "Migrating from Helm to native Seaweed CR")
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "SeaweedMigrating", "Legacy Helm release is being removed")
 			if err := r.Status().Update(ctx, app); err != nil {
 				return ctrl.Result{}, fmt.Errorf("update status after helm migration: %w", err)
 			}
@@ -172,19 +174,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	}
 
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
-	now := metav1.Now()
-	app.Status.LastReconcileTime = &now
 	app.Status.HelmReleaseRef = nil
-	if app.Spec.Chart != nil {
-		app.Status.LastAppliedChart = &appsv1alpha1.ChartSnapshot{
-			SourceType: app.Spec.Chart.SourceType,
-			URL:        app.Spec.Chart.URL,
-			Name:       app.Spec.Chart.Name,
-			Version:    app.Spec.Chart.Version,
-		}
-	} else {
-		app.Status.LastAppliedChart = nil
-	}
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "SeaweedReconciling", "Ensuring Seaweed CR")
 
 	if err := r.SeaweedEngine.EnsureSeaweed(ctx, app); err != nil {
@@ -202,6 +192,18 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	}
 
 	app.Status.ObservedGeneration = app.Generation
+	now := metav1.Now()
+	app.Status.LastReconcileTime = &now
+	if app.Spec.Chart != nil {
+		app.Status.LastAppliedChart = &appsv1alpha1.ChartSnapshot{
+			SourceType: app.Spec.Chart.SourceType,
+			URL:        app.Spec.Chart.URL,
+			Name:       app.Spec.Chart.Name,
+			Version:    app.Spec.Chart.Version,
+		}
+	} else {
+		app.Status.LastAppliedChart = nil
+	}
 
 	snapshot, err := r.SeaweedEngine.SyncStatus(ctx, app)
 	if err != nil && !apierrors.IsNotFound(err) {
