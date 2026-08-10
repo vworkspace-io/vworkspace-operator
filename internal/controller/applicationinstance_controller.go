@@ -185,6 +185,8 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 		app.Status.Endpoints = nil
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionFalse, "SeaweedFailed", err.Error())
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "SeaweedFailed", err.Error())
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionTrue, "SeaweedFailed", err.Error())
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
@@ -360,7 +362,7 @@ func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1al
 	if snapshot == nil {
 		app.Status.Endpoints = nil
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "Reconciling", "Waiting for Seaweed status")
-		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Recovered", "Seaweed cluster is healthy")
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Reconciling", "Seaweed status not yet available")
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, "Reconciling", "Waiting for Seaweed status")
 		return
 	}
