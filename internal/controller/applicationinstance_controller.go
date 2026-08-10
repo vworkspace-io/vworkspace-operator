@@ -53,6 +53,13 @@ type ApplicationInstanceReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get
 
 func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := logf.FromContext(ctx).WithValues(
+		"cluster_id", req.Namespace,
+		"applicationinstance", req.Name,
+		"namespace", req.Namespace,
+	)
+	ctx = logf.IntoContext(ctx, log)
+
 	app := &appsv1alpha1.ApplicationInstance{}
 	if err := r.Get(ctx, req.NamespacedName, app); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -145,6 +152,13 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 		return r.setBlocked(ctx, app, "MissingDependencies", "seaweed engine is not configured")
 	}
 
+	if r.Engine != nil {
+		if err := r.Engine.DeleteRelease(ctx, app); err != nil {
+			log.Error(err, "delete legacy Helm release before Seaweed reconcile")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+	}
+
 	app.Status.ObservedGeneration = app.Generation
 	now := metav1.Now()
 	app.Status.LastReconcileTime = &now
@@ -164,7 +178,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	if err := r.SeaweedEngine.EnsureSeaweed(ctx, app); err != nil {
 		log.Error(err, "ensure Seaweed CR failed")
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionFalse, "SeaweedFailed", err.Error())
-		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "Stable", "Reconciliation failed")
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "SeaweedFailed", err.Error())
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
@@ -183,7 +197,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	}
 	r.reportConditions(app, prevConditions)
 
-	if snapshot != nil && !snapshot.Ready {
+	if snapshot == nil || !snapshot.Ready {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	return ctrl.Result{}, nil
@@ -242,6 +256,12 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 		r.reportConditions(app, prevConditions)
 		if r.SeaweedEngine == nil {
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("seaweed engine is not configured")
+		}
+		if r.Engine != nil {
+			if err := r.Engine.DeleteRelease(ctx, app); err != nil {
+				log.Error(err, "delete legacy Helm release during Seaweed finalize")
+				return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+			}
 		}
 		if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
 			log.Error(err, "delete Seaweed CR failed")
