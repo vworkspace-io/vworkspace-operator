@@ -28,7 +28,7 @@ helm upgrade --install vworkspace-operator \
 
 kubectl alternative and maintainer packaging: [docs/install/helm.md](../../docs/install/helm.md#install-from-github-release).
 
-Session 3 bundle (Flux + Velero + MinIO + metrics on kind):
+Session 3 bundle (Flux + Velero + MinIO + SeaweedFS operator + metrics on kind):
 
 ```bash
 helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \
@@ -79,6 +79,7 @@ kubectl get cluster cluster-local -w
 | `flux.enabled` | `false` | Bundle: Flux helm-controller + source-controller |
 | `velero.enabled` | `false` | Bundle: Velero server + CRDs |
 | `velero.minio.enabled` | `false` | Bundle: in-cluster MinIO for kind |
+| `seaweedfsOperator.enabled` | `false` | Bundle: Flux HelmRelease for seaweedfs-operator (requires `flux.enabled`) |
 | `manager.metricsBindAddress` | `0` (off) | Set `:8443` for HTTPS `/metrics` |
 
 See [values.yaml](values.yaml) and [values-kind.yaml](values-kind.yaml) for the full list.
@@ -86,5 +87,6 @@ See [values.yaml](values.yaml) and [values-kind.yaml](values-kind.yaml) for the 
 ## Notes
 
 - Default values install **only** the operator. Optional bundle flags add Flux and Velero — [prerequisites.md](../../docs/install/prerequisites.md).
-- CRD files live under `files/crds/` (operator) and `charts/velero-crds/crds/` (Velero bundle, installed before Velero templates when `velero.enabled=true`); Flux manifests are under `files/flux/`.
+- CRD files live under `files/crds/` (operator), `charts/velero-crds/crds/` (Velero bundle), and `charts/seaweedfs-crds/crds/` (SeaweedFS operator bundle); Flux manifests are under `files/flux/`.
+- **SeaweedFS operator bundle:** CRDs ship in the subchart with `helm.sh/resource-policy: keep`. The Flux `HelmRelease` sets `crds.create=false` so upgrades do not fight GitOps ownership. Upstream chart ≥ 0.1.15 documents the same split — pin `seaweedfsOperator.chartVersion` and bump the subchart CRDs together on upgrade. Webhooks are disabled in the bundled HelmRelease values for kind (`webhook.enabled=false`) because certgen image pulls from `registry.k8s.io` often fail in lab clusters.
 - Post-install hints are rendered in `templates/NOTES.txt`.

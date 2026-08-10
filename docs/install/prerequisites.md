@@ -41,6 +41,7 @@ For single-node clusters with no cloud storage, `local-path` (from Rancher's `lo
 |------------|------------|-----------|-------------------------------|
 | Flux helm-controller + source-controller | `flux.enabled=true` | Bundled (pinned flux2 v2.4.0 subset) | `flux.installed=false` |
 | Velero + in-cluster MinIO (kind lab) | `velero.enabled=true`, `velero.minio.enabled=true` | Bundled (Velero v1.15.0 + MinIO) | `velero.installed=false` |
+| SeaweedFS operator (tier 1 — CRDs + controller) | `seaweedfsOperator.enabled=true` | Bundled via Flux (`HelmRepository` + `HelmRelease`, chart 0.1.37) | `seaweedfsOperator.installed=false` |
 | cert-manager | `certManager.enabled` | **Not bundled v1** | Bring your own |
 | external-secrets | `externalSecrets.enabled` | **Not bundled v1** | Bring your own |
 
@@ -90,6 +91,9 @@ The bundle adds the following pods to the cluster (approximate steady-state, exc
 | `source-controller` (optional)     | 1        | 50m         | 64Mi           | Flux — when `flux.enabled=true`.    |
 | `velero` (optional bundle)           | 1        | 100m        | 128Mi          | When `velero.enabled=true`.         |
 | `minio` (optional, kind lab)         | 1        | —           | —              | When `velero.minio.enabled=true`.   |
+| `seaweedfs-operator` (optional)    | 1        | 100m        | 50Mi           | When `seaweedfsOperator.enabled=true` (Flux HelmRelease). |
+
+**SeaweedFS operator bundle** requires `flux.enabled=true` so Flux controllers reconcile the `HelmRelease`. CRDs install from the `seaweedfs-crds` subchart when `seaweedfsOperator.crdsInstall=true`; the HelmRelease sets upstream `crds.create=false` to avoid ownership conflicts (upstream chart ≥ 0.1.15). On upgrade, bump `seaweedfsOperator.chartVersion` and refresh subchart CRDs from the matching upstream release together.
 
 A 2 vCPU / 4 GiB RAM single-node cluster is sufficient to install the operator and the bundle's controllers. Application workloads are on top of this footprint.
 

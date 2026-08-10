@@ -96,10 +96,14 @@ Hub design: [session-3-helm-path-design.md](https://github.com/vworkspace-io/vwo
 | `velero.enabled` | `false` | Install Velero server + CRDs |
 | `velero.minio.enabled` | `false` | In-cluster MinIO + BSL for kind (matches server [BACKUP_E2E.md](https://github.com/vworkspace-io/vworkspace-server/blob/main/docs/development/BACKUP_E2E.md)) |
 | `velero.installed` | `true` | Set `false` when Velero already exists |
+| `seaweedfsOperator.enabled` | `false` | Flux `HelmRepository` + `HelmRelease` for upstream `seaweedfs-operator` |
+| `seaweedfsOperator.installed` | `true` | Set `false` when seaweedfs-operator already exists |
+| `seaweedfsOperator.chartVersion` | `0.1.37` | Pinned upstream chart version |
+| `seaweedfsOperator.crdsInstall` | `true` | Install CRDs from subchart; HelmRelease uses `crds.create=false` |
 | `certManager.enabled` | `false` | Placeholder — not bundled in v1 |
 | `externalSecrets.enabled` | `false` | Placeholder — not bundled in v1 |
 
-**Kind / dogfood profile** — single install with metrics, Flux, Velero, and MinIO (no connectivity Helm values):
+**Kind / dogfood profile** — single install with metrics, Flux, Velero, MinIO, and SeaweedFS operator (no connectivity Helm values):
 
 ```bash
 helm upgrade --install vworkspace-operator ./charts/vworkspace-operator \

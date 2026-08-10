@@ -125,6 +125,10 @@ if [[ "${VALIDATE_BUNDLE}" == "true" ]]; then
   kubectl -n velero wait --for=condition=Available deployment/velero --timeout=300s
   kubectl get crd backups.velero.io
   kubectl get backupstoragelocation -n velero
+  log "waiting for SeaweedFS operator CRD and controller"
+  kubectl wait --for=condition=Established crd/seaweeds.seaweed.seaweedfs.com --timeout=300s
+  kubectl -n seaweedfs-operator wait --for=condition=Ready helmrelease/seaweedfs-operator --timeout=600s
+  kubectl -n seaweedfs-operator wait --for=condition=Available deployment/seaweedfs-operator --timeout=300s
 elif [[ "${INSTALL_FLUX_CRDS}" == "true" ]]; then
   log "installing minimal Flux CRDs (${FLUX_VERSION}) for HelmRelease support"
   kubectl apply -f "https://github.com/fluxcd/helm-controller/releases/download/v1.1.0/helm-controller.crds.yaml"

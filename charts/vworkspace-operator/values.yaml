@@ -74,6 +74,18 @@ velero:
     image: minio/minio:RELEASE.2024-05-28T17-19-04Z
     mcImage: minio/mc:RELEASE.2024-05-24T09-08-49Z
 
+seaweedfsOperator:
+  enabled: false
+  # When true with enabled, Flux reconciles HelmRepository + HelmRelease in
+  # seaweedfsOperator.namespace. Requires flux.enabled=true (controllers running).
+  installed: true
+  namespace: seaweedfs-operator
+  chartVersion: "0.1.37"
+  helmRepo: https://seaweedfs.github.io/seaweedfs-operator/
+  # Install SeaweedFS CRDs from the seaweedfs-crds subchart. Set false when CRDs
+  # already exist; HelmRelease uses crds.create=false to avoid ownership fights.
+  crdsInstall: true
+
 # Placeholders — out of scope for bundle v1 (Session 3 design).
 certManager:
   enabled: false

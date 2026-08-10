@@ -41,6 +41,11 @@ velero:
   minio:
     enabled: true
 
+seaweedfsOperator:
+  enabled: true
+  installed: true
+  crdsInstall: true
+
 certManager:
   enabled: false
 externalSecrets:
