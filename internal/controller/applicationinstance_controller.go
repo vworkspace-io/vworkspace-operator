@@ -51,7 +51,6 @@ type ApplicationInstanceReconciler struct {
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories;ocirepositories,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get
-// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=buckets;s3credentials,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	app := &appsv1alpha1.ApplicationInstance{}
@@ -326,6 +325,8 @@ func (r *ApplicationInstanceReconciler) applyHelmStatusSnapshot(app *appsv1alpha
 func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1alpha1.ApplicationInstance, snapshot *seaweedengine.StatusSnapshot) {
 	if snapshot == nil {
 		app.Status.Endpoints = nil
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "Reconciling", "Waiting for Seaweed status")
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Recovered", "Seaweed cluster is healthy")
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, "Reconciling", "Waiting for Seaweed status")
 		return
 	}
@@ -364,6 +365,7 @@ func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1al
 func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.ApplicationInstance{}).
+		Owns(seaweedengine.SeaweedObject()).
 		Named("applicationinstance").
 		Complete(r)
 }

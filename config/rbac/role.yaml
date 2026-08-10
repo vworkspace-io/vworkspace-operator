@@ -138,8 +138,6 @@ rules:
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:
-  - buckets
-  - s3credentials
   - seaweeds
   verbs:
   - create

@@ -18,6 +18,23 @@ import (
 
 var seaweedGVK = schema.GroupVersionKind{Group: "seaweed.seaweedfs.com", Version: "v1", Kind: "Seaweed"}
 
+// SeaweedObject returns an empty Seaweed CR placeholder for controller watches.
+func SeaweedObject() *unstructured.Unstructured {
+	sw := &unstructured.Unstructured{}
+	sw.SetGroupVersionKind(seaweedGVK)
+	return sw
+}
+
+func validateReleaseRef(app *appsv1alpha1.ApplicationInstance) error {
+	if app.Spec.Release == nil {
+		return fmt.Errorf("spec.release is required for Seaweed workload")
+	}
+	if app.Spec.Release.Name == "" {
+		return fmt.Errorf("spec.release.name is required for Seaweed workload")
+	}
+	return nil
+}
+
 // SeaweedEngine materializes seaweed.seaweedfs.com/v1 Seaweed resources.
 type SeaweedEngine struct {
 	Client client.Client
@@ -35,6 +52,9 @@ func releaseNamespace(app *appsv1alpha1.ApplicationInstance) string {
 }
 
 func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
+	if err := validateReleaseRef(app); err != nil {
+		return err
+	}
 	values, err := loadValues(ctx, e.Client, app)
 	if err != nil {
 		return fmt.Errorf("load values: %w", err)
@@ -69,6 +89,9 @@ func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.App
 }
 
 func (e *SeaweedEngine) DeleteSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
+	if err := validateReleaseRef(app); err != nil {
+		return err
+	}
 	ns := releaseNamespace(app)
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
@@ -81,6 +104,9 @@ func (e *SeaweedEngine) DeleteSeaweed(ctx context.Context, app *appsv1alpha1.App
 }
 
 func (e *SeaweedEngine) SeaweedExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	if err := validateReleaseRef(app); err != nil {
+		return false, err
+	}
 	ns := releaseNamespace(app)
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
@@ -94,6 +120,9 @@ func (e *SeaweedEngine) SeaweedExists(ctx context.Context, app *appsv1alpha1.App
 }
 
 func (e *SeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*StatusSnapshot, error) {
+	if err := validateReleaseRef(app); err != nil {
+		return nil, err
+	}
 	ns := releaseNamespace(app)
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
