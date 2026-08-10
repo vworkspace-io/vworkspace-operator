@@ -54,6 +54,4 @@ spec:
   values:
     crds:
       create: false
-    webhook:
-      enabled: false
 {{- end }}

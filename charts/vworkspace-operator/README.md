@@ -86,7 +86,7 @@ See [values.yaml](values.yaml) and [values-kind.yaml](values-kind.yaml) for the 
 
 ## Notes
 
-- Default values install **only** the operator. Optional bundle flags add Flux and Velero — [prerequisites.md](../../docs/install/prerequisites.md).
+- Default values install **only** the operator. Optional bundle flags add Flux, Velero, and SeaweedFS operator — [prerequisites.md](../../docs/install/prerequisites.md).
 - CRD files live under `files/crds/` (operator), `charts/velero-crds/crds/` (Velero bundle), and `charts/seaweedfs-crds/crds/` (SeaweedFS operator bundle); Flux manifests are under `files/flux/`.
-- **SeaweedFS operator bundle:** CRDs ship in the subchart with `helm.sh/resource-policy: keep`. The Flux `HelmRelease` sets `crds.create=false` so upgrades do not fight GitOps ownership. Upstream chart ≥ 0.1.15 documents the same split — pin `seaweedfsOperator.chartVersion` and bump the subchart CRDs together on upgrade. Webhooks are disabled in the bundled HelmRelease values for kind (`webhook.enabled=false`) because certgen image pulls from `registry.k8s.io` often fail in lab clusters.
+- **SeaweedFS operator bundle:** CRDs ship in the subchart with `helm.sh/resource-policy: keep`. The Flux `HelmRelease` sets `crds.create=false` so upgrades do not fight GitOps ownership. Upstream chart ≥ 0.1.15 documents the same split — pin `seaweedfsOperator.chartVersion` and bump the subchart CRDs together on upgrade. Admission webhooks use the upstream chart default (`webhook.enabled=true`); certgen runs a short-lived Job to mint TLS certs for the validating webhook.
 - Post-install hints are rendered in `templates/NOTES.txt`.
