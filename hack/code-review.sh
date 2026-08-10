@@ -104,6 +104,8 @@ You are reviewing a pull request for vworkspace-operator (Kubebuilder / controll
 
 The unified diff is in PR_DIFF.txt in the workspace (may be truncated). Read **only** PR_DIFF.txt unless you must interpret a symbol named in the diff—do not read other workspace files. Do not suggest edits outside the changed lines unless a change clearly breaks callers elsewhere.
 
+When the diff is truncated, large vendored CRD YAML may be omitted in favor of templates, values, and hack scripts that appear in the same PR. Do not report major/minor findings that claim README or docs reference files missing from the PR unless those paths are absent from PR_DIFF.txt **and** are not typical companion files (values, templates, hack) for the documented feature.
+
 Important:
 - Review the code as it exists in this diff now. Do not report issues that the diff already fixes.
 - Each finding must cite evidence from the diff (a symbol, hunk, or behavior you can point to). If you are unsure an issue still exists, omit it.
@@ -149,11 +151,7 @@ EOF
   diff_bytes=$(wc -c <"${diff_file}" | tr -d ' ')
   if [ "${diff_bytes}" -gt "${DIFF_MAX_BYTES}" ]; then
     REVIEW_DIFF_TRUNCATED=1
-    head -c "${DIFF_MAX_BYTES}" "${diff_file}" >"${GITHUB_WORKSPACE}/PR_DIFF.txt"
-    {
-      echo ""
-      echo "(Diff truncated to ${DIFF_MAX_BYTES} characters for review.)"
-    } >>"${GITHUB_WORKSPACE}/PR_DIFF.txt"
+    python3 "${HACK_DIR}/code_review_diff.py" "${diff_file}" "${GITHUB_WORKSPACE}/PR_DIFF.txt" "${DIFF_MAX_BYTES}"
   else
     cp "${diff_file}" "${GITHUB_WORKSPACE}/PR_DIFF.txt"
   fi
