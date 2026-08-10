@@ -12,3 +12,6 @@ dependencies:
   - name: velero-crds
     version: "0.0.0"
     condition: velero.crdsInstall
+  - name: seaweedfs-crds
+    version: "0.0.0"
+    condition: seaweedfsOperator.crdsInstall
