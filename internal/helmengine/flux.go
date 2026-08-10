@@ -58,6 +58,9 @@ func (e *FluxEngine) DeleteRelease(ctx context.Context, app *appsv1alpha1.Applic
 }
 
 func (e *FluxEngine) ReleaseExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	if app.Spec.Release == nil || app.Spec.Release.Name == "" {
+		return false, nil
+	}
 	hr := &unstructured.Unstructured{}
 	hr.SetGroupVersionKind(helmReleaseGVK)
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: app.Spec.Release.Name}, hr); err != nil {

@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 )
@@ -33,10 +34,14 @@ func InstallSeaweedCRDs() error {
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
-	cmd = exec.Command("kubectl", "wait",
-		"--for=condition=Established", "crd/seaweeds.seaweed.seaweedfs.com", "--timeout=120s")
-	_, err = Run(cmd)
-	return err
+	for range 30 {
+		if IsSeaweedCRDsInstalled() {
+			return nil
+		}
+		cmd = exec.Command("sleep", "2")
+		_, _ = Run(cmd)
+	}
+	return fmt.Errorf("timed out waiting for Seaweed CRD to become available")
 }
 
 // IsSeaweedCRDsInstalled reports whether the Seaweed CRD is present.
