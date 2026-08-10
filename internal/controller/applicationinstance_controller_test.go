@@ -80,6 +80,9 @@ func (e *recordingSeaweedEngine) DeleteSeaweed(ctx context.Context, app *appsv1a
 	e.deleteCalls++
 	return nil
 }
+func (e *recordingSeaweedEngine) SeaweedExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	return false, nil
+}
 func (e *recordingSeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*seaweedengine.StatusSnapshot, error) {
 	e.syncCalls++
 	return &seaweedengine.StatusSnapshot{
@@ -391,5 +394,57 @@ var _ = Describe("ApplicationInstance Controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 		Expect(replicas).To(Equal(int64(1)))
+	})
+
+	It("finalizes a seaweedfs instance by deleting the Seaweed CR and removing the finalizer", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "seaweedfs-del", Namespace: "default"}
+
+		app := &appsv1alpha1.ApplicationInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       name.Name,
+				Namespace:  name.Namespace,
+				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
+			},
+			Spec: appsv1alpha1.ApplicationInstanceSpec{
+				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				Chart: &appsv1alpha1.ChartSpec{
+					SourceType: appsv1alpha1.ChartSourceHelm,
+					URL:        "https://vworkspace-io.github.io/vworkspace-server/charts/",
+					Name:       "seaweedfs",
+					Version:    "0.1.0",
+				},
+				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-del", Namespace: "default"},
+				Values: &appsv1alpha1.ValuesSpec{
+					Source: appsv1alpha1.ValuesSourceInline,
+					Inline: &runtime.RawExtension{Raw: []byte(`{"master":{"replicas":1},"volume":{"replicas":1,"requests":{"storage":"10Gi"}},"filer":{"replicas":1},"s3":{"replicas":1}}`)},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, app)).To(Succeed())
+
+		seaweedEngine := seaweedengine.NewSeaweedEngine(k8sClient)
+		reconciler := &ApplicationInstanceReconciler{
+			Client:        k8sClient,
+			Scheme:        k8sClient.Scheme(),
+			Engine:        stubHelmEngine{},
+			SeaweedEngine: seaweedEngine,
+		}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		sw := seaweedengine.MaterializeSeaweedForTest(app, nil)
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sw), sw)).To(Succeed())
+
+		Expect(k8sClient.Delete(ctx, app)).To(Succeed())
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		gone := &appsv1alpha1.ApplicationInstance{}
+		err = k8sClient.Get(ctx, name, gone)
+		Expect(err).To(HaveOccurred())
+
+		err = k8sClient.Get(ctx, client.ObjectKeyFromObject(sw), sw)
+		Expect(err).To(HaveOccurred())
 	})
 })

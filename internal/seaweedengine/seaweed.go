@@ -41,6 +41,9 @@ func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.App
 	}
 
 	ns := releaseNamespace(app)
+	if ns != app.Namespace {
+		return fmt.Errorf("spec.release.namespace %q must match metadata.namespace %q for Seaweed workloads", ns, app.Namespace)
+	}
 	sw := &unstructured.Unstructured{}
 	sw.SetGroupVersionKind(seaweedGVK)
 	sw.SetName(app.Spec.Release.Name)
@@ -75,6 +78,19 @@ func (e *SeaweedEngine) DeleteSeaweed(ctx context.Context, app *appsv1alpha1.App
 		return fmt.Errorf("delete Seaweed/%s: %w", sw.GetName(), err)
 	}
 	return nil
+}
+
+func (e *SeaweedEngine) SeaweedExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	ns := releaseNamespace(app)
+	sw := &unstructured.Unstructured{}
+	sw.SetGroupVersionKind(seaweedGVK)
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: app.Spec.Release.Name}, sw); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return false, nil
+		}
+		return false, fmt.Errorf("get Seaweed: %w", err)
+	}
+	return true, nil
 }
 
 func (e *SeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*StatusSnapshot, error) {

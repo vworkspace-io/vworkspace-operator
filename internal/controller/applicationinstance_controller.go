@@ -150,11 +150,15 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	now := metav1.Now()
 	app.Status.LastReconcileTime = &now
 	app.Status.HelmReleaseRef = nil
-	app.Status.LastAppliedChart = &appsv1alpha1.ChartSnapshot{
-		SourceType: app.Spec.Chart.SourceType,
-		URL:        app.Spec.Chart.URL,
-		Name:       app.Spec.Chart.Name,
-		Version:    app.Spec.Chart.Version,
+	if app.Spec.Chart != nil {
+		app.Status.LastAppliedChart = &appsv1alpha1.ChartSnapshot{
+			SourceType: app.Spec.Chart.SourceType,
+			URL:        app.Spec.Chart.URL,
+			Name:       app.Spec.Chart.Name,
+			Version:    app.Spec.Chart.Version,
+		}
+	} else {
+		app.Status.LastAppliedChart = nil
 	}
 	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "SeaweedReconciling", "Ensuring Seaweed CR")
 
@@ -244,6 +248,13 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 			log.Error(err, "delete Seaweed CR failed")
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 		}
+		exists, err := r.SeaweedEngine.SeaweedExists(ctx, app)
+		if err != nil {
+			return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+		}
+		if exists {
+			return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+		}
 		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
 		if err := r.Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
@@ -325,6 +336,8 @@ func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1al
 			Type:  "s3",
 			Notes: "In-cluster SeaweedFS S3 gateway (port 8333)",
 		}}
+	} else {
+		app.Status.Endpoints = nil
 	}
 	if snapshot.Reconciling {
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, snapshot.Reason, snapshot.Message)

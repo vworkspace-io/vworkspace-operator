@@ -21,6 +21,7 @@ func IsSeaweedWorkload(app *appsv1alpha1.ApplicationInstance) bool {
 type Engine interface {
 	EnsureSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error
 	DeleteSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error
+	SeaweedExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error)
 	SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*StatusSnapshot, error)
 }
 
