@@ -59,7 +59,10 @@ func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.App
 	if err != nil {
 		return fmt.Errorf("load values: %w", err)
 	}
-	values = normalizeSeaweedValues(values)
+	values, err = normalizeSeaweedValues(values)
+	if err != nil {
+		return fmt.Errorf("normalize values: %w", err)
+	}
 
 	ns := releaseNamespace(app)
 	if ns != app.Namespace {
@@ -159,8 +162,29 @@ func hasS3Spec(sw *unstructured.Unstructured) bool {
 	if err != nil || !found {
 		return false
 	}
-	_, ok := spec["s3"]
-	return ok
+	return s3EnabledInSpec(spec)
+}
+
+func s3EnabledInSpec(spec map[string]any) bool {
+	s3, ok := spec["s3"]
+	if !ok {
+		return false
+	}
+	s3Map, ok := s3.(map[string]any)
+	if !ok || len(s3Map) == 0 {
+		return false
+	}
+	if enabled, found, err := unstructured.NestedBool(s3Map, "enabled"); err == nil && found && !enabled {
+		return false
+	}
+	replicas, found, err := unstructured.NestedInt64(s3Map, "replicas")
+	if err != nil {
+		return false
+	}
+	if found {
+		return replicas > 0
+	}
+	return true
 }
 
 func mapSeaweedConditions(conditions []any) (reason, message string, ready, reconciling, degraded bool) {
@@ -218,12 +242,26 @@ func S3Endpoint(releaseName, namespace string) string {
 	return fmt.Sprintf("http://%s-s3.%s.svc:8333", releaseName, namespace)
 }
 
-func normalizeSeaweedValues(values map[string]any) map[string]any {
+var seaweedValueWrapperKeys = []string{"seaweedfs", "seaweed"}
+
+func normalizeSeaweedValues(values map[string]any) (map[string]any, error) {
 	for _, key := range seaweedSpecKeys {
 		if _, ok := values[key]; ok {
-			return values
+			return values, nil
 		}
 	}
+	for _, wrapper := range seaweedValueWrapperKeys {
+		nested, ok := values[wrapper].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range seaweedSpecKeys {
+			if _, ok := nested[key]; ok {
+				return nested, nil
+			}
+		}
+	}
+	var candidates []map[string]any
 	for _, v := range values {
 		nested, ok := v.(map[string]any)
 		if !ok {
@@ -231,11 +269,19 @@ func normalizeSeaweedValues(values map[string]any) map[string]any {
 		}
 		for _, key := range seaweedSpecKeys {
 			if _, ok := nested[key]; ok {
-				return nested
+				candidates = append(candidates, nested)
+				break
 			}
 		}
 	}
-	return values
+	switch len(candidates) {
+	case 0:
+		return values, nil
+	case 1:
+		return candidates[0], nil
+	default:
+		return nil, fmt.Errorf("ambiguous Seaweed values: multiple wrapper sections contain Seaweed spec keys")
+	}
 }
 
 var seaweedSpecKeys = []string{"master", "volume", "filer", "s3", "admin", "worker", "sftp"}
@@ -253,7 +299,7 @@ func loadValues(ctx context.Context, c client.Client, app *appsv1alpha1.Applicat
 		if err := json.Unmarshal(app.Spec.Values.Inline.Raw, &values); err != nil {
 			return nil, fmt.Errorf("decode inline values: %w", err)
 		}
-		return normalizeSeaweedValues(values), nil
+		return normalizeSeaweedValues(values)
 	case appsv1alpha1.ValuesSourceSecretRef:
 		if app.Spec.Values.SecretRef == nil {
 			return nil, fmt.Errorf("secretRef values source requires secretRef")
@@ -296,12 +342,12 @@ func loadValuesFromConfigMap(ctx context.Context, c client.Client, defaultNS str
 func decodeValuesBytes(raw []byte) (map[string]any, error) {
 	values := map[string]any{}
 	if err := json.Unmarshal(raw, &values); err == nil {
-		return normalizeSeaweedValues(values), nil
+		return normalizeSeaweedValues(values)
 	}
 	if err := yaml.Unmarshal(raw, &values); err != nil {
 		return nil, fmt.Errorf("decode values as JSON or YAML: %w", err)
 	}
-	return normalizeSeaweedValues(values), nil
+	return normalizeSeaweedValues(values)
 }
 
 func ownerLabels(app *appsv1alpha1.ApplicationInstance) map[string]string {

@@ -265,7 +265,13 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 		}
 		r.reportConditions(app, prevConditions)
 		if r.SeaweedEngine == nil {
-			return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("seaweed engine is not configured")
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionTrue, "MissingDependencies", "seaweed engine is not configured")
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Blocked", "Cannot uninstall Seaweed CR until seaweed engine is configured")
+			if err := r.Status().Update(ctx, app); err != nil {
+				return ctrl.Result{}, fmt.Errorf("update blocked status during finalize: %w", err)
+			}
+			r.reportConditions(app, prevConditions)
+			return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 		}
 		if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
 			log.Error(err, "delete Seaweed CR failed")

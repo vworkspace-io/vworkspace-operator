@@ -134,6 +134,39 @@ func TestS3Endpoint(t *testing.T) {
 	}
 }
 
+func TestS3EnabledInSpec(t *testing.T) {
+	if s3EnabledInSpec(map[string]any{"s3": map[string]any{}}) {
+		t.Fatal("empty s3 section should not enable endpoint wait")
+	}
+	if s3EnabledInSpec(map[string]any{"s3": map[string]any{"replicas": int64(0)}}) {
+		t.Fatal("s3 replicas 0 should not enable endpoint wait")
+	}
+	if !s3EnabledInSpec(map[string]any{"s3": map[string]any{"replicas": int64(1)}}) {
+		t.Fatal("s3 replicas 1 should enable endpoint wait")
+	}
+}
+
+func TestNormalizeSeaweedValues(t *testing.T) {
+	wrapped, err := normalizeSeaweedValues(map[string]any{
+		"seaweedfs": map[string]any{
+			"master": map[string]any{"replicas": int64(1)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("normalize wrapped values: %v", err)
+	}
+	if _, ok := wrapped["master"]; !ok {
+		t.Fatal("expected seaweedfs wrapper to be unwrapped")
+	}
+	_, err = normalizeSeaweedValues(map[string]any{
+		"a": map[string]any{"master": map[string]any{"replicas": int64(1)}},
+		"b": map[string]any{"filer": map[string]any{"replicas": int64(1)}},
+	})
+	if err == nil {
+		t.Fatal("expected ambiguous wrapper values to fail")
+	}
+}
+
 func sampleSeaweedApp() *appsv1alpha1.ApplicationInstance {
 	return &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
