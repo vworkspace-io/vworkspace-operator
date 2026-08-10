@@ -99,7 +99,7 @@ Hub design: [session-3-helm-path-design.md](https://github.com/vworkspace-io/vwo
 | `seaweedfsOperator.enabled` | `false` | Flux `HelmRepository` + `HelmRelease` for upstream `seaweedfs-operator` |
 | `seaweedfsOperator.installed` | `true` | Set `false` when seaweedfs-operator already exists |
 | `seaweedfsOperator.chartVersion` | `0.1.37` | Pinned upstream chart version |
-| `seaweedfsOperator.crdsInstall` | `true` | Install CRDs from subchart; HelmRelease uses `crds.create=false` |
+| `seaweedfsOperator.crdsInstall` | `false` | Install CRDs from subchart (enable in bundle profiles); HelmRelease uses `crds.create=false` |
 | `certManager.enabled` | `false` | Placeholder — not bundled in v1 |
 | `externalSecrets.enabled` | `false` | Placeholder — not bundled in v1 |
 

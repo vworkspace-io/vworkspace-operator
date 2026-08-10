@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: seaweedfs-operator
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "5"
+    helm.sh/hook-weight: "4"
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
