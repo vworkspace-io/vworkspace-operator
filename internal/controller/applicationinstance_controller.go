@@ -153,13 +153,18 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	}
 
 	if r.Engine != nil {
-		if err := r.Engine.DeleteRelease(ctx, app); err != nil {
-			log.Error(err, "delete legacy Helm release before Seaweed reconcile")
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		exists, err := r.Engine.ReleaseExists(ctx, app)
+		if err != nil {
+			return r.setBlocked(ctx, app, "HelmMigrationFailed", fmt.Sprintf("check legacy Helm release: %v", err))
+		}
+		if exists {
+			if err := r.Engine.DeleteRelease(ctx, app); err != nil {
+				return r.setBlocked(ctx, app, "HelmMigrationFailed", fmt.Sprintf("remove legacy Helm release: %v", err))
+			}
+			return ctrl.Result{Requeue: true}, nil
 		}
 	}
 
-	app.Status.ObservedGeneration = app.Generation
 	now := metav1.Now()
 	app.Status.LastReconcileTime = &now
 	app.Status.HelmReleaseRef = nil
@@ -177,6 +182,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 
 	if err := r.SeaweedEngine.EnsureSeaweed(ctx, app); err != nil {
 		log.Error(err, "ensure Seaweed CR failed")
+		app.Status.Endpoints = nil
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionFalse, "SeaweedFailed", err.Error())
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionFalse, "SeaweedFailed", err.Error())
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
@@ -185,6 +191,8 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 		r.reportConditions(app, prevConditions)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
+
+	app.Status.ObservedGeneration = app.Generation
 
 	snapshot, err := r.SeaweedEngine.SyncStatus(ctx, app)
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -258,9 +266,15 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("seaweed engine is not configured")
 		}
 		if r.Engine != nil {
-			if err := r.Engine.DeleteRelease(ctx, app); err != nil {
-				log.Error(err, "delete legacy Helm release during Seaweed finalize")
-				return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+			exists, err := r.Engine.ReleaseExists(ctx, app)
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("check legacy Helm release: %w", err)
+			}
+			if exists {
+				if err := r.Engine.DeleteRelease(ctx, app); err != nil {
+					log.Error(err, "delete legacy Helm release during Seaweed finalize")
+					return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+				}
 			}
 		}
 		if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {

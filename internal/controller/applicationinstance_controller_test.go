@@ -41,6 +41,9 @@ func (stubHelmEngine) EnsureRelease(ctx context.Context, app *appsv1alpha1.Appli
 func (stubHelmEngine) DeleteRelease(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
 	return nil
 }
+func (stubHelmEngine) ReleaseExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	return false, nil
+}
 func (stubHelmEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*helmengine.StatusSnapshot, error) {
 	return &helmengine.StatusSnapshot{Ready: true, Reason: "HelmReleaseReady"}, nil
 }
@@ -60,6 +63,9 @@ func (e *recordingHelmEngine) EnsureRelease(ctx context.Context, app *appsv1alph
 func (e *recordingHelmEngine) DeleteRelease(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
 	e.deleteCalls++
 	return nil
+}
+func (e *recordingHelmEngine) ReleaseExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	return false, nil
 }
 func (e *recordingHelmEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*helmengine.StatusSnapshot, error) {
 	e.syncCalls++

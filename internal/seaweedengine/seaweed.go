@@ -202,6 +202,8 @@ func mapSeaweedConditions(conditions []any) (reason, message string, ready, reco
 }
 
 // S3Endpoint returns the in-cluster S3 gateway URL for a Seaweed cluster.
+// The Seaweed CR status does not publish service URLs; upstream operator names
+// the gateway Service "{releaseName}-s3" on port 8333.
 func S3Endpoint(releaseName, namespace string) string {
 	return fmt.Sprintf("http://%s-s3.%s.svc:8333", releaseName, namespace)
 }
