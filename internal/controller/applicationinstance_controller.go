@@ -270,12 +270,34 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 			log.Error(err, "delete Seaweed CR failed")
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 		}
+		// Deletion is the supported cleanup path for legacy Helm releases blocked during live reconcile.
+		if r.Engine != nil {
+			helmExists, err := r.Engine.ReleaseExists(ctx, app)
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("check legacy Helm release: %w", err)
+			}
+			if helmExists {
+				if err := r.Engine.DeleteRelease(ctx, app); err != nil {
+					log.Error(err, "delete legacy Helm release during Seaweed finalize")
+					return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+				}
+			}
+		}
 		exists, err := r.SeaweedEngine.SeaweedExists(ctx, app)
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 		}
 		if exists {
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+		}
+		if r.Engine != nil {
+			helmExists, err := r.Engine.ReleaseExists(ctx, app)
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("check legacy Helm release: %w", err)
+			}
+			if helmExists {
+				return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+			}
 		}
 		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
 		if err := r.Update(ctx, app); err != nil {
@@ -374,8 +396,12 @@ func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1al
 		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "Recovered", "Seaweed cluster is healthy")
 	}
 	if snapshot.Ready {
-		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionTrue, "SeaweedReady", snapshot.Message)
-		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
+		if snapshot.HasS3 && snapshot.S3Endpoint == "" {
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, "WaitingForS3Endpoint", "Seaweed is ready but S3 endpoint is not yet available")
+		} else {
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionTrue, "SeaweedReady", snapshot.Message)
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
+		}
 	} else {
 		reason := snapshot.Reason
 		if reason == "" {

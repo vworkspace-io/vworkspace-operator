@@ -78,9 +78,10 @@ func (e *recordingHelmEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.
 }
 
 type recordingSeaweedEngine struct {
-	ensureCalls int
-	deleteCalls int
-	syncCalls   int
+	ensureCalls  int
+	deleteCalls  int
+	syncCalls    int
+	syncSnapshot *seaweedengine.StatusSnapshot
 }
 
 func (e *recordingSeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
@@ -96,6 +97,9 @@ func (e *recordingSeaweedEngine) SeaweedExists(ctx context.Context, app *appsv1a
 }
 func (e *recordingSeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*seaweedengine.StatusSnapshot, error) {
 	e.syncCalls++
+	if e.syncSnapshot != nil {
+		return e.syncSnapshot, nil
+	}
 	return &seaweedengine.StatusSnapshot{
 		Ready:      true,
 		Reason:     "SeaweedReady",
@@ -506,5 +510,107 @@ var _ = Describe("ApplicationInstance Controller", func() {
 		status, reason := readyConditionStatus(updated.Status.Conditions)
 		Expect(status).To(Equal(metav1.ConditionFalse))
 		Expect(reason).To(Equal("HelmMigrationRequired"))
+	})
+
+	It("finalizes a blocked seaweedfs instance by removing legacy Helm and Seaweed CR", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "seaweedfs-migrate-del", Namespace: "default"}
+
+		app := &appsv1alpha1.ApplicationInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       name.Name,
+				Namespace:  name.Namespace,
+				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
+			},
+			Spec: appsv1alpha1.ApplicationInstanceSpec{
+				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				Chart: &appsv1alpha1.ChartSpec{
+					SourceType: appsv1alpha1.ChartSourceHelm,
+					URL:        "https://vworkspace-io.github.io/vworkspace-server/charts/",
+					Name:       "seaweedfs",
+					Version:    "0.1.0",
+				},
+				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-migrate-del", Namespace: "default"},
+				Values: &appsv1alpha1.ValuesSpec{
+					Source: appsv1alpha1.ValuesSourceInline,
+					Inline: &runtime.RawExtension{Raw: []byte(`{"master":{"replicas":1},"volume":{"replicas":1,"requests":{"storage":"10Gi"}},"filer":{"replicas":1},"s3":{"replicas":1}}`)},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, app)).To(Succeed())
+
+		helmEngine := &recordingHelmEngine{releaseExistsRemaining: 1}
+		seaweedEngine := &recordingSeaweedEngine{}
+		reconciler := &ApplicationInstanceReconciler{
+			Client:        k8sClient,
+			Scheme:        k8sClient.Scheme(),
+			Engine:        helmEngine,
+			SeaweedEngine: seaweedEngine,
+		}
+
+		Expect(k8sClient.Delete(ctx, app)).To(Succeed())
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(seaweedEngine.deleteCalls).To(Equal(1))
+		Expect(helmEngine.deleteCalls).To(Equal(1))
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		gone := &appsv1alpha1.ApplicationInstance{}
+		err = k8sClient.Get(ctx, name, gone)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("does not report Ready when Seaweed is ready but S3 endpoint is missing", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "seaweedfs-s3-wait", Namespace: "default"}
+
+		app := &appsv1alpha1.ApplicationInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       name.Name,
+				Namespace:  name.Namespace,
+				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
+			},
+			Spec: appsv1alpha1.ApplicationInstanceSpec{
+				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				Chart: &appsv1alpha1.ChartSpec{
+					SourceType: appsv1alpha1.ChartSourceHelm,
+					URL:        "https://vworkspace-io.github.io/vworkspace-server/charts/",
+					Name:       "seaweedfs",
+					Version:    "0.1.0",
+				},
+				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-s3-wait", Namespace: "default"},
+				Values: &appsv1alpha1.ValuesSpec{
+					Source: appsv1alpha1.ValuesSourceInline,
+					Inline: &runtime.RawExtension{Raw: []byte(`{"master":{"replicas":1},"volume":{"replicas":1,"requests":{"storage":"10Gi"}},"filer":{"replicas":1},"s3":{"replicas":1}}`)},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, app)).To(Succeed())
+
+		seaweedEngine := &recordingSeaweedEngine{
+			syncSnapshot: &seaweedengine.StatusSnapshot{
+				Ready: true,
+				HasS3: true,
+				Reason: "SeaweedReady",
+			},
+		}
+		reconciler := &ApplicationInstanceReconciler{
+			Client:        k8sClient,
+			Scheme:        k8sClient.Scheme(),
+			Engine:        stubHelmEngine{},
+			SeaweedEngine: seaweedEngine,
+		}
+
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &appsv1alpha1.ApplicationInstance{}
+		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
+		status, reason := readyConditionStatus(updated.Status.Conditions)
+		Expect(status).To(Equal(metav1.ConditionUnknown))
+		Expect(reason).To(Equal("WaitingForS3Endpoint"))
+		Expect(updated.Status.Endpoints).To(BeEmpty())
 	})
 })
