@@ -9,6 +9,8 @@ from pathlib import Path
 
 _HUNK_START = re.compile(r"^diff --git ", re.MULTILINE)
 _PATH = re.compile(r"^diff --git a/(\S+)", re.MULTILINE)
+_CRITICAL_SUFFIXES = ("seaweeds.seaweed.seaweedfs.com.yaml",)
+_MAX_LOW_PRIORITY_HUNK_BYTES = 12_000
 
 
 def _split_hunks(diff_text: str) -> list[str]:
@@ -26,6 +28,8 @@ def _path(hunk: str) -> str:
 def _priority(path: str) -> tuple[int, str]:
     """Lower sort key = earlier in review diff."""
     lower = path.lower()
+    if any(lower.endswith(suffix) for suffix in _CRITICAL_SUFFIXES):
+        return (-1, path)
     if "/crds/" in lower and lower.endswith((".yaml", ".yml")):
         return (3, path)
     if lower.endswith(".lock"):
@@ -48,6 +52,26 @@ def _priority(path: str) -> tuple[int, str]:
     return (1, path)
 
 
+def _shrink_hunk(hunk: str, path: str) -> str:
+    """Keep review diff readable while proving large vendored files exist."""
+    encoded = hunk.encode("utf-8")
+    if len(encoded) <= _MAX_LOW_PRIORITY_HUNK_BYTES:
+        return hunk if hunk.endswith("\n") else hunk + "\n"
+
+    lines = hunk.splitlines()
+    keep = 36 if any(path.endswith(s) for s in _CRITICAL_SUFFIXES) else 24
+    if len(lines) <= keep + 2:
+        return hunk if hunk.endswith("\n") else hunk + "\n"
+
+    omitted = len(lines) - keep
+    body = "\n".join(lines[:keep])
+    body += (
+        f"\n... ({omitted} diff lines omitted from review preview; "
+        f"full file `{path}` is in the PR)\n"
+    )
+    return body + "\n"
+
+
 def truncate_diff(diff_text: str, max_bytes: int) -> tuple[str, bool]:
     """Return diff text capped at max_bytes, preferring non-vendored hunks."""
     if len(diff_text.encode("utf-8")) <= max_bytes:
@@ -59,7 +83,8 @@ def truncate_diff(diff_text: str, max_bytes: int) -> tuple[str, bool]:
     truncated = False
 
     for hunk in hunks:
-        chunk = hunk if hunk.endswith("\n") else hunk + "\n"
+        path = _path(hunk)
+        chunk = _shrink_hunk(hunk, path)
         size = len(chunk.encode("utf-8"))
         if used + size > max_bytes:
             truncated = True

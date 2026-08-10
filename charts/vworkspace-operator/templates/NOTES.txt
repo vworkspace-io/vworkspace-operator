@@ -48,7 +48,7 @@ Velero is enabled in namespace {{ .Values.velero.namespace }}.
 MinIO object store is deployed for kind backup testing.
 {{- end }}
 {{- end }}
-{{- if .Values.seaweedfsOperator.enabled }}
+{{- if and .Values.seaweedfsOperator.enabled .Values.seaweedfsOperator.installed }}
 
 SeaweedFS operator bundle is enabled in namespace {{ .Values.seaweedfsOperator.namespace }} (Flux HelmRelease; chart {{ .Values.seaweedfsOperator.chartVersion }}).
 Requires Flux controllers (flux.enabled=true) for the operator pod to reconcile.
