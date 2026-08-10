@@ -59,6 +59,7 @@ func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.App
 	if err != nil {
 		return fmt.Errorf("load values: %w", err)
 	}
+	values = normalizeSeaweedValues(values)
 
 	ns := releaseNamespace(app)
 	if ns != app.Namespace {
@@ -75,7 +76,7 @@ func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.App
 		}
 		sw.SetLabels(ownerLabels(app))
 		spec := map[string]any{}
-		for _, key := range []string{"master", "volume", "filer", "s3", "admin", "worker", "sftp"} {
+		for _, key := range seaweedSpecKeys {
 			if fragment, ok := values[key]; ok {
 				spec[key] = fragment
 			}
@@ -216,6 +217,42 @@ func S3Endpoint(releaseName, namespace string) string {
 	return fmt.Sprintf("http://%s-s3.%s.svc:8333", releaseName, namespace)
 }
 
+func normalizeSeaweedValues(values map[string]any) map[string]any {
+	for _, key := range seaweedSpecKeys {
+		if _, ok := values[key]; ok {
+			return values
+		}
+	}
+	for _, v := range values {
+		nested, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range seaweedSpecKeys {
+			if _, ok := nested[key]; ok {
+				return nested
+			}
+		}
+	}
+	return values
+}
+
+var seaweedSpecKeys = []string{"master", "volume", "filer", "s3", "admin", "worker", "sftp"}
+
+// ExpectsS3Endpoint reports whether values include an s3 section.
+func ExpectsS3Endpoint(app *appsv1alpha1.ApplicationInstance) bool {
+	if app.Spec.Values == nil || app.Spec.Values.Inline == nil {
+		return false
+	}
+	values := map[string]any{}
+	if err := json.Unmarshal(app.Spec.Values.Inline.Raw, &values); err != nil {
+		return false
+	}
+	values = normalizeSeaweedValues(values)
+	_, ok := values["s3"]
+	return ok
+}
+
 func loadValues(ctx context.Context, c client.Client, app *appsv1alpha1.ApplicationInstance) (map[string]any, error) {
 	if app.Spec.Values == nil {
 		return nil, fmt.Errorf("spec.values is required for Seaweed workload")
@@ -229,7 +266,7 @@ func loadValues(ctx context.Context, c client.Client, app *appsv1alpha1.Applicat
 		if err := json.Unmarshal(app.Spec.Values.Inline.Raw, &values); err != nil {
 			return nil, fmt.Errorf("decode inline values: %w", err)
 		}
-		return values, nil
+		return normalizeSeaweedValues(values), nil
 	case appsv1alpha1.ValuesSourceSecretRef:
 		if app.Spec.Values.SecretRef == nil {
 			return nil, fmt.Errorf("secretRef values source requires secretRef")
@@ -272,12 +309,12 @@ func loadValuesFromConfigMap(ctx context.Context, c client.Client, defaultNS str
 func decodeValuesBytes(raw []byte) (map[string]any, error) {
 	values := map[string]any{}
 	if err := json.Unmarshal(raw, &values); err == nil {
-		return values, nil
+		return normalizeSeaweedValues(values), nil
 	}
 	if err := yaml.Unmarshal(raw, &values); err != nil {
 		return nil, fmt.Errorf("decode values as JSON or YAML: %w", err)
 	}
-	return values, nil
+	return normalizeSeaweedValues(values), nil
 }
 
 func ownerLabels(app *appsv1alpha1.ApplicationInstance) map[string]string {

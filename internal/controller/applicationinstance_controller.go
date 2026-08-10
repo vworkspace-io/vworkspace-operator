@@ -206,7 +206,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	}
 	r.reportConditions(app, prevConditions)
 
-	if snapshot == nil || !snapshot.Ready {
+	if snapshot == nil || !snapshot.Ready || (snapshot.Ready && snapshot.S3Endpoint == "" && seaweedengine.ExpectsS3Endpoint(app)) {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	return ctrl.Result{}, nil
