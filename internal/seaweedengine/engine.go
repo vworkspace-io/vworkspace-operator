@@ -33,4 +33,5 @@ type StatusSnapshot struct {
 	Reason      string
 	Message     string
 	S3Endpoint  string
+	HasS3       bool
 }

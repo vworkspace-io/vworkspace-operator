@@ -139,7 +139,8 @@ func (e *SeaweedEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.Applic
 		return snapshot, nil
 	}
 	snapshot.Reason, snapshot.Message, snapshot.Ready, snapshot.Reconciling, snapshot.Degraded = mapSeaweedConditions(conditions)
-	if snapshot.Ready && hasS3Spec(sw) && s3ServiceExists(ctx, e.Client, app.Spec.Release.Name, ns) {
+	snapshot.HasS3 = hasS3Spec(sw)
+	if snapshot.Ready && snapshot.HasS3 && s3ServiceExists(ctx, e.Client, app.Spec.Release.Name, ns) {
 		snapshot.S3Endpoint = S3Endpoint(app.Spec.Release.Name, ns)
 	}
 	return snapshot, nil
@@ -238,20 +239,6 @@ func normalizeSeaweedValues(values map[string]any) map[string]any {
 }
 
 var seaweedSpecKeys = []string{"master", "volume", "filer", "s3", "admin", "worker", "sftp"}
-
-// ExpectsS3Endpoint reports whether values include an s3 section.
-func ExpectsS3Endpoint(app *appsv1alpha1.ApplicationInstance) bool {
-	if app.Spec.Values == nil || app.Spec.Values.Inline == nil {
-		return false
-	}
-	values := map[string]any{}
-	if err := json.Unmarshal(app.Spec.Values.Inline.Raw, &values); err != nil {
-		return false
-	}
-	values = normalizeSeaweedValues(values)
-	_, ok := values["s3"]
-	return ok
-}
 
 func loadValues(ctx context.Context, c client.Client, app *appsv1alpha1.ApplicationInstance) (map[string]any, error) {
 	if app.Spec.Values == nil {

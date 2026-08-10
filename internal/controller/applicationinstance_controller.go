@@ -206,7 +206,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	}
 	r.reportConditions(app, prevConditions)
 
-	if snapshot == nil || !snapshot.Ready || (snapshot.Ready && snapshot.S3Endpoint == "" && seaweedengine.ExpectsS3Endpoint(app)) {
+	if snapshot == nil || !snapshot.Ready || (snapshot.Ready && snapshot.S3Endpoint == "" && snapshot.HasS3) {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	return ctrl.Result{}, nil
@@ -265,18 +265,6 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 		r.reportConditions(app, prevConditions)
 		if r.SeaweedEngine == nil {
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("seaweed engine is not configured")
-		}
-		if r.Engine != nil {
-			exists, err := r.Engine.ReleaseExists(ctx, app)
-			if err != nil {
-				return ctrl.Result{RequeueAfter: 15 * time.Second}, fmt.Errorf("check legacy Helm release: %w", err)
-			}
-			if exists {
-				if err := r.Engine.DeleteRelease(ctx, app); err != nil {
-					log.Error(err, "delete legacy Helm release during Seaweed finalize")
-					return ctrl.Result{RequeueAfter: 15 * time.Second}, err
-				}
-			}
 		}
 		if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
 			log.Error(err, "delete Seaweed CR failed")
