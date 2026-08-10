@@ -459,7 +459,7 @@ var _ = Describe("ApplicationInstance Controller", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("migrates legacy Helm releases before reconciling Seaweed CRs", func() {
+	It("blocks seaweed reconcile when a legacy Helm release still exists", func() {
 		ctx := context.Background()
 		name := types.NamespacedName{Name: "seaweedfs-migrate", Namespace: "default"}
 
@@ -498,18 +498,13 @@ var _ = Describe("ApplicationInstance Controller", func() {
 
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(helmEngine.deleteCalls).To(Equal(1))
+		Expect(helmEngine.deleteCalls).To(Equal(0))
 		Expect(seaweedEngine.ensureCalls).To(Equal(0))
 
 		updated := &appsv1alpha1.ApplicationInstance{}
 		Expect(k8sClient.Get(ctx, name, updated)).To(Succeed())
-		Expect(updated.Status.HelmReleaseRef).To(BeNil())
 		status, reason := readyConditionStatus(updated.Status.Conditions)
-		Expect(status).To(Equal(metav1.ConditionUnknown))
-		Expect(reason).To(Equal("SeaweedMigrating"))
-
-		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(seaweedEngine.ensureCalls).To(Equal(1))
+		Expect(status).To(Equal(metav1.ConditionFalse))
+		Expect(reason).To(Equal("HelmMigrationRequired"))
 	})
 })

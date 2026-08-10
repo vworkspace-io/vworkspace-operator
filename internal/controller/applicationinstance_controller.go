@@ -158,19 +158,8 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 			return r.setBlocked(ctx, app, "HelmMigrationFailed", fmt.Sprintf("check legacy Helm release: %v", err))
 		}
 		if exists {
-			if err := r.Engine.DeleteRelease(ctx, app); err != nil {
-				return r.setBlocked(ctx, app, "HelmMigrationFailed", fmt.Sprintf("remove legacy Helm release: %v", err))
-			}
-			app.Status.HelmReleaseRef = nil
-			app.Status.Endpoints = nil
-			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "SeaweedMigrating", "Removing legacy Helm release")
-			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, "SeaweedMigrating", "Migrating from Helm to native Seaweed CR")
-			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDegraded, metav1.ConditionFalse, "SeaweedMigrating", "Legacy Helm release is being removed")
-			if err := r.Status().Update(ctx, app); err != nil {
-				return ctrl.Result{}, fmt.Errorf("update status after helm migration: %w", err)
-			}
-			r.reportConditions(app, prevConditions)
-			return ctrl.Result{Requeue: true}, nil
+			return r.setBlocked(ctx, app, "HelmMigrationRequired",
+				"legacy Helm release detected; remove the HelmRelease manually or recreate the ApplicationInstance before native Seaweed reconciliation")
 		}
 	}
 
