@@ -161,10 +161,17 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 			if err := r.Engine.DeleteRelease(ctx, app); err != nil {
 				return r.setBlocked(ctx, app, "HelmMigrationFailed", fmt.Sprintf("remove legacy Helm release: %v", err))
 			}
+			app.Status.HelmReleaseRef = nil
+			app.Status.Endpoints = nil
+			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReconciling, metav1.ConditionTrue, "SeaweedMigrating", "Removing legacy Helm release")
+			if err := r.Status().Update(ctx, app); err != nil {
+				return ctrl.Result{}, fmt.Errorf("update status after helm migration: %w", err)
+			}
 			return ctrl.Result{Requeue: true}, nil
 		}
 	}
 
+	app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
 	now := metav1.Now()
 	app.Status.LastReconcileTime = &now
 	app.Status.HelmReleaseRef = nil
@@ -394,7 +401,12 @@ func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1al
 		if reason == "" {
 			reason = "Reconciling"
 		}
-		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, metav1.ConditionUnknown, reason, snapshot.Message)
+		readyStatus := metav1.ConditionUnknown
+		if snapshot.Degraded || reason == "SeaweedFailed" {
+			readyStatus = metav1.ConditionFalse
+		}
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionReady, readyStatus, reason, snapshot.Message)
+		app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionFalse, "Unblocked", "Reconciliation can proceed")
 	}
 }
 
