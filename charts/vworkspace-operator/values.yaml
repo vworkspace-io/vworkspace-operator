@@ -82,9 +82,10 @@ seaweedfsOperator:
   namespace: seaweedfs-operator
   chartVersion: "0.1.37"
   helmRepo: https://seaweedfs.github.io/seaweedfs-operator/
-  # Install SeaweedFS CRDs from the seaweedfs-crds subchart. Set false when CRDs
-  # already exist; HelmRelease uses crds.create=false to avoid ownership fights.
-  crdsInstall: true
+  # Install SeaweedFS CRDs from the seaweedfs-crds subchart. Enable with the bundle
+  # (e.g. values-kind.yaml); set false when CRDs already exist. HelmRelease uses
+  # crds.create=false to avoid ownership fights.
+  crdsInstall: false
   # Admission webhooks (upstream default). Set false only on airgapped clusters
   # where certgen cannot pull from registry.k8s.io.
   webhook:

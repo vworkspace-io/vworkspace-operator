@@ -1,4 +1,4 @@
-{{- if and .Values.seaweedfsOperator.enabled .Values.seaweedfsOperator.installed }}
+{{- if and .Values.seaweedfsOperator.enabled .Values.seaweedfsOperator.installed .Values.flux.enabled }}
 {{- $ns := .Values.seaweedfsOperator.namespace }}
 ---
 apiVersion: v1
