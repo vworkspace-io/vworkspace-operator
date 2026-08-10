@@ -81,7 +81,7 @@ func (e *SeaweedEngine) EnsureSeaweed(ctx context.Context, app *appsv1alpha1.App
 			}
 		}
 		if len(spec) == 0 {
-			return fmt.Errorf("inline values must include at least one Seaweed spec section (master, volume, filer, s3, …)")
+			return fmt.Errorf("values must include at least one native Seaweed spec section (master, volume, filer, s3, …); Helm chart-wrapped values require conversion before reconciliation")
 		}
 		return unstructured.SetNestedMap(sw.Object, spec, "spec")
 	})
