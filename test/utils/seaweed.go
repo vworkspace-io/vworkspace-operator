@@ -22,15 +22,16 @@ import (
 	"path/filepath"
 )
 
-const seaweedCRDRelPath = "charts/vworkspace-operator/charts/seaweedfs-crds/crds/seaweeds.seaweed.seaweedfs.com.yaml"
+const seaweedCRDsRelDir = "charts/vworkspace-operator/charts/seaweedfs-crds/crds"
 
-// InstallSeaweedCRDs installs the Seaweed CRD required for the operator watch.
+// InstallSeaweedCRDs installs Seaweed operator CRDs required for controller watches
+// (Seaweed, S3Credentials, and related types).
 func InstallSeaweedCRDs() error {
-	crdPath, err := repoPath(seaweedCRDRelPath)
+	crdDir, err := repoPath(seaweedCRDsRelDir)
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("kubectl", "apply", "-f", crdPath)
+	cmd := exec.Command("kubectl", "apply", "-f", crdDir)
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
@@ -41,24 +42,31 @@ func InstallSeaweedCRDs() error {
 		cmd = exec.Command("sleep", "2")
 		_, _ = Run(cmd)
 	}
-	return fmt.Errorf("timed out waiting for Seaweed CRD to become available")
+	return fmt.Errorf("timed out waiting for Seaweed CRDs to become available")
 }
 
-// IsSeaweedCRDsInstalled reports whether the Seaweed CRD is present.
+// IsSeaweedCRDsInstalled reports whether the Seaweed CRDs required for e2e are present.
 func IsSeaweedCRDsInstalled() bool {
-	cmd := exec.Command("kubectl", "get", "crd", "seaweeds.seaweed.seaweedfs.com")
-	_, err := Run(cmd)
-	return err == nil
+	for _, name := range []string{
+		"seaweeds.seaweed.seaweedfs.com",
+		"s3credentials.seaweed.seaweedfs.com",
+	} {
+		cmd := exec.Command("kubectl", "get", "crd", name)
+		if _, err := Run(cmd); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
-// UninstallSeaweedCRDs removes the Seaweed CRD installed for e2e (best effort).
+// UninstallSeaweedCRDs removes Seaweed CRDs installed for e2e (best effort).
 func UninstallSeaweedCRDs() {
-	crdPath, err := repoPath(seaweedCRDRelPath)
+	crdDir, err := repoPath(seaweedCRDsRelDir)
 	if err != nil {
 		warnError(err)
 		return
 	}
-	cmd := exec.Command("kubectl", "delete", "-f", crdPath, "--ignore-not-found", "--wait=false")
+	cmd := exec.Command("kubectl", "delete", "-f", crdDir, "--ignore-not-found", "--wait=false")
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
 	}
