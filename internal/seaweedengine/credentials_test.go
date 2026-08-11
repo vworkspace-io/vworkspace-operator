@@ -61,6 +61,33 @@ func TestResolveManagedStorageFromS3Credentials(t *testing.T) {
 	}
 }
 
+func TestResolveManagedStorageStateQuietWhenAllCredentialsFailed(t *testing.T) {
+	t.Parallel()
+
+	ns := testSeaweedNamespace
+	release := testSeaweedRelease
+	cred := &unstructured.Unstructured{}
+	cred.SetGroupVersionKind(s3CredentialsGVK)
+	cred.SetName("failed-creds")
+	cred.SetNamespace(ns)
+	_ = unstructured.SetNestedField(cred.Object, release, "spec", "seaweedRef", "name")
+	_ = unstructured.SetNestedField(cred.Object, "Failed", "status", "phase")
+
+	app := sampleSeaweedApp()
+	app.Spec.Release.Name = release
+	app.SetNamespace(ns)
+	app.Spec.Release.Namespace = ns
+
+	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cred).Build())
+	got, pending, err := engine.ResolveManagedStorageState(context.Background(), app)
+	if err != nil {
+		t.Fatalf("ResolveManagedStorageState: %v", err)
+	}
+	if got != nil || pending {
+		t.Fatalf("expected quiet terminal state for Failed credentials, got snapshot=%+v pending=%v", got, pending)
+	}
+}
+
 func TestResolveManagedStorageSelectsSmallestReadyCredential(t *testing.T) {
 	t.Parallel()
 

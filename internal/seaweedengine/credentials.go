@@ -17,6 +17,13 @@ var s3CredentialsGVK = schema.GroupVersionKind{
 	Group: "seaweed.seaweedfs.com", Version: "v1", Kind: "S3Credentials",
 }
 
+const (
+	s3CredentialsPhaseReady       = "Ready"
+	s3CredentialsPhasePending     = "Pending"
+	s3CredentialsPhaseFailed      = "Failed"
+	s3CredentialsPhaseTerminating = "Terminating"
+)
+
 // S3CredentialsObject returns an empty S3Credentials CR placeholder for controller watches.
 func S3CredentialsObject() *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{}
@@ -57,9 +64,9 @@ func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *app
 		return nil, false, nil
 	}
 
-	readyCandidates := filterReadyS3Credentials(candidates)
+	readyCandidates, stillPending := splitS3CredentialsByPhase(candidates)
 	if len(readyCandidates) == 0 {
-		return nil, true, nil
+		return nil, stillPending, nil
 	}
 
 	for _, item := range readyCandidates {
@@ -74,16 +81,21 @@ func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *app
 	return nil, true, nil
 }
 
-func filterReadyS3Credentials(candidates []unstructured.Unstructured) []unstructured.Unstructured {
-	var ready []unstructured.Unstructured
+func splitS3CredentialsByPhase(candidates []unstructured.Unstructured) (ready []unstructured.Unstructured, pending bool) {
 	for _, item := range candidates {
 		phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
-		if phase != "" && phase != "Ready" {
-			continue
+		switch phase {
+		case "", s3CredentialsPhasePending, s3CredentialsPhaseTerminating:
+			pending = true
+		case s3CredentialsPhaseReady:
+			ready = append(ready, item)
+		case s3CredentialsPhaseFailed:
+			// terminal; do not requeue indefinitely
+		default:
+			pending = true
 		}
-		ready = append(ready, item)
 	}
-	return ready
+	return ready, pending
 }
 
 func (e *SeaweedEngine) listMatchingS3Credentials(ctx context.Context, ns, releaseName string) ([]unstructured.Unstructured, error) {
@@ -111,7 +123,7 @@ func (e *SeaweedEngine) listMatchingS3Credentials(ctx context.Context, ns, relea
 
 func (e *SeaweedEngine) snapshotFromS3Credentials(ctx context.Context, ns, releaseName string, item unstructured.Unstructured) (*ManagedStorageSnapshot, error) {
 	phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
-	if phase != "" && phase != "Ready" {
+	if phase != "" && phase != s3CredentialsPhaseReady {
 		return nil, nil
 	}
 	accessKey, _, _ := unstructured.NestedString(item.Object, "status", "accessKey")
