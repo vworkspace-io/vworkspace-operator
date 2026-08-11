@@ -495,9 +495,6 @@ func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.
 		return false, nil
 	}
 	claim := app.Annotations[managedStorageClaimAnnotation]
-	if claim != "" && claim != reportKey {
-		return false, nil
-	}
 	if claim == reportKey {
 		return true, nil
 	}
