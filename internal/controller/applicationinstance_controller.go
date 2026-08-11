@@ -468,6 +468,10 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 	if !claimed {
+		if app.Annotations[managedStorageClaimAnnotation] == reportKey &&
+			app.Annotations[managedStoragePostedAnnotation] != reportKey {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 	if !r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
