@@ -393,14 +393,16 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	}
 
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
-	r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
+	if !r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
 		Endpoints: agentEndpointsFromStatus(app.Status.Endpoints),
 		ManagedStorage: &agent.ManagedStoragePayload{
 			AccessKeyID:     ms.AccessKeyID,
 			SecretAccessKey: ms.SecretAccessKey,
 			BucketName:      ms.BucketName,
 		},
-	}, ms.AccessKeyID)
+	}, ms.AccessKeyID) {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
 
 	patchBase := app.DeepCopy()
 	if app.Annotations == nil {
@@ -526,7 +528,7 @@ func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ct
 	}
 
 	list := &appsv1alpha1.ApplicationInstanceList{}
-	if err := r.List(ctx, list, client.InNamespace(cred.GetNamespace())); err != nil {
+	if err := r.List(ctx, list); err != nil {
 		return nil
 	}
 
@@ -537,6 +539,13 @@ func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ct
 			continue
 		}
 		if app.Spec.Release == nil || app.Spec.Release.Name != releaseName {
+			continue
+		}
+		releaseNS := app.Spec.Release.Namespace
+		if releaseNS == "" {
+			releaseNS = app.Namespace
+		}
+		if releaseNS != cred.GetNamespace() {
 			continue
 		}
 		out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(app)})

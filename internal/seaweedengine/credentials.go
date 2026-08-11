@@ -7,6 +7,7 @@ import (
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -113,6 +114,9 @@ func (e *SeaweedEngine) snapshotFromS3Credentials(ctx context.Context, ns, relea
 	}
 	secret := &corev1.Secret{}
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: secretName}, secret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("get S3Credentials secret %s/%s: %w", ns, secretName, err)
 	}
 	secretKey := string(secret.Data[secretKeyField])

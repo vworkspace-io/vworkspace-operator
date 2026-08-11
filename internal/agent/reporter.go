@@ -49,10 +49,11 @@ func (r StatusReporter) ReportConditionTransitions(ref AppliedRef, prev, next []
 }
 
 // ReportManagedStorageReady enqueues a supplemental Ready event when managed storage
-// becomes available after the initial Ready transition (P10-T006).
-func (r StatusReporter) ReportManagedStorageReady(ref AppliedRef, ready metav1.Condition, extras EventExtras, accessKeyID string) {
+// becomes available after the initial Ready transition (P10-T006). Returns false when
+// the reporter is disabled and no event was enqueued.
+func (r StatusReporter) ReportManagedStorageReady(ref AppliedRef, ready metav1.Condition, extras EventExtras, accessKeyID string) bool {
 	if r.batcher == nil {
-		return
+		return false
 	}
 	event := ConditionTransitionEvent(ref, []metav1.Condition{ready})
 	event.EventKey = fmt.Sprintf(
@@ -66,6 +67,7 @@ func (r StatusReporter) ReportManagedStorageReady(ref AppliedRef, ready metav1.C
 	event.Endpoints = extras.Endpoints
 	event.ManagedStorage = extras.ManagedStorage
 	r.batcher.Enqueue(event)
+	return true
 }
 
 // ReportAudit enqueues a single audit-style event (e.g. credential rotation).
