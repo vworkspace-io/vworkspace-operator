@@ -22,6 +22,10 @@ type EventBatcher struct {
 		Info(msg string, keysAndValues ...any)
 		Error(err error, msg string, keysAndValues ...any)
 	}
+	// OnBeforePostEvents is invoked after a batch is extracted but before PostEvents.
+	OnBeforePostEvents func(ctx context.Context, events []Event)
+	// OnEventsPostFailed is invoked when PostEvents fails before events are requeued.
+	OnEventsPostFailed func(ctx context.Context, events []Event)
 	// OnEventsDelivered is invoked after a batch is accepted by PostEvents.
 	OnEventsDelivered func(ctx context.Context, events []Event)
 
@@ -151,7 +155,13 @@ func (b *EventBatcher) Flush(ctx context.Context) {
 	if b.Client == nil {
 		return
 	}
+	if b.OnBeforePostEvents != nil {
+		b.OnBeforePostEvents(ctx, batch)
+	}
 	if err := b.Client.PostEvents(ctx, EventsRequest{Events: batch}); err != nil {
+		if b.OnEventsPostFailed != nil {
+			b.OnEventsPostFailed(ctx, batch)
+		}
 		b.requeue(batch)
 		SetConnectivityState("pull", 0)
 		if b.Log != nil {

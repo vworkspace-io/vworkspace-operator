@@ -179,6 +179,8 @@ func main() {
 		SeaweedEngine: seaweedEngine,
 		Reporter:      statusReporter,
 	}
+	eventBatcher.OnBeforePostEvents = appReconciler.PrepareManagedStoragePost
+	eventBatcher.OnEventsPostFailed = appReconciler.AbortManagedStoragePost
 	eventBatcher.OnEventsDelivered = appReconciler.AckManagedStorageDelivered
 	if err := appReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApplicationInstance")

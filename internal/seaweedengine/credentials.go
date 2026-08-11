@@ -39,9 +39,9 @@ func (e *SeaweedEngine) ResolveManagedStorage(ctx context.Context, app *appsv1al
 }
 
 // ResolveManagedStorageState resolves inline credentials when available. pending is true
-// when matching S3Credentials CRs exist but are not yet Ready with usable keys. When
+// when matching S3Credentials CRs exist but none are Ready with usable keys. When
 // multiple Ready credentials match the same Seaweed release, the lexicographically
-// smallest CR name wins (stable, documented selection for smoke vs chart credentials).
+// smallest Ready CR name wins (stable selection for smoke vs chart credentials).
 func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*ManagedStorageSnapshot, bool, error) {
 	if err := validateReleaseRef(app); err != nil {
 		return nil, false, err
@@ -57,7 +57,12 @@ func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *app
 		return nil, false, nil
 	}
 
-	for _, item := range candidates {
+	readyCandidates := filterReadyS3Credentials(candidates)
+	if len(readyCandidates) == 0 {
+		return nil, true, nil
+	}
+
+	for _, item := range readyCandidates {
 		snapshot, err := e.snapshotFromS3Credentials(ctx, ns, releaseName, item)
 		if err != nil {
 			return nil, true, err
@@ -67,6 +72,18 @@ func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *app
 		}
 	}
 	return nil, true, nil
+}
+
+func filterReadyS3Credentials(candidates []unstructured.Unstructured) []unstructured.Unstructured {
+	var ready []unstructured.Unstructured
+	for _, item := range candidates {
+		phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
+		if phase != "" && phase != "Ready" {
+			continue
+		}
+		ready = append(ready, item)
+	}
+	return ready
 }
 
 func (e *SeaweedEngine) listMatchingS3Credentials(ctx context.Context, ns, releaseName string) ([]unstructured.Unstructured, error) {

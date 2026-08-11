@@ -56,6 +56,7 @@ type ApplicationInstanceReconciler struct {
 
 	storageDeliveryMu sync.Mutex
 	storageInFlight   map[string]string // namespace/name -> reportKey enqueued, not yet accepted by control plane
+	storagePosting    map[string]string // namespace/name -> reportKey extracted for PostEvents, not yet acked
 	storageAckPending map[string]string // namespace/name -> reportKey delivered, annotation patch pending
 }
 
@@ -429,7 +430,10 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		case r.Reporter.HasPendingEvent(eventKey):
 			return ctrl.Result{}, nil
 		default:
-			// Event left the batcher without delivery; allow a resend.
+			if postingKey, posting := r.postingStorageReportKey(app.Namespace, app.Name); posting && postingKey == reportKey {
+				return ctrl.Result{}, nil
+			}
+			// Event left the buffer without PostEvents (e.g. overflow); allow a resend.
 			r.clearStorageInFlight(app.Namespace, app.Name)
 		}
 	}
@@ -451,6 +455,30 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	return ctrl.Result{}, nil
 }
 
+// PrepareManagedStoragePost marks managed-storage events as posting before PostEvents.
+func (r *ApplicationInstanceReconciler) PrepareManagedStoragePost(_ context.Context, events []agent.Event) {
+	for _, event := range events {
+		reportKey, ok := agent.ManagedStorageReportKeyFromEventKey(event.EventKey)
+		if !ok {
+			continue
+		}
+		ref := event.ResourceRef
+		r.markStoragePosting(ref.Namespace, ref.Name, reportKey)
+	}
+}
+
+// AbortManagedStoragePost clears posting state when PostEvents fails and events are requeued.
+func (r *ApplicationInstanceReconciler) AbortManagedStoragePost(_ context.Context, events []agent.Event) {
+	for _, event := range events {
+		reportKey, ok := agent.ManagedStorageReportKeyFromEventKey(event.EventKey)
+		if !ok {
+			continue
+		}
+		ref := event.ResourceRef
+		r.clearStoragePosting(ref.Namespace, ref.Name, reportKey)
+	}
+}
+
 // AckManagedStorageDelivered patches the dedup annotation after PostEvents succeeds.
 func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.Context, events []agent.Event) {
 	for _, event := range events {
@@ -461,6 +489,7 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 		ref := event.ResourceRef
 		r.markStorageAckPending(ref.Namespace, ref.Name, reportKey)
 		r.clearStorageInFlight(ref.Namespace, ref.Name)
+		r.clearStoragePosting(ref.Namespace, ref.Name, reportKey)
 		if err := r.patchManagedStorageAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
 			r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
 			logf.FromContext(ctx).Error(err, "ack managed storage delivery",
@@ -564,11 +593,38 @@ func (r *ApplicationInstanceReconciler) clearStorageAckPending(namespace, name s
 	delete(r.storageAckPending, storageDeliveryKey(namespace, name))
 }
 
+func (r *ApplicationInstanceReconciler) markStoragePosting(namespace, name, reportKey string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	if r.storagePosting == nil {
+		r.storagePosting = make(map[string]string)
+	}
+	r.storagePosting[storageDeliveryKey(namespace, name)] = reportKey
+}
+
+func (r *ApplicationInstanceReconciler) postingStorageReportKey(namespace, name string) (string, bool) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	reportKey, ok := r.storagePosting[storageDeliveryKey(namespace, name)]
+	return reportKey, ok
+}
+
+func (r *ApplicationInstanceReconciler) clearStoragePosting(namespace, name, reportKey string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	key := storageDeliveryKey(namespace, name)
+	if r.storagePosting[key] == reportKey {
+		delete(r.storagePosting, key)
+	}
+}
+
 func (r *ApplicationInstanceReconciler) clearStorageDeliveryState(namespace, name string) {
 	r.storageDeliveryMu.Lock()
 	defer r.storageDeliveryMu.Unlock()
-	delete(r.storageInFlight, storageDeliveryKey(namespace, name))
-	delete(r.storageAckPending, storageDeliveryKey(namespace, name))
+	key := storageDeliveryKey(namespace, name)
+	delete(r.storageInFlight, key)
+	delete(r.storagePosting, key)
+	delete(r.storageAckPending, key)
 }
 
 func agentEndpointsFromStatus(endpoints []appsv1alpha1.EndpointStatus) []agent.EndpointPayload {

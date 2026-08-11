@@ -61,6 +61,53 @@ func TestResolveManagedStorageFromS3Credentials(t *testing.T) {
 	}
 }
 
+func TestResolveManagedStorageSelectsSmallestReadyCredential(t *testing.T) {
+	t.Parallel()
+
+	ns := testSeaweedNamespace
+	release := testSeaweedRelease
+
+	makeCred := func(name, phase string) *unstructured.Unstructured {
+		cred := &unstructured.Unstructured{}
+		cred.SetGroupVersionKind(s3CredentialsGVK)
+		cred.SetName(name)
+		cred.SetNamespace(ns)
+		_ = unstructured.SetNestedField(cred.Object, release, "spec", "seaweedRef", "name")
+		_ = unstructured.SetNestedField(cred.Object, name+"-admin", "status", "accessKey")
+		_ = unstructured.SetNestedField(cred.Object, phase, "status", "phase")
+		_ = unstructured.SetNestedField(cred.Object, name+"-secret", "status", "secretName")
+		return cred
+	}
+
+	secretFor := func(name string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name + "-secret", Namespace: ns},
+			Data: map[string][]byte{
+				"accessKey": []byte(name + "-admin"),
+				"secretKey": []byte(name + "-secret-key"),
+			},
+		}
+	}
+
+	app := sampleSeaweedApp()
+	app.Spec.Release.Name = release
+	app.SetNamespace(ns)
+	app.Spec.Release.Namespace = ns
+
+	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(
+		makeCred("a-creds", "Pending"),
+		makeCred("z-creds", "Ready"),
+		secretFor("z-creds"),
+	).Build())
+	got, pending, err := engine.ResolveManagedStorageState(context.Background(), app)
+	if err != nil {
+		t.Fatalf("ResolveManagedStorageState: %v", err)
+	}
+	if pending || got == nil || got.AccessKeyID != "z-creds-admin" {
+		t.Fatalf("expected smallest Ready credential z-creds, got snapshot=%+v pending=%v", got, pending)
+	}
+}
+
 func TestResolveManagedStorageSelectsDeterministicCredential(t *testing.T) {
 	t.Parallel()
 

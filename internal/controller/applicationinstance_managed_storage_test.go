@@ -136,6 +136,8 @@ func TestReconcileSeaweedManagedStorageEmitsSingleSupplementalEvent(t *testing.T
 		},
 		Reporter: agent.NewStatusReporter(batcher),
 	}
+	batcher.OnBeforePostEvents = reconciler.PrepareManagedStoragePost
+	batcher.OnEventsPostFailed = reconciler.AbortManagedStoragePost
 	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
 
 	result, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app)
@@ -212,6 +214,8 @@ func TestReconcileSeaweedManagedStorageRetriesAckWithoutRepost(t *testing.T) {
 		},
 		Reporter: agent.NewStatusReporter(batcher),
 	}
+	batcher.OnBeforePostEvents = reconciler.PrepareManagedStoragePost
+	batcher.OnEventsPostFailed = reconciler.AbortManagedStoragePost
 	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
 
 	reportKey := managedStorageReportKey(&seaweedengine.ManagedStorageSnapshot{
@@ -305,6 +309,66 @@ func TestReconcileSeaweedManagedStorageInFlightBlocksRepost(t *testing.T) {
 	}
 }
 
+func TestReconcileSeaweedManagedStorageBlocksRepostWhilePosting(t *testing.T) {
+	t.Parallel()
+
+	app := sampleSeaweedApplicationInstance()
+	app.Status.Conditions = []metav1.Condition{{
+		Type:               appsv1alpha1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SeaweedReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	scheme := runtime.NewScheme()
+	_ = appsv1alpha1.AddToScheme(scheme)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(app).WithObjects(app).Build()
+
+	batcher := agent.NewEventBatcher(nil)
+	reconciler := reconcilerForPostingTest(cl, batcher)
+
+	var posted []agent.Event
+	batcher.Client = &managedStorageRecordingClient{postEvents: func(events []agent.Event) error {
+		posted = append(posted, events...)
+		if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
+			t.Fatalf("concurrent reconcileSeaweedManagedStorage: %v", err)
+		}
+		return nil
+	}}
+
+	if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
+		t.Fatalf("first reconcileSeaweedManagedStorage: %v", err)
+	}
+	if batcher.Len() != 1 {
+		t.Fatalf("expected one buffered event, got %d", batcher.Len())
+	}
+
+	batcher.Flush(t.Context())
+	if len(posted) != 1 {
+		t.Fatalf("expected one post after flush, got %d events", len(posted))
+	}
+}
+
+func reconcilerForPostingTest(cl client.Client, batcher *agent.EventBatcher) *ApplicationInstanceReconciler {
+	reconciler := &ApplicationInstanceReconciler{
+		Client: cl,
+		SeaweedEngine: &stagedManagedStorageEngine{
+			states: []managedStorageState{{
+				snapshot: &seaweedengine.ManagedStorageSnapshot{
+					AccessKeyID:     "admin",
+					SecretAccessKey: "secret",
+					BucketName:      testSeaweedRelease,
+				},
+			}},
+		},
+		Reporter: agent.NewStatusReporter(batcher),
+	}
+	batcher.OnBeforePostEvents = reconciler.PrepareManagedStoragePost
+	batcher.OnEventsPostFailed = reconciler.AbortManagedStoragePost
+	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
+	return reconciler
+}
+
 func TestReconcileSeaweedManagedStorageClearsStalePendingOnRotation(t *testing.T) {
 	t.Parallel()
 
@@ -339,6 +403,8 @@ func TestReconcileSeaweedManagedStorageClearsStalePendingOnRotation(t *testing.T
 		},
 		Reporter: agent.NewStatusReporter(batcher),
 	}
+	batcher.OnBeforePostEvents = reconciler.PrepareManagedStoragePost
+	batcher.OnEventsPostFailed = reconciler.AbortManagedStoragePost
 	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
 	reconciler.markStorageInFlight(app.Namespace, app.Name, "stale-key")
 
