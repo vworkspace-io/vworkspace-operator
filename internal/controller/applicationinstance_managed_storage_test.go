@@ -113,6 +113,12 @@ func TestReconcileSeaweedManagedStorageEmitsSingleSupplementalEvent(t *testing.T
 		Name: "s3",
 		URL:  "http://seaweedfs-smoke-s3.seaweedfs.svc:8333",
 	}}
+	app.Annotations = map[string]string{
+		reportedSeaweedEndpointsAnnotation: seaweedEndpointsReportKey([]agent.EndpointPayload{{
+			Name: "s3",
+			URL:  "http://seaweedfs-smoke-s3.seaweedfs.svc:8333",
+		}}),
+	}
 
 	scheme := runtime.NewScheme()
 	_ = appsv1alpha1.AddToScheme(scheme)
@@ -416,6 +422,63 @@ func TestReconcileSeaweedManagedStorageClearsStalePendingOnRotation(t *testing.T
 	batcher.Flush(t.Context())
 	if len(posted) != 1 {
 		t.Fatalf("expected rotated credentials event, got %d", len(posted))
+	}
+}
+
+func TestReconcileSeaweedManagedStorageReportsEndpointsWithoutCredentials(t *testing.T) {
+	t.Parallel()
+
+	app := sampleSeaweedApplicationInstance()
+	app.Status.Conditions = []metav1.Condition{{
+		Type:               appsv1alpha1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SeaweedReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+	app.Status.Endpoints = []appsv1alpha1.EndpointStatus{{
+		Name: "s3",
+		URL:  "http://seaweedfs-smoke-s3.seaweedfs.svc:8333",
+	}}
+
+	scheme := runtime.NewScheme()
+	_ = appsv1alpha1.AddToScheme(scheme)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(app).WithObjects(app).Build()
+
+	var posted []agent.Event
+	batcher := agent.NewEventBatcher(&managedStorageRecordingClient{postEvents: func(events []agent.Event) error {
+		posted = append(posted, events...)
+		return nil
+	}})
+
+	reconciler := &ApplicationInstanceReconciler{
+		Client: cl,
+		SeaweedEngine: &stagedManagedStorageEngine{
+			states: []managedStorageState{{snapshot: nil, pending: false}},
+		},
+		Reporter: agent.NewStatusReporter(batcher),
+	}
+
+	result, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app)
+	if err != nil {
+		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
+	}
+	if !result.IsZero() {
+		t.Fatalf("expected quiet steady state, got %+v", result)
+	}
+	batcher.Flush(t.Context())
+	if len(posted) != 1 {
+		t.Fatalf("expected one supplemental endpoints event, got %d", len(posted))
+	}
+	if len(posted[0].Endpoints) != 1 || posted[0].ManagedStorage != nil {
+		t.Fatalf("unexpected event payload: %+v", posted[0])
+	}
+
+	updated := &appsv1alpha1.ApplicationInstance{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(app), updated); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if updated.Annotations[reportedSeaweedEndpointsAnnotation] == "" {
+		t.Fatalf("expected endpoints annotation, got %#v", updated.Annotations)
 	}
 }
 

@@ -49,6 +49,7 @@ func (r StatusReporter) ReportConditionTransitions(ref AppliedRef, prev, next []
 }
 
 const managedStorageEventKeyPrefix = "managedStorage/"
+const endpointsEventKeyPrefix = "endpoints/"
 
 // ManagedStorageEventKey builds the deduplication key for supplemental managed-storage events.
 func ManagedStorageEventKey(ref AppliedRef, ready metav1.Condition, reportKey string) string {
@@ -81,6 +82,24 @@ func (r StatusReporter) HasPendingEvent(eventKey string) bool {
 		return false
 	}
 	return r.batcher.HasEventKey(eventKey)
+}
+
+// EndpointsEventKey builds the deduplication key for supplemental endpoint-only events.
+func EndpointsEventKey(ref AppliedRef, reportKey string) string {
+	return fmt.Sprintf("%s%s/%s/%s", endpointsEventKeyPrefix, ref.Namespace, ref.Name, reportKey)
+}
+
+// ReportSeaweedEndpoints enqueues a supplemental Ready event carrying endpoints when they
+// become available after the initial Ready transition without managed storage credentials.
+func (r StatusReporter) ReportSeaweedEndpoints(ref AppliedRef, ready metav1.Condition, endpoints []EndpointPayload, reportKey string) bool {
+	if r.batcher == nil || len(endpoints) == 0 {
+		return false
+	}
+	event := ConditionTransitionEvent(ref, []metav1.Condition{ready})
+	event.EventKey = EndpointsEventKey(ref, reportKey)
+	event.Endpoints = endpoints
+	r.batcher.Enqueue(event)
+	return true
 }
 
 // ReportManagedStorageReady enqueues a supplemental Ready event when managed storage

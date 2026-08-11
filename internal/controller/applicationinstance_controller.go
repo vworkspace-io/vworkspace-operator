@@ -29,18 +29,15 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
 	"github.com/vworkspace-io/vworkspace-operator/internal/seaweedengine"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -50,6 +47,7 @@ const (
 	managedStorageClaimAnnotation             = "vworkspace.io/managed-storage-claim"
 	managedStoragePostedAnnotation            = "vworkspace.io/managed-storage-posted"
 	reportedManagedStorageFailedAnnotation    = "vworkspace.io/reported-managed-storage-failed"
+	reportedSeaweedEndpointsAnnotation        = "vworkspace.io/reported-seaweed-endpoints"
 )
 
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
@@ -388,6 +386,10 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{}, nil
 	}
 
+	if result := r.reportSeaweedEndpointsIfNeeded(ctx, app); !result.IsZero() {
+		return result, nil
+	}
+
 	ms, pending, failed, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
 	if err != nil {
 		log.Error(err, "ResolveManagedStorage failed")
@@ -488,6 +490,37 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	}
 	r.markStorageInFlight(app.Namespace, app.Name, reportKey)
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) reportSeaweedEndpointsIfNeeded(ctx context.Context, app *appsv1alpha1.ApplicationInstance) ctrl.Result {
+	endpoints := agentEndpointsFromStatus(app.Status.Endpoints)
+	if len(endpoints) == 0 {
+		return ctrl.Result{}
+	}
+	reportKey := seaweedEndpointsReportKey(endpoints)
+	if app.Annotations[reportedSeaweedEndpointsAnnotation] == reportKey {
+		return ctrl.Result{}
+	}
+	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
+	if !ok || ready.Status != metav1.ConditionTrue {
+		return ctrl.Result{}
+	}
+	if r.Reporter.HasPendingEvent(agent.EndpointsEventKey(agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta), reportKey)) {
+		return ctrl.Result{}
+	}
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	if !r.Reporter.ReportSeaweedEndpoints(ref, ready, endpoints, reportKey) {
+		return ctrl.Result{}
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[reportedSeaweedEndpointsAnnotation] = reportKey
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}
+	}
+	return ctrl.Result{}
 }
 
 func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
@@ -852,11 +885,6 @@ func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error
 			seaweedengine.S3CredentialsObject(),
 			handler.EnqueueRequestsFromMapFunc(r.mapS3CredentialsToApplicationInstance),
 		).
-		Watches(
-			&corev1.Secret{},
-			handler.EnqueueRequestsFromMapFunc(r.mapManagedStorageSecretToApplicationInstance),
-			builder.WithPredicates(r.managedStorageSecretPredicate()),
-		).
 		Named("applicationinstance").
 		Complete(r)
 }
@@ -881,78 +909,6 @@ func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ct
 	// namespace-local list covers every ApplicationInstance that can reference
 	// S3Credentials in cred.GetNamespace().
 	return r.applicationInstancesForSeaweedRef(list.Items, releaseName, cred.GetNamespace())
-}
-
-func (r *ApplicationInstanceReconciler) mapManagedStorageSecretToApplicationInstance(ctx context.Context, obj client.Object) []reconcile.Request {
-	secret, ok := obj.(*corev1.Secret)
-	if !ok {
-		return nil
-	}
-
-	list := &unstructured.UnstructuredList{}
-	credGVK := seaweedengine.S3CredentialsObject().GroupVersionKind()
-	list.SetGroupVersionKind(credGVK)
-	list.SetKind(credGVK.Kind + "List")
-	if err := r.List(ctx, list, client.InNamespace(secret.Namespace)); err != nil {
-		logf.FromContext(ctx).Error(err, "list S3Credentials for Secret watch", "namespace", secret.Namespace)
-		return nil
-	}
-
-	var out []reconcile.Request
-	seen := make(map[string]struct{})
-	for _, item := range list.Items {
-		if s3CredentialsBackingSecretName(item) != secret.Name {
-			continue
-		}
-		releaseName, found, _ := unstructured.NestedString(item.Object, "spec", "seaweedRef", "name")
-		if !found || releaseName == "" {
-			continue
-		}
-		key := releaseName + "\x00" + secret.Namespace
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		appList := &appsv1alpha1.ApplicationInstanceList{}
-		if err := r.List(ctx, appList, client.InNamespace(secret.Namespace)); err != nil {
-			logf.FromContext(ctx).Error(err, "list ApplicationInstances for Secret watch", "namespace", secret.Namespace)
-			continue
-		}
-		out = append(out, r.applicationInstancesForSeaweedRef(appList.Items, releaseName, secret.Namespace)...)
-	}
-	return out
-}
-
-func (r *ApplicationInstanceReconciler) managedStorageSecretPredicate() predicate.Predicate {
-	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		secret, ok := obj.(*corev1.Secret)
-		if !ok {
-			return false
-		}
-		list := &unstructured.UnstructuredList{}
-		credGVK := seaweedengine.S3CredentialsObject().GroupVersionKind()
-		list.SetGroupVersionKind(credGVK)
-		list.SetKind(credGVK.Kind + "List")
-		if err := r.List(context.Background(), list, client.InNamespace(secret.Namespace)); err != nil {
-			return false
-		}
-		for _, item := range list.Items {
-			if s3CredentialsBackingSecretName(item) == secret.Name {
-				return true
-			}
-		}
-		return false
-	})
-}
-
-func s3CredentialsBackingSecretName(item unstructured.Unstructured) string {
-	statusSecret, _, _ := unstructured.NestedString(item.Object, "status", "secretName")
-	specSecret, _, _ := unstructured.NestedString(item.Object, "spec", "secretRef", "name")
-	if statusSecret != "" {
-		return statusSecret
-	}
-	return specSecret
 }
 
 func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items []appsv1alpha1.ApplicationInstance, releaseName, releaseNamespace string) []reconcile.Request {
@@ -980,4 +936,15 @@ func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items 
 func managedStorageReportKey(ms *seaweedengine.ManagedStorageSnapshot) string {
 	sum := sha256.Sum256([]byte(ms.AccessKeyID + "\x00" + ms.SecretAccessKey))
 	return hex.EncodeToString(sum[:8])
+}
+
+func seaweedEndpointsReportKey(endpoints []agent.EndpointPayload) string {
+	h := sha256.New()
+	for _, ep := range endpoints {
+		_, _ = h.Write([]byte(ep.Name))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(ep.URL))
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
 }
