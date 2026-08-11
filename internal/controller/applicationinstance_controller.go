@@ -44,8 +44,11 @@ import (
 const (
 	reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-key"
 	managedStorageAckRetryAnnotation          = "vworkspace.io/managed-storage-ack-retry"
+	seaweedEndpointsAckRetryAnnotation        = "vworkspace.io/seaweed-endpoints-ack-retry"
+	managedStorageFailedAckRetryAnnotation    = "vworkspace.io/managed-storage-failed-ack-retry"
 	managedStorageClaimAnnotation             = "vworkspace.io/managed-storage-claim"
 	managedStoragePostedAnnotation            = "vworkspace.io/managed-storage-posted"
+	managedStorageFailedPostedAnnotation      = "vworkspace.io/managed-storage-failed-posted"
 	reportedManagedStorageFailedAnnotation    = "vworkspace.io/reported-managed-storage-failed"
 	reportedSeaweedEndpointsAnnotation        = "vworkspace.io/reported-seaweed-endpoints"
 	managedStorageFailedAnnotationValue       = "true"
@@ -490,11 +493,11 @@ func (r *ApplicationInstanceReconciler) reportSeaweedEndpointsIfNeeded(ctx conte
 	if app.Annotations[reportedSeaweedEndpointsAnnotation] == reportKey {
 		return
 	}
-	if app.Annotations[managedStorageAckRetryAnnotation] != "" {
+	if app.Annotations[seaweedEndpointsAckRetryAnnotation] != "" {
 		if err := r.patchSeaweedEndpointsAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
 			return
 		}
-		r.clearManagedStorageAckRetry(ctx, app.Namespace, app.Name)
+		r.clearAnnotation(ctx, app.Namespace, app.Name, seaweedEndpointsAckRetryAnnotation)
 		return
 	}
 	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
@@ -550,11 +553,20 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.C
 	if app.Annotations[reportedManagedStorageFailedAnnotation] == managedStorageFailedAnnotationValue {
 		return ctrl.Result{}, nil
 	}
-	if app.Annotations[managedStorageAckRetryAnnotation] != "" {
+	if app.Annotations[managedStorageFailedPostedAnnotation] == managedStorageFailedAnnotationValue {
 		if err := r.patchManagedStorageFailedAck(ctx, app.Namespace, app.Name); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
-		r.clearManagedStorageAckRetry(ctx, app.Namespace, app.Name)
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedPostedAnnotation)
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedAckRetryAnnotation)
+		return ctrl.Result{}, nil
+	}
+	if app.Annotations[managedStorageFailedAckRetryAnnotation] != "" {
+		if err := r.patchManagedStorageFailedAck(ctx, app.Namespace, app.Name); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedPostedAnnotation)
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedAckRetryAnnotation)
 		return ctrl.Result{}, nil
 	}
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
@@ -571,19 +583,18 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.C
 	return ctrl.Result{}, nil
 }
 
-func (r *ApplicationInstanceReconciler) clearManagedStorageAckRetry(ctx context.Context, namespace, name string) {
+func (r *ApplicationInstanceReconciler) clearAnnotation(ctx context.Context, namespace, name, key string) {
 	app := &appsv1alpha1.ApplicationInstance{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
 		return
 	}
-	if app.Annotations[managedStorageAckRetryAnnotation] == "" {
+	if app.Annotations[key] == "" {
 		return
 	}
 	patchBase := app.DeepCopy()
-	delete(app.Annotations, managedStorageAckRetryAnnotation)
+	delete(app.Annotations, key)
 	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
-		logf.FromContext(ctx).Error(err, "clear managed storage ack retry",
-			"namespace", namespace, "name", name)
+		logf.FromContext(ctx).Error(err, "clear annotation", "annotation", key, "namespace", namespace, "name", name)
 	}
 }
 
@@ -605,8 +616,16 @@ func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.
 	}
 	claim := app.Annotations[managedStorageClaimAnnotation]
 	if claim == reportKey {
-		// Posted delivery is ack-only; an unposted claim may resume after crash.
-		return app.Annotations[managedStoragePostedAnnotation] != reportKey, false, nil
+		if app.Annotations[managedStoragePostedAnnotation] == reportKey {
+			return false, false, nil
+		}
+		if postingKey, posting := r.postingStorageReportKey(app.Namespace, app.Name); posting && postingKey == reportKey {
+			return true, false, nil
+		}
+		if inFlightKey, ok := r.inFlightStorageReportKey(app.Namespace, app.Name); ok && inFlightKey == reportKey {
+			return true, false, nil
+		}
+		return false, false, nil
 	}
 	patchBase := app.DeepCopy()
 	if app.Annotations == nil {
@@ -651,8 +670,14 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 	for _, event := range events {
 		ref := event.ResourceRef
 		if event.Kind == "ManagedStorageFailed" {
+			if err := r.patchManagedStorageFailedPosted(ctx, ref.Namespace, ref.Name); err != nil {
+				r.triggerManagedStorageFailedAckRetry(ctx, ref.Namespace, ref.Name)
+				logf.FromContext(ctx).Error(err, "record managed storage failed post",
+					"namespace", ref.Namespace, "name", ref.Name)
+				continue
+			}
 			if err := r.patchManagedStorageFailedAck(ctx, ref.Namespace, ref.Name); err != nil {
-				r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
+				r.triggerManagedStorageFailedAckRetry(ctx, ref.Namespace, ref.Name)
 				logf.FromContext(ctx).Error(err, "ack managed storage failed audit",
 					"namespace", ref.Namespace, "name", ref.Name)
 			}
@@ -660,7 +685,7 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 		}
 		if reportKey, ok := agent.EndpointsReportKeyFromEventKey(event.EventKey); ok {
 			if err := r.patchSeaweedEndpointsAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
-				r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
+				r.triggerSeaweedEndpointsAckRetry(ctx, ref.Namespace, ref.Name)
 				logf.FromContext(ctx).Error(err, "ack seaweed endpoints delivery",
 					"namespace", ref.Namespace, "name", ref.Name)
 			}
@@ -687,10 +712,41 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 	}
 }
 
-func (r *ApplicationInstanceReconciler) triggerManagedStorageAckRetry(ctx context.Context, namespace, name string) {
+func (r *ApplicationInstanceReconciler) patchManagedStorageFailedPosted(ctx context.Context, namespace, name string) error {
 	app := &appsv1alpha1.ApplicationInstance{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
-		logf.FromContext(ctx).Error(err, "trigger managed storage ack retry",
+		return fmt.Errorf("get ApplicationInstance: %w", err)
+	}
+	if app.Annotations[managedStorageFailedPostedAnnotation] == managedStorageFailedAnnotationValue {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[managedStorageFailedPostedAnnotation] = managedStorageFailedAnnotationValue
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return fmt.Errorf("patch ApplicationInstance: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationInstanceReconciler) triggerManagedStorageAckRetry(ctx context.Context, namespace, name string) {
+	r.triggerAckRetry(ctx, namespace, name, managedStorageAckRetryAnnotation)
+}
+
+func (r *ApplicationInstanceReconciler) triggerSeaweedEndpointsAckRetry(ctx context.Context, namespace, name string) {
+	r.triggerAckRetry(ctx, namespace, name, seaweedEndpointsAckRetryAnnotation)
+}
+
+func (r *ApplicationInstanceReconciler) triggerManagedStorageFailedAckRetry(ctx context.Context, namespace, name string) {
+	r.triggerAckRetry(ctx, namespace, name, managedStorageFailedAckRetryAnnotation)
+}
+
+func (r *ApplicationInstanceReconciler) triggerAckRetry(ctx context.Context, namespace, name, annotation string) {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		logf.FromContext(ctx).Error(err, "trigger ack retry",
 			"namespace", namespace, "name", name)
 		return
 	}
@@ -698,9 +754,9 @@ func (r *ApplicationInstanceReconciler) triggerManagedStorageAckRetry(ctx contex
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
 	}
-	app.Annotations[managedStorageAckRetryAnnotation] = time.Now().UTC().Format(time.RFC3339Nano)
+	app.Annotations[annotation] = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
-		logf.FromContext(ctx).Error(err, "trigger managed storage ack retry patch",
+		logf.FromContext(ctx).Error(err, "trigger ack retry patch",
 			"namespace", namespace, "name", name)
 	}
 }
