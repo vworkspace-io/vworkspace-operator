@@ -410,18 +410,6 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	eventKey := agent.ManagedStorageEventKey(ref, ready, reportKey)
 
-	if inFlightKey, ok := r.inFlightStorageReportKey(app.Namespace, app.Name); ok {
-		switch {
-		case inFlightKey != reportKey:
-			r.clearStorageInFlight(app.Namespace, app.Name)
-		case r.Reporter.HasPendingEvent(eventKey):
-			return ctrl.Result{}, nil
-		default:
-			// Event left the batcher without delivery; allow a resend.
-			r.clearStorageInFlight(app.Namespace, app.Name)
-		}
-	}
-
 	if pendingKey, ok := r.pendingStorageAckReportKey(app.Namespace, app.Name); ok {
 		if pendingKey != reportKey {
 			r.clearStorageAckPending(app.Namespace, app.Name)
@@ -431,6 +419,18 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 			}
 			return ctrl.Result{}, nil
+		}
+	}
+
+	if inFlightKey, ok := r.inFlightStorageReportKey(app.Namespace, app.Name); ok {
+		switch {
+		case inFlightKey != reportKey:
+			r.clearStorageInFlight(app.Namespace, app.Name)
+		case r.Reporter.HasPendingEvent(eventKey):
+			return ctrl.Result{}, nil
+		default:
+			// Event left the batcher without delivery; allow a resend.
+			r.clearStorageInFlight(app.Namespace, app.Name)
 		}
 	}
 
@@ -459,9 +459,9 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 			continue
 		}
 		ref := event.ResourceRef
+		r.markStorageAckPending(ref.Namespace, ref.Name, reportKey)
 		r.clearStorageInFlight(ref.Namespace, ref.Name)
 		if err := r.patchManagedStorageAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
-			r.markStorageAckPending(ref.Namespace, ref.Name, reportKey)
 			r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
 			logf.FromContext(ctx).Error(err, "ack managed storage delivery",
 				"namespace", ref.Namespace, "name", ref.Name)
