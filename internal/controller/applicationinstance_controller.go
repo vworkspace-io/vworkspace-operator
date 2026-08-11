@@ -347,7 +347,6 @@ func (r *ApplicationInstanceReconciler) setBlocked(ctx context.Context, app *app
 }
 
 func (r *ApplicationInstanceReconciler) reportConditions(ctx context.Context, app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
-	log := logf.FromContext(ctx)
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	var enrich agent.ConditionEventEnricher
 	if seaweedengine.IsSeaweedWorkload(app) {
@@ -356,18 +355,6 @@ func (r *ApplicationInstanceReconciler) reportConditions(ctx context.Context, ap
 				return agent.EventExtras{}
 			}
 			extras := agent.EventExtras{Endpoints: agentEndpointsFromStatus(app.Status.Endpoints)}
-			if r.SeaweedEngine != nil {
-				ms, _, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
-				if err != nil {
-					log.V(1).Info("ResolveManagedStorage failed during condition report", "error", err)
-				} else if ms != nil {
-					extras.ManagedStorage = &agent.ManagedStoragePayload{
-						AccessKeyID:     ms.AccessKeyID,
-						SecretAccessKey: ms.SecretAccessKey,
-						BucketName:      ms.BucketName,
-					}
-				}
-			}
 			return extras
 		}
 	}
@@ -380,13 +367,13 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{}, nil
 	}
 
-	ms, pending, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
+	ms, _, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
 	if err != nil {
 		log.V(1).Info("ResolveManagedStorage failed, will retry", "error", err)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	if ms == nil {
-		if pending {
+		if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == "" {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 		return ctrl.Result{}, nil

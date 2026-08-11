@@ -87,13 +87,13 @@ type EventExtras struct {
 // Event represents a batched status event.
 type Event struct {
 	// EventKey is a stable idempotency key for control-plane-side deduplication.
-	EventKey    string             `json:"eventKey,omitempty"`
-	Kind        string             `json:"kind"`
-	ResourceRef AppliedRef         `json:"resourceRef"`
-	Conditions  []metav1.Condition `json:"conditions,omitempty"`
+	EventKey       string                 `json:"eventKey,omitempty"`
+	Kind           string                 `json:"kind"`
+	ResourceRef    AppliedRef             `json:"resourceRef"`
+	Conditions     []metav1.Condition     `json:"conditions,omitempty"`
 	Endpoints      []EndpointPayload      `json:"endpoints,omitempty"`
 	ManagedStorage *ManagedStoragePayload `json:"managedStorage,omitempty"`
-	Timestamp   time.Time          `json:"timestamp"`
+	Timestamp      time.Time              `json:"timestamp"`
 }
 
 // EventsRequest is posted to /api/agent/events.

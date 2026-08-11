@@ -12,11 +12,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+const (
+	testSeaweedNamespace = CatalogIDSeaweedFS
+	testSeaweedRelease   = "seaweedfs-smoke"
+)
+
 func TestResolveManagedStorageFromS3Credentials(t *testing.T) {
 	t.Parallel()
 
-	ns := "seaweedfs"
-	release := "seaweedfs-smoke"
+	ns := testSeaweedNamespace
+	release := testSeaweedRelease
 	cred := &unstructured.Unstructured{}
 	cred.SetGroupVersionKind(s3CredentialsGVK)
 	cred.SetName("smoke-creds")
@@ -59,8 +64,8 @@ func TestResolveManagedStorageFromS3Credentials(t *testing.T) {
 func TestResolveManagedStorageSelectsDeterministicCredential(t *testing.T) {
 	t.Parallel()
 
-	ns := "seaweedfs"
-	release := "seaweedfs-smoke"
+	ns := testSeaweedNamespace
+	release := testSeaweedRelease
 
 	makeCred := func(name, accessKey string) *unstructured.Unstructured {
 		cred := &unstructured.Unstructured{}
@@ -107,8 +112,8 @@ func TestResolveManagedStorageSelectsDeterministicCredential(t *testing.T) {
 func TestResolveManagedStorageStatePendingWhenCredentialsNotReady(t *testing.T) {
 	t.Parallel()
 
-	ns := "seaweedfs"
-	release := "seaweedfs-smoke"
+	ns := testSeaweedNamespace
+	release := testSeaweedRelease
 	cred := &unstructured.Unstructured{}
 	cred.SetGroupVersionKind(s3CredentialsGVK)
 	cred.SetName("pending-creds")
@@ -137,7 +142,7 @@ func TestResolveManagedStorageIgnoresOtherSeaweedRefs(t *testing.T) {
 	cred := &unstructured.Unstructured{}
 	cred.SetGroupVersionKind(s3CredentialsGVK)
 	cred.SetName("other-creds")
-	cred.SetNamespace("seaweedfs")
+	cred.SetNamespace(testSeaweedNamespace)
 	_ = unstructured.SetNestedField(cred.Object, "other-cluster", "spec", "seaweedRef", "name")
 	_ = unstructured.SetNestedField(cred.Object, "Ready", "status", "phase")
 
