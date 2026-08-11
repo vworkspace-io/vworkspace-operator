@@ -377,7 +377,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{}, nil
 	}
 
-	r.reportSeaweedEndpointsIfNeeded(app)
+	r.reportSeaweedEndpointsIfNeeded(ctx, app)
 
 	ms, pending, failed, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
 	if err != nil {
@@ -389,7 +389,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 		if failed {
-			return r.reportManagedStorageFailed(app)
+			return r.reportManagedStorageFailed(ctx, app)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -481,13 +481,20 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	return ctrl.Result{}, nil
 }
 
-func (r *ApplicationInstanceReconciler) reportSeaweedEndpointsIfNeeded(app *appsv1alpha1.ApplicationInstance) {
+func (r *ApplicationInstanceReconciler) reportSeaweedEndpointsIfNeeded(ctx context.Context, app *appsv1alpha1.ApplicationInstance) {
 	endpoints := agentEndpointsFromStatus(app.Status.Endpoints)
 	if len(endpoints) == 0 {
 		return
 	}
 	reportKey := seaweedEndpointsReportKey(endpoints)
 	if app.Annotations[reportedSeaweedEndpointsAnnotation] == reportKey {
+		return
+	}
+	if app.Annotations[managedStorageAckRetryAnnotation] != "" {
+		if err := r.patchSeaweedEndpointsAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
+			return
+		}
+		r.clearManagedStorageAckRetry(ctx, app.Namespace, app.Name)
 		return
 	}
 	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
@@ -539,8 +546,15 @@ func (r *ApplicationInstanceReconciler) patchManagedStorageFailedAck(ctx context
 	return nil
 }
 
-func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
 	if app.Annotations[reportedManagedStorageFailedAnnotation] == managedStorageFailedAnnotationValue {
+		return ctrl.Result{}, nil
+	}
+	if app.Annotations[managedStorageAckRetryAnnotation] != "" {
+		if err := r.patchManagedStorageFailedAck(ctx, app.Namespace, app.Name); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		r.clearManagedStorageAckRetry(ctx, app.Namespace, app.Name)
 		return ctrl.Result{}, nil
 	}
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
@@ -555,6 +569,22 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(app *appsv1al
 		Message: "Matching S3Credentials CRs are unavailable for managed storage reporting",
 	}})
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) clearManagedStorageAckRetry(ctx context.Context, namespace, name string) {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return
+	}
+	if app.Annotations[managedStorageAckRetryAnnotation] == "" {
+		return
+	}
+	patchBase := app.DeepCopy()
+	delete(app.Annotations, managedStorageAckRetryAnnotation)
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		logf.FromContext(ctx).Error(err, "clear managed storage ack retry",
+			"namespace", namespace, "name", name)
+	}
 }
 
 func (r *ApplicationInstanceReconciler) clearManagedStorageClaim(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
@@ -622,6 +652,7 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 		ref := event.ResourceRef
 		if event.Kind == "ManagedStorageFailed" {
 			if err := r.patchManagedStorageFailedAck(ctx, ref.Namespace, ref.Name); err != nil {
+				r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
 				logf.FromContext(ctx).Error(err, "ack managed storage failed audit",
 					"namespace", ref.Namespace, "name", ref.Name)
 			}
@@ -629,6 +660,7 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 		}
 		if reportKey, ok := agent.EndpointsReportKeyFromEventKey(event.EventKey); ok {
 			if err := r.patchSeaweedEndpointsAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
+				r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
 				logf.FromContext(ctx).Error(err, "ack seaweed endpoints delivery",
 					"namespace", ref.Namespace, "name", ref.Name)
 			}
