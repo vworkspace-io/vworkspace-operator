@@ -45,6 +45,10 @@ rules:
   - apiGroups: ["seaweed.seaweedfs.com"]
     resources: ["seaweeds"]
     verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  # Managed storage (P10-T006): list S3Credentials; Secret get uses core rules above.
+  - apiGroups: ["seaweed.seaweedfs.com"]
+    resources: ["s3credentials"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["seaweed.seaweedfs.com"]
     resources: ["seaweeds/status"]
     verbs: ["get"]

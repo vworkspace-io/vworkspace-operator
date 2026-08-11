@@ -453,7 +453,8 @@ main() {
       cat "${review_file}"
       echo
       echo "</details>"
-    } >"${review_file}"
+    } >"${review_file}.failed"
+    mv "${review_file}.failed" "${review_file}"
   else
     normalize_review_output "${review_file}"
     if ! validate_review_output "${review_file}"; then

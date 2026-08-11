@@ -172,13 +172,17 @@ func main() {
 	eventBatcher.Log = ctrl.Log.WithName("agent-events")
 	statusReporter := agent.NewStatusReporter(eventBatcher)
 
-	if err := (&controller.ApplicationInstanceReconciler{
+	appReconciler := &controller.ApplicationInstanceReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		Engine:        fluxEngine,
 		SeaweedEngine: seaweedEngine,
 		Reporter:      statusReporter,
-	}).SetupWithManager(mgr); err != nil {
+	}
+	eventBatcher.OnBeforePostEvents = appReconciler.PrepareManagedStoragePost
+	eventBatcher.OnEventsPostFailed = appReconciler.AbortManagedStoragePost
+	eventBatcher.OnEventsDelivered = appReconciler.AckManagedStorageDelivered
+	if err := appReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApplicationInstance")
 		os.Exit(1)
 	}

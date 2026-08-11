@@ -22,6 +22,12 @@ type EventBatcher struct {
 		Info(msg string, keysAndValues ...any)
 		Error(err error, msg string, keysAndValues ...any)
 	}
+	// OnBeforePostEvents is invoked after a batch is extracted but before PostEvents.
+	OnBeforePostEvents func(ctx context.Context, events []Event)
+	// OnEventsPostFailed is invoked when PostEvents fails before events are requeued.
+	OnEventsPostFailed func(ctx context.Context, events []Event)
+	// OnEventsDelivered is invoked after a batch is accepted by PostEvents.
+	OnEventsDelivered func(ctx context.Context, events []Event)
 
 	mu              sync.Mutex
 	events          []Event
@@ -47,6 +53,21 @@ func (b *EventBatcher) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.events)
+}
+
+// HasEventKey reports whether an event with key is already buffered.
+func (b *EventBatcher) HasEventKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, event := range b.events {
+		if event.EventKey == key {
+			return true
+		}
+	}
+	return false
 }
 
 // Enqueue adds an event to the buffer.
@@ -134,7 +155,13 @@ func (b *EventBatcher) Flush(ctx context.Context) {
 	if b.Client == nil {
 		return
 	}
+	if b.OnBeforePostEvents != nil {
+		b.OnBeforePostEvents(ctx, batch)
+	}
 	if err := b.Client.PostEvents(ctx, EventsRequest{Events: batch}); err != nil {
+		if b.OnEventsPostFailed != nil {
+			b.OnEventsPostFailed(ctx, batch)
+		}
 		b.requeue(batch)
 		SetConnectivityState("pull", 0)
 		if b.Log != nil {
@@ -146,6 +173,9 @@ func (b *EventBatcher) Flush(ctx context.Context) {
 			}
 		}
 		return
+	}
+	if b.OnEventsDelivered != nil {
+		b.OnEventsDelivered(ctx, batch)
 	}
 	b.mu.Lock()
 	if len(b.events) == 0 {

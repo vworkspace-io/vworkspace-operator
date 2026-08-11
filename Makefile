@@ -101,6 +101,11 @@ validate-helm-kind: ## Validate Helm chart install on kind (see hack/validate-he
 	chmod +x hack/validate-helm-kind.sh
 	./hack/validate-helm-kind.sh
 
+.PHONY: seaweedfs-smoke
+seaweedfs-smoke: ## Cluster E2E: SeaweedFS catalog deploy → Ready → S3 list-bucket (P10-T006).
+	chmod +x hack/seaweedfs-smoke.sh
+	./hack/seaweedfs-smoke.sh
+
 .PHONY: lint-chart
 lint-chart: ## Lint the Helm chart (requires helm)
 	helm dependency update charts/vworkspace-operator

@@ -18,7 +18,10 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
@@ -28,11 +31,27 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/seaweedengine"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+)
+
+const (
+	reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-key"
+	managedStorageAckRetryAnnotation          = "vworkspace.io/managed-storage-ack-retry"
+	seaweedEndpointsAckRetryAnnotation        = "vworkspace.io/seaweed-endpoints-ack-retry"
+	managedStorageFailedAckRetryAnnotation    = "vworkspace.io/managed-storage-failed-ack-retry"
+	managedStorageClaimAnnotation             = "vworkspace.io/managed-storage-claim"
+	managedStoragePostedAnnotation            = "vworkspace.io/managed-storage-posted"
+	managedStorageFailedPostedAnnotation      = "vworkspace.io/managed-storage-failed-posted"
+	reportedManagedStorageFailedAnnotation    = "vworkspace.io/reported-managed-storage-failed"
+	reportedSeaweedEndpointsAnnotation        = "vworkspace.io/reported-seaweed-endpoints"
+	managedStorageFailedAnnotationValue       = "true"
 )
 
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
@@ -42,6 +61,11 @@ type ApplicationInstanceReconciler struct {
 	Engine        helmengine.Engine
 	SeaweedEngine seaweedengine.Engine
 	Reporter      agent.StatusReporter
+
+	storageDeliveryMu sync.Mutex
+	storageInFlight   map[string]string // namespace/name -> reportKey enqueued, not yet accepted by control plane
+	storagePosting    map[string]string // namespace/name -> reportKey extracted for PostEvents, not yet acked
+	storageAckPending map[string]string // namespace/name -> reportKey delivered, annotation patch pending
 }
 
 // +kubebuilder:rbac:groups=apps.vworkspace.io,resources=applicationinstances,verbs=get;list;watch;create;update;patch;delete
@@ -51,7 +75,9 @@ type ApplicationInstanceReconciler struct {
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories;ocirepositories,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3credentials,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues(
@@ -113,7 +139,7 @@ func (r *ApplicationInstanceReconciler) reconcileHelm(ctx context.Context, app *
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -137,7 +163,7 @@ func (r *ApplicationInstanceReconciler) reconcileHelm(ctx context.Context, app *
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 
 	if snapshot != nil && !snapshot.Ready {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -179,7 +205,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -206,12 +232,12 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 
 	if snapshot == nil || !snapshot.Ready || (snapshot.Ready && snapshot.S3Endpoint == "" && snapshot.HasS3) {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-	return ctrl.Result{}, nil
+	return r.reconcileSeaweedManagedStorage(ctx, app)
 }
 
 // reconcilePlaceholder brings a placeholder (cluster-ops) instance to Ready
@@ -236,7 +262,7 @@ func (r *ApplicationInstanceReconciler) reconcilePlaceholder(ctx context.Context
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update placeholder status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 	return ctrl.Result{}, nil
 }
 
@@ -251,7 +277,7 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 		if err := r.Status().Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
 		if err := r.Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
@@ -264,14 +290,14 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 		if err := r.Status().Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		if r.SeaweedEngine == nil {
 			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionTrue, "MissingDependencies", "seaweed engine is not configured")
 			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Blocked", "Cannot uninstall Seaweed CR until seaweed engine is configured")
 			if err := r.Status().Update(ctx, app); err != nil {
 				return ctrl.Result{}, fmt.Errorf("update blocked status during finalize: %w", err)
 			}
-			r.reportConditions(app, prevConditions)
+			r.reportConditions(ctx, app, prevConditions)
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 		}
 		if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
@@ -318,7 +344,7 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 	if r.Engine != nil {
 		if err := r.Engine.DeleteRelease(ctx, app); err != nil {
 			log.Error(err, "delete helm release failed")
@@ -339,13 +365,549 @@ func (r *ApplicationInstanceReconciler) setBlocked(ctx context.Context, app *app
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update blocked status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 	return ctrl.Result{}, nil
 }
 
-func (r *ApplicationInstanceReconciler) reportConditions(app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
+func (r *ApplicationInstanceReconciler) reportConditions(_ context.Context, app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	r.Reporter.ReportConditionTransitions(ref, prev, app.Status.Conditions)
+}
+
+func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	if !conditions.IsTrue(app.Status.Conditions, appsv1alpha1.ConditionReady) {
+		return ctrl.Result{}, nil
+	}
+
+	r.reportSeaweedEndpointsIfNeeded(ctx, app)
+
+	ms, pending, failed, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
+	if err != nil {
+		log.Error(err, "ResolveManagedStorage failed")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	if ms == nil {
+		if pending {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		if failed {
+			return r.reportManagedStorageFailed(ctx, app)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
+	if !ok {
+		return ctrl.Result{}, nil
+	}
+	ready.LastTransitionTime = metav1.Now()
+	ready.Reason = "ManagedStorageReady"
+	ready.Message = "Inline S3 credentials available for control-plane registry sync"
+	// ManagedStorageReady is delivered via supplemental agent events only; ApplicationInstance
+	// status keeps the prior SeaweedReady reason for in-cluster observers.
+
+	reportKey := managedStorageReportKey(ms)
+	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+		r.clearStorageDeliveryState(app.Namespace, app.Name)
+		return ctrl.Result{}, nil
+	}
+	if claim := app.Annotations[managedStorageClaimAnnotation]; claim != "" && claim != reportKey {
+		if err := r.clearManagedStorageClaim(ctx, app); err != nil {
+			log.Error(err, "clear stale managed storage claim")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+	}
+
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	eventKey := agent.ManagedStorageEventKey(ref, ready, reportKey)
+
+	if pendingKey, ok := r.pendingStorageAckReportKey(app.Namespace, app.Name); ok {
+		if pendingKey != reportKey {
+			r.clearStorageAckPending(app.Namespace, app.Name)
+		} else {
+			if err := r.patchManagedStorageAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
+				log.Error(err, "retry managed storage delivery ack")
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+			return ctrl.Result{}, nil
+		}
+	}
+
+	if inFlightKey, ok := r.inFlightStorageReportKey(app.Namespace, app.Name); ok {
+		switch {
+		case inFlightKey != reportKey:
+			r.clearStorageInFlight(app.Namespace, app.Name)
+		case r.Reporter.HasPendingEvent(eventKey):
+			return ctrl.Result{}, nil
+		default:
+			if postingKey, posting := r.postingStorageReportKey(app.Namespace, app.Name); posting && postingKey == reportKey {
+				return ctrl.Result{}, nil
+			}
+			// Event left the buffer without PostEvents (e.g. overflow); allow a resend.
+			r.clearStorageInFlight(app.Namespace, app.Name)
+		}
+	}
+
+	if r.Reporter.HasPendingEvent(eventKey) {
+		return ctrl.Result{}, nil
+	}
+	if app.Annotations[managedStoragePostedAnnotation] == reportKey {
+		if err := r.retryManagedStorageAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
+			log.Error(err, "retry managed storage delivery ack after post")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+	claimed, requeue, err := r.claimManagedStorageDelivery(ctx, app, reportKey)
+	if err != nil {
+		log.Error(err, "claim managed storage delivery")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	if requeue {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+	if !claimed {
+		return ctrl.Result{}, nil
+	}
+	if !r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
+		Endpoints: agentEndpointsFromStatus(app.Status.Endpoints),
+		ManagedStorage: &agent.ManagedStoragePayload{
+			AccessKeyID:     ms.AccessKeyID,
+			SecretAccessKey: ms.SecretAccessKey,
+			BucketName:      ms.BucketName,
+		},
+	}, reportKey) {
+		if err := r.clearManagedStorageClaim(ctx, app); err != nil {
+			log.Error(err, "clear managed storage claim after enqueue failure")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+	r.markStorageInFlight(app.Namespace, app.Name, reportKey)
+	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) reportSeaweedEndpointsIfNeeded(ctx context.Context, app *appsv1alpha1.ApplicationInstance) {
+	endpoints := agentEndpointsFromStatus(app.Status.Endpoints)
+	if len(endpoints) == 0 {
+		return
+	}
+	reportKey := seaweedEndpointsReportKey(endpoints)
+	if app.Annotations[reportedSeaweedEndpointsAnnotation] == reportKey {
+		return
+	}
+	if app.Annotations[seaweedEndpointsAckRetryAnnotation] != "" {
+		if err := r.patchSeaweedEndpointsAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
+			return
+		}
+		r.clearAnnotation(ctx, app.Namespace, app.Name, seaweedEndpointsAckRetryAnnotation)
+		return
+	}
+	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
+	if !ok || ready.Status != metav1.ConditionTrue {
+		return
+	}
+	if r.Reporter.HasPendingEvent(agent.EndpointsEventKey(agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta), reportKey)) {
+		return
+	}
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	r.Reporter.ReportSeaweedEndpoints(ref, ready, endpoints, reportKey)
+}
+
+func (r *ApplicationInstanceReconciler) patchSeaweedEndpointsAck(ctx context.Context, namespace, name, reportKey string) error {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return fmt.Errorf("get ApplicationInstance: %w", err)
+	}
+	if app.Annotations[reportedSeaweedEndpointsAnnotation] == reportKey {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[reportedSeaweedEndpointsAnnotation] = reportKey
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return fmt.Errorf("patch ApplicationInstance: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationInstanceReconciler) patchManagedStorageFailedAck(ctx context.Context, namespace, name string) error {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return fmt.Errorf("get ApplicationInstance: %w", err)
+	}
+	if app.Annotations[reportedManagedStorageFailedAnnotation] == managedStorageFailedAnnotationValue {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[reportedManagedStorageFailedAnnotation] = managedStorageFailedAnnotationValue
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return fmt.Errorf("patch ApplicationInstance: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	if app.Annotations[reportedManagedStorageFailedAnnotation] == managedStorageFailedAnnotationValue {
+		return ctrl.Result{}, nil
+	}
+	if app.Annotations[managedStorageFailedPostedAnnotation] == managedStorageFailedAnnotationValue {
+		if err := r.patchManagedStorageFailedAck(ctx, app.Namespace, app.Name); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedPostedAnnotation)
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedAckRetryAnnotation)
+		return ctrl.Result{}, nil
+	}
+	if app.Annotations[managedStorageFailedAckRetryAnnotation] != "" {
+		if err := r.patchManagedStorageFailedAck(ctx, app.Namespace, app.Name); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedPostedAnnotation)
+		r.clearAnnotation(ctx, app.Namespace, app.Name, managedStorageFailedAckRetryAnnotation)
+		return ctrl.Result{}, nil
+	}
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	eventKey := fmt.Sprintf("ManagedStorageFailed/%s/%s", ref.UID, appsv1alpha1.ConditionReady)
+	if r.Reporter.HasPendingEvent(eventKey) {
+		return ctrl.Result{}, nil
+	}
+	r.Reporter.ReportAuditWithEventKey(ref, "ManagedStorageFailed", []metav1.Condition{{
+		Type:    appsv1alpha1.ConditionReady,
+		Status:  metav1.ConditionTrue,
+		Reason:  "ManagedStorageFailed",
+		Message: "Matching S3Credentials CRs are unavailable for managed storage reporting",
+	}}, eventKey)
+	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) clearAnnotation(ctx context.Context, namespace, name, key string) {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return
+	}
+	if app.Annotations[key] == "" {
+		return
+	}
+	patchBase := app.DeepCopy()
+	delete(app.Annotations, key)
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		logf.FromContext(ctx).Error(err, "clear annotation", "annotation", key, "namespace", namespace, "name", name)
+	}
+}
+
+func (r *ApplicationInstanceReconciler) clearManagedStorageClaim(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
+	if app.Annotations[managedStorageClaimAnnotation] == "" {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	delete(app.Annotations, managedStorageClaimAnnotation)
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.Context, app *appsv1alpha1.ApplicationInstance, reportKey string) (claimed bool, requeue bool, err error) {
+	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+		return false, false, nil
+	}
+	claim := app.Annotations[managedStorageClaimAnnotation]
+	if claim == reportKey {
+		return app.Annotations[managedStoragePostedAnnotation] != reportKey, false, nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[managedStorageClaimAnnotation] = reportKey
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		if apierrors.IsConflict(err) {
+			return false, true, nil
+		}
+		return false, false, err
+	}
+	return true, false, nil
+}
+
+// PrepareManagedStoragePost marks managed-storage events as posting before PostEvents.
+func (r *ApplicationInstanceReconciler) PrepareManagedStoragePost(_ context.Context, events []agent.Event) {
+	for _, event := range events {
+		reportKey, ok := agent.ManagedStorageReportKeyFromEventKey(event.EventKey)
+		if !ok {
+			continue
+		}
+		ref := event.ResourceRef
+		r.markStoragePosting(ref.Namespace, ref.Name, reportKey)
+	}
+}
+
+// AbortManagedStoragePost clears posting state when PostEvents fails and events are requeued.
+func (r *ApplicationInstanceReconciler) AbortManagedStoragePost(_ context.Context, events []agent.Event) {
+	for _, event := range events {
+		reportKey, ok := agent.ManagedStorageReportKeyFromEventKey(event.EventKey)
+		if !ok {
+			continue
+		}
+		ref := event.ResourceRef
+		r.clearStoragePosting(ref.Namespace, ref.Name, reportKey)
+	}
+}
+
+// AckManagedStorageDelivered patches dedup annotations after PostEvents succeeds.
+func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.Context, events []agent.Event) {
+	for _, event := range events {
+		ref := event.ResourceRef
+		if event.Kind == "ManagedStorageFailed" {
+			if err := r.patchManagedStorageFailedPosted(ctx, ref.Namespace, ref.Name); err != nil {
+				r.triggerManagedStorageFailedAckRetry(ctx, ref.Namespace, ref.Name)
+				logf.FromContext(ctx).Error(err, "record managed storage failed post",
+					"namespace", ref.Namespace, "name", ref.Name)
+				continue
+			}
+			if err := r.patchManagedStorageFailedAck(ctx, ref.Namespace, ref.Name); err != nil {
+				r.triggerManagedStorageFailedAckRetry(ctx, ref.Namespace, ref.Name)
+				logf.FromContext(ctx).Error(err, "ack managed storage failed audit",
+					"namespace", ref.Namespace, "name", ref.Name)
+			}
+			continue
+		}
+		if reportKey, ok := agent.EndpointsReportKeyFromEventKey(event.EventKey); ok {
+			if err := r.patchSeaweedEndpointsAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
+				r.triggerSeaweedEndpointsAckRetry(ctx, ref.Namespace, ref.Name)
+				logf.FromContext(ctx).Error(err, "ack seaweed endpoints delivery",
+					"namespace", ref.Namespace, "name", ref.Name)
+			}
+			continue
+		}
+		reportKey, ok := agent.ManagedStorageReportKeyFromEventKey(event.EventKey)
+		if !ok {
+			continue
+		}
+		r.markStorageAckPending(ref.Namespace, ref.Name, reportKey)
+		r.clearStorageInFlight(ref.Namespace, ref.Name)
+		r.clearStoragePosting(ref.Namespace, ref.Name, reportKey)
+		if err := r.patchManagedStoragePosted(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
+			r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
+			logf.FromContext(ctx).Error(err, "record managed storage post",
+				"namespace", ref.Namespace, "name", ref.Name)
+			continue
+		}
+		if err := r.patchManagedStorageAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
+			r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
+			logf.FromContext(ctx).Error(err, "ack managed storage delivery",
+				"namespace", ref.Namespace, "name", ref.Name)
+		}
+	}
+}
+
+func (r *ApplicationInstanceReconciler) patchManagedStorageFailedPosted(ctx context.Context, namespace, name string) error {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return fmt.Errorf("get ApplicationInstance: %w", err)
+	}
+	if app.Annotations[managedStorageFailedPostedAnnotation] == managedStorageFailedAnnotationValue {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[managedStorageFailedPostedAnnotation] = managedStorageFailedAnnotationValue
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return fmt.Errorf("patch ApplicationInstance: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationInstanceReconciler) triggerManagedStorageAckRetry(ctx context.Context, namespace, name string) {
+	r.triggerAckRetry(ctx, namespace, name, managedStorageAckRetryAnnotation)
+}
+
+func (r *ApplicationInstanceReconciler) triggerSeaweedEndpointsAckRetry(ctx context.Context, namespace, name string) {
+	r.triggerAckRetry(ctx, namespace, name, seaweedEndpointsAckRetryAnnotation)
+}
+
+func (r *ApplicationInstanceReconciler) triggerManagedStorageFailedAckRetry(ctx context.Context, namespace, name string) {
+	r.triggerAckRetry(ctx, namespace, name, managedStorageFailedAckRetryAnnotation)
+}
+
+func (r *ApplicationInstanceReconciler) triggerAckRetry(ctx context.Context, namespace, name, annotation string) {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		logf.FromContext(ctx).Error(err, "trigger ack retry",
+			"namespace", namespace, "name", name)
+		return
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[annotation] = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		logf.FromContext(ctx).Error(err, "trigger ack retry patch",
+			"namespace", namespace, "name", name)
+	}
+}
+
+func (r *ApplicationInstanceReconciler) retryManagedStorageAck(ctx context.Context, namespace, name, reportKey string) error {
+	r.markStorageAckPending(namespace, name, reportKey)
+	return r.patchManagedStorageAck(ctx, namespace, name, reportKey)
+}
+
+func (r *ApplicationInstanceReconciler) patchManagedStoragePosted(ctx context.Context, namespace, name, reportKey string) error {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return fmt.Errorf("get ApplicationInstance: %w", err)
+	}
+	if app.Annotations[managedStoragePostedAnnotation] == reportKey {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[managedStoragePostedAnnotation] = reportKey
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return fmt.Errorf("patch ApplicationInstance: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationInstanceReconciler) patchManagedStorageAck(ctx context.Context, namespace, name, reportKey string) error {
+	var patchErr error
+	for attempt := range 3 {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+		}
+		app := &appsv1alpha1.ApplicationInstance{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+			return fmt.Errorf("get ApplicationInstance: %w", err)
+		}
+		if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+			r.clearStorageDeliveryState(namespace, name)
+			return nil
+		}
+		patchBase := app.DeepCopy()
+		if app.Annotations == nil {
+			app.Annotations = map[string]string{}
+		}
+		app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
+		delete(app.Annotations, managedStorageClaimAnnotation)
+		delete(app.Annotations, managedStoragePostedAnnotation)
+		if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+			patchErr = err
+			if apierrors.IsConflict(err) {
+				continue
+			}
+			break
+		}
+		r.clearStorageDeliveryState(namespace, name)
+		return nil
+	}
+	return fmt.Errorf("patch ApplicationInstance: %w", patchErr)
+}
+
+func storageDeliveryKey(namespace, name string) string {
+	return namespace + "/" + name
+}
+
+func (r *ApplicationInstanceReconciler) markStorageInFlight(namespace, name, reportKey string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	if r.storageInFlight == nil {
+		r.storageInFlight = make(map[string]string)
+	}
+	r.storageInFlight[storageDeliveryKey(namespace, name)] = reportKey
+}
+
+func (r *ApplicationInstanceReconciler) inFlightStorageReportKey(namespace, name string) (string, bool) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	reportKey, ok := r.storageInFlight[storageDeliveryKey(namespace, name)]
+	return reportKey, ok
+}
+
+func (r *ApplicationInstanceReconciler) clearStorageInFlight(namespace, name string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	delete(r.storageInFlight, storageDeliveryKey(namespace, name))
+}
+
+func (r *ApplicationInstanceReconciler) markStorageAckPending(namespace, name, reportKey string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	if r.storageAckPending == nil {
+		r.storageAckPending = make(map[string]string)
+	}
+	r.storageAckPending[storageDeliveryKey(namespace, name)] = reportKey
+}
+
+func (r *ApplicationInstanceReconciler) pendingStorageAckReportKey(namespace, name string) (string, bool) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	reportKey, ok := r.storageAckPending[storageDeliveryKey(namespace, name)]
+	return reportKey, ok
+}
+
+func (r *ApplicationInstanceReconciler) clearStorageAckPending(namespace, name string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	delete(r.storageAckPending, storageDeliveryKey(namespace, name))
+}
+
+func (r *ApplicationInstanceReconciler) markStoragePosting(namespace, name, reportKey string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	if r.storagePosting == nil {
+		r.storagePosting = make(map[string]string)
+	}
+	r.storagePosting[storageDeliveryKey(namespace, name)] = reportKey
+}
+
+func (r *ApplicationInstanceReconciler) postingStorageReportKey(namespace, name string) (string, bool) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	reportKey, ok := r.storagePosting[storageDeliveryKey(namespace, name)]
+	return reportKey, ok
+}
+
+func (r *ApplicationInstanceReconciler) clearStoragePosting(namespace, name, reportKey string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	key := storageDeliveryKey(namespace, name)
+	if r.storagePosting[key] == reportKey {
+		delete(r.storagePosting, key)
+	}
+}
+
+func (r *ApplicationInstanceReconciler) clearStorageDeliveryState(namespace, name string) {
+	r.storageDeliveryMu.Lock()
+	defer r.storageDeliveryMu.Unlock()
+	key := storageDeliveryKey(namespace, name)
+	delete(r.storageInFlight, key)
+	delete(r.storagePosting, key)
+	delete(r.storageAckPending, key)
+}
+
+func agentEndpointsFromStatus(endpoints []appsv1alpha1.EndpointStatus) []agent.EndpointPayload {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	out := make([]agent.EndpointPayload, 0, len(endpoints))
+	for _, ep := range endpoints {
+		if ep.URL == "" {
+			continue
+		}
+		out = append(out, agent.EndpointPayload{Name: ep.Name, URL: ep.URL})
+	}
+	return out
 }
 
 func (r *ApplicationInstanceReconciler) applyHelmStatusSnapshot(app *appsv1alpha1.ApplicationInstance, snapshot *helmengine.StatusSnapshot) {
@@ -428,6 +990,70 @@ func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.ApplicationInstance{}).
 		Owns(seaweedengine.SeaweedObject()).
+		Watches(
+			seaweedengine.S3CredentialsObject(),
+			handler.EnqueueRequestsFromMapFunc(r.mapS3CredentialsToApplicationInstance),
+		).
 		Named("applicationinstance").
 		Complete(r)
+}
+
+func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ctx context.Context, obj client.Object) []reconcile.Request {
+	cred, ok := obj.(*unstructured.Unstructured)
+	if !ok || cred.GetKind() != "S3Credentials" {
+		return nil
+	}
+	releaseName, found, _ := unstructured.NestedString(cred.Object, "spec", "seaweedRef", "name")
+	if !found || releaseName == "" {
+		return nil
+	}
+
+	list := &appsv1alpha1.ApplicationInstanceList{}
+	if err := r.List(ctx, list, client.InNamespace(cred.GetNamespace())); err != nil {
+		logf.FromContext(ctx).Error(err, "list ApplicationInstances for S3Credentials watch")
+		return nil
+	}
+
+	// release.namespace must match metadata.namespace (admission webhook), so a
+	// namespace-local list covers every ApplicationInstance that can reference
+	// S3Credentials in cred.GetNamespace().
+	return r.applicationInstancesForSeaweedRef(list.Items, releaseName, cred.GetNamespace())
+}
+
+func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items []appsv1alpha1.ApplicationInstance, releaseName, releaseNamespace string) []reconcile.Request {
+	var out []reconcile.Request
+	for i := range items {
+		app := &items[i]
+		if !seaweedengine.IsSeaweedWorkload(app) {
+			continue
+		}
+		if app.Spec.Release == nil || app.Spec.Release.Name != releaseName {
+			continue
+		}
+		ns := app.Spec.Release.Namespace
+		if ns == "" {
+			ns = app.Namespace
+		}
+		if ns != releaseNamespace {
+			continue
+		}
+		out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(app)})
+	}
+	return out
+}
+
+func managedStorageReportKey(ms *seaweedengine.ManagedStorageSnapshot) string {
+	sum := sha256.Sum256([]byte(ms.AccessKeyID + "\x00" + ms.SecretAccessKey))
+	return hex.EncodeToString(sum[:8])
+}
+
+func seaweedEndpointsReportKey(endpoints []agent.EndpointPayload) string {
+	h := sha256.New()
+	for _, ep := range endpoints {
+		_, _ = h.Write([]byte(ep.Name))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(ep.URL))
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
 }
