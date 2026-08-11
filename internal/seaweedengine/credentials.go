@@ -79,7 +79,10 @@ func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *app
 			return snapshot, false, false, nil
 		}
 	}
-	return nil, true, false, nil
+	if stillPending {
+		return nil, true, false, nil
+	}
+	return nil, false, true, nil
 }
 
 func splitS3CredentialsByPhase(candidates []unstructured.Unstructured) (ready []unstructured.Unstructured, pending bool) {

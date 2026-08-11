@@ -210,6 +210,70 @@ func TestResolveManagedStorageStatePendingWhenCredentialsNotReady(t *testing.T) 
 	}
 }
 
+func TestResolveManagedStorageStateFailedWhenReadySecretUnusable(t *testing.T) {
+	t.Parallel()
+
+	ns := testSeaweedNamespace
+	release := testSeaweedRelease
+	cred := &unstructured.Unstructured{}
+	cred.SetGroupVersionKind(s3CredentialsGVK)
+	cred.SetName("broken-ready")
+	cred.SetNamespace(ns)
+	_ = unstructured.SetNestedField(cred.Object, release, "spec", "seaweedRef", "name")
+	_ = unstructured.SetNestedField(cred.Object, "Ready", "status", "phase")
+	_ = unstructured.SetNestedField(cred.Object, "missing-secret", "status", "secretName")
+
+	app := sampleSeaweedApp()
+	app.Spec.Release.Name = release
+	app.SetNamespace(ns)
+	app.Spec.Release.Namespace = ns
+
+	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cred).Build())
+	got, pending, failed, err := engine.ResolveManagedStorageState(context.Background(), app)
+	if err != nil {
+		t.Fatalf("ResolveManagedStorageState: %v", err)
+	}
+	if got != nil || pending || !failed {
+		t.Fatalf("expected terminal failed when Ready secret is missing, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
+	}
+}
+
+func TestResolveManagedStorageStatePendingWhenReadyUnusableButOthersPending(t *testing.T) {
+	t.Parallel()
+
+	ns := testSeaweedNamespace
+	release := testSeaweedRelease
+
+	broken := &unstructured.Unstructured{}
+	broken.SetGroupVersionKind(s3CredentialsGVK)
+	broken.SetName("broken-ready")
+	broken.SetNamespace(ns)
+	_ = unstructured.SetNestedField(broken.Object, release, "spec", "seaweedRef", "name")
+	_ = unstructured.SetNestedField(broken.Object, "Ready", "status", "phase")
+	_ = unstructured.SetNestedField(broken.Object, "missing-secret", "status", "secretName")
+
+	pending := &unstructured.Unstructured{}
+	pending.SetGroupVersionKind(s3CredentialsGVK)
+	pending.SetName("still-pending")
+	pending.SetNamespace(ns)
+	_ = unstructured.SetNestedField(pending.Object, release, "spec", "seaweedRef", "name")
+	_ = unstructured.SetNestedField(pending.Object, "Pending", "status", "phase")
+
+	app := sampleSeaweedApp()
+	app.Spec.Release.Name = release
+	app.SetNamespace(ns)
+	app.Spec.Release.Namespace = ns
+
+	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(broken, pending).Build())
+	got, pendingState, failed, err := engine.ResolveManagedStorageState(context.Background(), app)
+	if err != nil {
+		t.Fatalf("ResolveManagedStorageState: %v", err)
+	}
+	if got != nil || !pendingState || failed {
+		t.Fatalf("expected pending while other credentials are still Pending, got snapshot=%+v pending=%v failed=%v", got, pendingState, failed)
+	}
+}
+
 func TestResolveManagedStorageStatePendingWhenSecretMissing(t *testing.T) {
 	t.Parallel()
 
@@ -233,8 +297,8 @@ func TestResolveManagedStorageStatePendingWhenSecretMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveManagedStorageState: %v", err)
 	}
-	if got != nil || !pending || failed {
-		t.Fatalf("expected pending while secret is missing, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
+	if got != nil || pending || !failed {
+		t.Fatalf("expected terminal failed when only Ready credential has missing secret, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
 	}
 }
 

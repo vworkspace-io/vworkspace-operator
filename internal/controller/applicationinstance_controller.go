@@ -45,6 +45,7 @@ const (
 	reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-key"
 	managedStorageAckRetryAnnotation          = "vworkspace.io/managed-storage-ack-retry"
 	managedStorageClaimAnnotation             = "vworkspace.io/managed-storage-claim"
+	managedStoragePostedAnnotation            = "vworkspace.io/managed-storage-posted"
 	reportedManagedStorageFailedAnnotation    = "vworkspace.io/reported-managed-storage-failed"
 )
 
@@ -452,6 +453,13 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	if r.Reporter.HasPendingEvent(eventKey) {
 		return ctrl.Result{}, nil
 	}
+	if app.Annotations[managedStoragePostedAnnotation] == reportKey {
+		if err := r.retryManagedStorageAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
+			log.Error(err, "retry managed storage delivery ack after post")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{}, nil
+	}
 	claimed, err := r.claimManagedStorageDelivery(ctx, app, reportKey)
 	if err != nil {
 		log.Error(err, "claim managed storage delivery")
@@ -483,7 +491,7 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.C
 		Type:    appsv1alpha1.ConditionReady,
 		Status:  metav1.ConditionTrue,
 		Reason:  "ManagedStorageFailed",
-		Message: "All matching S3Credentials CRs are in a terminal Failed phase",
+		Message: "Matching S3Credentials CRs are unavailable for managed storage reporting",
 	}})
 	patchBase := app.DeepCopy()
 	if app.Annotations == nil {
@@ -514,7 +522,8 @@ func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.
 	}
 	claim := app.Annotations[managedStorageClaimAnnotation]
 	if claim == reportKey {
-		return true, nil
+		// Posted delivery is ack-only; an unposted claim may resume after crash.
+		return app.Annotations[managedStoragePostedAnnotation] != reportKey, nil
 	}
 	patchBase := app.DeepCopy()
 	if app.Annotations == nil {
@@ -565,6 +574,12 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 		r.markStorageAckPending(ref.Namespace, ref.Name, reportKey)
 		r.clearStorageInFlight(ref.Namespace, ref.Name)
 		r.clearStoragePosting(ref.Namespace, ref.Name, reportKey)
+		if err := r.patchManagedStoragePosted(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
+			r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
+			logf.FromContext(ctx).Error(err, "record managed storage post",
+				"namespace", ref.Namespace, "name", ref.Name)
+			continue
+		}
 		if err := r.patchManagedStorageAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
 			r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
 			logf.FromContext(ctx).Error(err, "ack managed storage delivery",
@@ -591,6 +606,30 @@ func (r *ApplicationInstanceReconciler) triggerManagedStorageAckRetry(ctx contex
 	}
 }
 
+func (r *ApplicationInstanceReconciler) retryManagedStorageAck(ctx context.Context, namespace, name, reportKey string) error {
+	r.markStorageAckPending(namespace, name, reportKey)
+	return r.patchManagedStorageAck(ctx, namespace, name, reportKey)
+}
+
+func (r *ApplicationInstanceReconciler) patchManagedStoragePosted(ctx context.Context, namespace, name, reportKey string) error {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return fmt.Errorf("get ApplicationInstance: %w", err)
+	}
+	if app.Annotations[managedStoragePostedAnnotation] == reportKey {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[managedStoragePostedAnnotation] = reportKey
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return fmt.Errorf("patch ApplicationInstance: %w", err)
+	}
+	return nil
+}
+
 func (r *ApplicationInstanceReconciler) patchManagedStorageAck(ctx context.Context, namespace, name, reportKey string) error {
 	var patchErr error
 	for attempt := range 3 {
@@ -611,6 +650,7 @@ func (r *ApplicationInstanceReconciler) patchManagedStorageAck(ctx context.Conte
 		}
 		app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
 		delete(app.Annotations, managedStorageClaimAnnotation)
+		delete(app.Annotations, managedStoragePostedAnnotation)
 		if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
 			patchErr = err
 			if apierrors.IsConflict(err) {
