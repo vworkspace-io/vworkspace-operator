@@ -242,6 +242,64 @@ func TestReconcileSeaweedManagedStorageRetriesAckWithoutRepost(t *testing.T) {
 	}
 }
 
+func TestReconcileSeaweedManagedStorageInFlightBlocksRepost(t *testing.T) {
+	t.Parallel()
+
+	app := sampleSeaweedApplicationInstance()
+	app.Status.Conditions = []metav1.Condition{{
+		Type:               appsv1alpha1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SeaweedReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	scheme := runtime.NewScheme()
+	_ = appsv1alpha1.AddToScheme(scheme)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(app).WithObjects(app).Build()
+
+	var posted []agent.Event
+	batcher := agent.NewEventBatcher(&managedStorageRecordingClient{postEvents: func(events []agent.Event) error {
+		posted = append(posted, events...)
+		return nil
+	}})
+
+	reconciler := &ApplicationInstanceReconciler{
+		Client: cl,
+		SeaweedEngine: &stagedManagedStorageEngine{
+			states: []managedStorageState{{
+				snapshot: &seaweedengine.ManagedStorageSnapshot{
+					AccessKeyID:     "admin",
+					SecretAccessKey: "secret",
+					BucketName:      testSeaweedRelease,
+				},
+			}},
+		},
+		Reporter: agent.NewStatusReporter(batcher),
+	}
+	reportKey := managedStorageReportKey(&seaweedengine.ManagedStorageSnapshot{
+		AccessKeyID:     "admin",
+		SecretAccessKey: "secret",
+		BucketName:      testSeaweedRelease,
+	})
+	reconciler.markStorageInFlight(app.Namespace, app.Name, reportKey)
+
+	if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
+		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
+	}
+	batcher.Flush(t.Context())
+	if len(posted) != 0 {
+		t.Fatalf("expected no repost while in flight, got %d events", len(posted))
+	}
+
+	updated := &appsv1alpha1.ApplicationInstance{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(app), updated); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if updated.Annotations[reportedManagedStorageAccessKeyAnnotation] != "" {
+		t.Fatalf("expected no premature ack annotation, got %#v", updated.Annotations)
+	}
+}
+
 func TestReconcileSeaweedManagedStorageClearsStalePendingOnRotation(t *testing.T) {
 	t.Parallel()
 
@@ -277,7 +335,7 @@ func TestReconcileSeaweedManagedStorageClearsStalePendingOnRotation(t *testing.T
 		Reporter: agent.NewStatusReporter(batcher),
 	}
 	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
-	reconciler.markStorageAckPending(app.Namespace, app.Name, "stale-key")
+	reconciler.markStorageInFlight(app.Namespace, app.Name, "stale-key")
 
 	if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
 		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
