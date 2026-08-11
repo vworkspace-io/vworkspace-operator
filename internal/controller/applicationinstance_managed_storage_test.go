@@ -136,6 +136,7 @@ func TestReconcileSeaweedManagedStorageEmitsSingleSupplementalEvent(t *testing.T
 		},
 		Reporter: agent.NewStatusReporter(batcher),
 	}
+	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
 
 	result, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app)
 	if err != nil {
@@ -143,6 +144,9 @@ func TestReconcileSeaweedManagedStorageEmitsSingleSupplementalEvent(t *testing.T
 	}
 	if !result.IsZero() {
 		t.Fatalf("expected no requeue after reporting, got %+v", result)
+	}
+	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] != "" {
+		t.Fatalf("expected no annotation before delivery, got %#v", app.Annotations)
 	}
 	batcher.Flush(t.Context())
 	if len(posted) != 1 {

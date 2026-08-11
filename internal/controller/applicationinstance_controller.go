@@ -399,6 +399,10 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	ready.Message = "Inline S3 credentials available for control-plane registry sync"
 
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	eventKey := agent.ManagedStorageEventKey(ref, ready, reportKey)
+	if r.Reporter.HasPendingEvent(eventKey) {
+		return ctrl.Result{}, nil
+	}
 	if !r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
 		Endpoints: agentEndpointsFromStatus(app.Status.Endpoints),
 		ManagedStorage: &agent.ManagedStoragePayload{
@@ -409,16 +413,37 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	}, reportKey) {
 		return ctrl.Result{}, nil
 	}
-
-	patchBase := app.DeepCopy()
-	if app.Annotations == nil {
-		app.Annotations = map[string]string{}
-	}
-	app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
-	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
-		return ctrl.Result{}, fmt.Errorf("record reported managed storage: %w", err)
-	}
 	return ctrl.Result{}, nil
+}
+
+// AckManagedStorageDelivered records successful managed-storage delivery so reconcile
+// does not re-enqueue the same supplemental Ready event after PostEvents succeeds.
+func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.Context, events []agent.Event) {
+	for _, event := range events {
+		reportKey, ok := agent.ManagedStorageReportKeyFromEventKey(event.EventKey)
+		if !ok {
+			continue
+		}
+		ref := event.ResourceRef
+		app := &appsv1alpha1.ApplicationInstance{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, app); err != nil {
+			logf.FromContext(ctx).Error(err, "ack managed storage delivery: get ApplicationInstance",
+				"namespace", ref.Namespace, "name", ref.Name)
+			continue
+		}
+		if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+			continue
+		}
+		patchBase := app.DeepCopy()
+		if app.Annotations == nil {
+			app.Annotations = map[string]string{}
+		}
+		app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
+		if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+			logf.FromContext(ctx).Error(err, "ack managed storage delivery: patch ApplicationInstance",
+				"namespace", ref.Namespace, "name", ref.Name)
+		}
+	}
 }
 
 func agentEndpointsFromStatus(endpoints []appsv1alpha1.EndpointStatus) []agent.EndpointPayload {
@@ -539,17 +564,10 @@ func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ct
 		return nil
 	}
 
-	var out []reconcile.Request
-	out = append(out, r.applicationInstancesForSeaweedRef(list.Items, releaseName, cred.GetNamespace())...)
-
-	// Cross-namespace ApplicationInstances reference release.namespace explicitly.
-	all := &appsv1alpha1.ApplicationInstanceList{}
-	if err := r.List(ctx, all); err != nil {
-		logf.FromContext(ctx).Error(err, "list ApplicationInstances for cross-namespace S3Credentials watch")
-		return out
-	}
-	out = append(out, r.applicationInstancesForSeaweedRef(all.Items, releaseName, cred.GetNamespace())...)
-	return dedupeReconcileRequests(out)
+	// release.namespace must match metadata.namespace (admission webhook), so a
+	// namespace-local list covers every ApplicationInstance that can reference
+	// S3Credentials in cred.GetNamespace().
+	return r.applicationInstancesForSeaweedRef(list.Items, releaseName, cred.GetNamespace())
 }
 
 func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items []appsv1alpha1.ApplicationInstance, releaseName, releaseNamespace string) []reconcile.Request {
@@ -570,23 +588,6 @@ func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items 
 			continue
 		}
 		out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(app)})
-	}
-	return out
-}
-
-func dedupeReconcileRequests(in []reconcile.Request) []reconcile.Request {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]struct{}, len(in))
-	out := make([]reconcile.Request, 0, len(in))
-	for _, req := range in {
-		key := req.String()
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, req)
 	}
 	return out
 }

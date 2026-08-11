@@ -48,22 +48,50 @@ func (r StatusReporter) ReportConditionTransitions(ref AppliedRef, prev, next []
 	}
 }
 
-// ReportManagedStorageReady enqueues a supplemental Ready event when managed storage
-// becomes available after the initial Ready transition (P10-T006). Returns false when
-// the reporter is disabled and no event was enqueued.
-func (r StatusReporter) ReportManagedStorageReady(ref AppliedRef, ready metav1.Condition, extras EventExtras, accessKeyID string) bool {
-	if r.batcher == nil {
-		return false
-	}
-	event := ConditionTransitionEvent(ref, []metav1.Condition{ready})
-	event.EventKey = fmt.Sprintf(
-		"managedStorage/%s/%s/%s/%s/%s",
+const managedStorageEventKeyPrefix = "managedStorage/"
+
+// ManagedStorageEventKey builds the deduplication key for supplemental managed-storage events.
+func ManagedStorageEventKey(ref AppliedRef, ready metav1.Condition, reportKey string) string {
+	return fmt.Sprintf(
+		"%s%s/%s/%s/%s/%s",
+		managedStorageEventKeyPrefix,
 		ref.Namespace,
 		ref.Name,
 		ready.Type,
 		ready.Status,
-		accessKeyID,
+		reportKey,
 	)
+}
+
+// ManagedStorageReportKeyFromEventKey extracts the credential report key from a managed-storage event key.
+func ManagedStorageReportKeyFromEventKey(eventKey string) (string, bool) {
+	if !strings.HasPrefix(eventKey, managedStorageEventKeyPrefix) {
+		return "", false
+	}
+	parts := strings.Split(eventKey, "/")
+	if len(parts) != 6 {
+		return "", false
+	}
+	return parts[5], true
+}
+
+// HasPendingEvent reports whether an event with the same key is already buffered for delivery.
+func (r StatusReporter) HasPendingEvent(eventKey string) bool {
+	if r.batcher == nil || eventKey == "" {
+		return false
+	}
+	return r.batcher.HasEventKey(eventKey)
+}
+
+// ReportManagedStorageReady enqueues a supplemental Ready event when managed storage
+// becomes available after the initial Ready transition (P10-T006). Returns false when
+// the reporter is disabled and no event was enqueued.
+func (r StatusReporter) ReportManagedStorageReady(ref AppliedRef, ready metav1.Condition, extras EventExtras, reportKey string) bool {
+	if r.batcher == nil {
+		return false
+	}
+	event := ConditionTransitionEvent(ref, []metav1.Condition{ready})
+	event.EventKey = ManagedStorageEventKey(ref, ready, reportKey)
 	event.Endpoints = extras.Endpoints
 	event.ManagedStorage = extras.ManagedStorage
 	r.batcher.Enqueue(event)
