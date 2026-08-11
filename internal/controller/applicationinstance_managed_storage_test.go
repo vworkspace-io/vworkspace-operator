@@ -242,6 +242,52 @@ func TestReconcileSeaweedManagedStorageRetriesAckWithoutRepost(t *testing.T) {
 	}
 }
 
+func TestReconcileSeaweedManagedStorageClearsStalePendingOnRotation(t *testing.T) {
+	t.Parallel()
+
+	app := sampleSeaweedApplicationInstance()
+	app.Status.Conditions = []metav1.Condition{{
+		Type:               appsv1alpha1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SeaweedReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	scheme := runtime.NewScheme()
+	_ = appsv1alpha1.AddToScheme(scheme)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(app).WithObjects(app).Build()
+
+	var posted []agent.Event
+	batcher := agent.NewEventBatcher(&managedStorageRecordingClient{postEvents: func(events []agent.Event) error {
+		posted = append(posted, events...)
+		return nil
+	}})
+
+	reconciler := &ApplicationInstanceReconciler{
+		Client: cl,
+		SeaweedEngine: &stagedManagedStorageEngine{
+			states: []managedStorageState{{
+				snapshot: &seaweedengine.ManagedStorageSnapshot{
+					AccessKeyID:     "rotated",
+					SecretAccessKey: "new-secret",
+					BucketName:      testSeaweedRelease,
+				},
+			}},
+		},
+		Reporter: agent.NewStatusReporter(batcher),
+	}
+	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
+	reconciler.markStorageAckPending(app.Namespace, app.Name, "stale-key")
+
+	if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
+		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
+	}
+	batcher.Flush(t.Context())
+	if len(posted) != 1 {
+		t.Fatalf("expected rotated credentials event, got %d", len(posted))
+	}
+}
+
 func sampleSeaweedApplicationInstance() *appsv1alpha1.ApplicationInstance {
 	return &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{

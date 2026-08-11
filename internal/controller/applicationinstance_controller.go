@@ -389,21 +389,6 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{}, nil
 	}
 
-	reportKey := managedStorageReportKey(ms)
-	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
-		return ctrl.Result{}, nil
-	}
-	if pendingKey, ok := r.pendingStorageAckReportKey(app.Namespace, app.Name); ok {
-		if pendingKey != reportKey {
-			return ctrl.Result{}, nil
-		}
-		if err := r.patchManagedStorageAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
-			log.Error(err, "retry managed storage delivery ack")
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
-		return ctrl.Result{}, nil
-	}
-
 	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
 	if !ok {
 		return ctrl.Result{}, nil
@@ -411,6 +396,28 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	ready.LastTransitionTime = metav1.Now()
 	ready.Reason = "ManagedStorageReady"
 	ready.Message = "Inline S3 credentials available for control-plane registry sync"
+
+	reportKey := managedStorageReportKey(ms)
+	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+		r.clearStorageAckPending(app.Namespace, app.Name)
+		return ctrl.Result{}, nil
+	}
+	if pendingKey, ok := r.pendingStorageAckReportKey(app.Namespace, app.Name); ok {
+		if pendingKey != reportKey {
+			r.clearStorageAckPending(app.Namespace, app.Name)
+		} else {
+			ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+			eventKey := agent.ManagedStorageEventKey(ref, ready, reportKey)
+			if r.Reporter.HasPendingEvent(eventKey) {
+				return ctrl.Result{}, nil
+			}
+			if err := r.patchManagedStorageAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
+				log.Error(err, "retry managed storage delivery ack")
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+			return ctrl.Result{}, nil
+		}
+	}
 
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	eventKey := agent.ManagedStorageEventKey(ref, ready, reportKey)
@@ -427,6 +434,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	}, reportKey) {
 		return ctrl.Result{}, nil
 	}
+	r.markStorageAckPending(app.Namespace, app.Name, reportKey)
 	return ctrl.Result{}, nil
 }
 
@@ -462,7 +470,7 @@ func (r *ApplicationInstanceReconciler) patchManagedStorageAck(ctx context.Conte
 	}
 	app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
 	var patchErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 		}
