@@ -58,6 +58,7 @@ type ApplicationInstanceReconciler struct {
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3credentials,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues(
@@ -349,7 +350,7 @@ func (r *ApplicationInstanceReconciler) setBlocked(ctx context.Context, app *app
 	return ctrl.Result{}, nil
 }
 
-func (r *ApplicationInstanceReconciler) reportConditions(ctx context.Context, app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
+func (r *ApplicationInstanceReconciler) reportConditions(_ context.Context, app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	var enrich agent.ConditionEventEnricher
 	if seaweedengine.IsSeaweedWorkload(app) {
@@ -401,7 +402,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 			BucketName:      ms.BucketName,
 		},
 	}, ms.AccessKeyID) {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		return ctrl.Result{}, nil
 	}
 
 	patchBase := app.DeepCopy()
@@ -529,6 +530,7 @@ func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ct
 
 	list := &appsv1alpha1.ApplicationInstanceList{}
 	if err := r.List(ctx, list); err != nil {
+		logf.FromContext(ctx).Error(err, "list ApplicationInstances for S3Credentials watch")
 		return nil
 	}
 

@@ -332,7 +332,11 @@ wait_for_seaweed_ready
 wait_for_application_ready
 wait_for_s3_service
 apply_smoke_iam
-read_smoke_credentials
-run_s3_list_smoke
+if [[ "$SKIP_IAM" -eq 0 ]]; then
+  read_smoke_credentials
+  run_s3_list_smoke
+else
+  log "skipping S3 list-bucket smoke (--skip-iam)"
+fi
 
 log "SeaweedFS catalog cluster smoke passed (instance=${INSTANCE_NAME}, s3=${S3_URL})"
