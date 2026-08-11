@@ -10,6 +10,7 @@ import (
 type Engine interface {
 	EnsureRelease(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error
 	DeleteRelease(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error
+	ReleaseExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error)
 	SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*StatusSnapshot, error)
 }
 

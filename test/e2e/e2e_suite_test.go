@@ -42,6 +42,8 @@ var (
 	shouldCleanupFluxCRDs = false
 	// shouldCleanupVeleroCRDs tracks whether Velero CRDs were installed by this suite.
 	shouldCleanupVeleroCRDs = false
+	// shouldCleanupSeaweedCRDs tracks whether Seaweed CRDs were installed by this suite.
+	shouldCleanupSeaweedCRDs = false
 )
 
 // TestE2E runs the e2e test suite to validate the solution in an isolated environment.
@@ -80,11 +82,13 @@ var _ = BeforeSuite(func() {
 	configureKubectlKubeRC()
 	setupCertManager()
 	setupFluxCRDs()
+	setupSeaweedCRDs()
 	setupVeleroCRDs()
 })
 
 var _ = AfterSuite(func() {
 	teardownVeleroCRDs()
+	teardownSeaweedCRDs()
 	teardownFluxCRDs()
 	teardownCertManager()
 })
@@ -158,6 +162,29 @@ func teardownFluxCRDs() {
 	}
 	By("uninstalling Flux CRDs")
 	utils.UninstallFluxCRDs()
+}
+
+func setupSeaweedCRDs() {
+	if os.Getenv("SEAWEED_CRDS_INSTALL_SKIP") == "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping Seaweed CRD installation (SEAWEED_CRDS_INSTALL_SKIP=true)\n")
+		return
+	}
+	if utils.IsSeaweedCRDsInstalled() {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Seaweed CRDs already installed. Skipping installation.\n")
+		return
+	}
+	shouldCleanupSeaweedCRDs = true
+	By("installing Seaweed CRD")
+	ExpectWithOffset(1, utils.InstallSeaweedCRDs()).To(Succeed(), "Failed to install Seaweed CRDs")
+}
+
+func teardownSeaweedCRDs() {
+	if !shouldCleanupSeaweedCRDs {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping Seaweed CRD cleanup (not installed by this suite)\n")
+		return
+	}
+	By("uninstalling Seaweed CRD")
+	utils.UninstallSeaweedCRDs()
 }
 
 func setupVeleroCRDs() {

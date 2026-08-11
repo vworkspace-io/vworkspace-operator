@@ -57,6 +57,21 @@ func (e *FluxEngine) DeleteRelease(ctx context.Context, app *appsv1alpha1.Applic
 	return nil
 }
 
+func (e *FluxEngine) ReleaseExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error) {
+	if app.Spec.Release == nil || app.Spec.Release.Name == "" {
+		return false, nil
+	}
+	hr := &unstructured.Unstructured{}
+	hr.SetGroupVersionKind(helmReleaseGVK)
+	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: app.Spec.Release.Name}, hr); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			return false, nil
+		}
+		return false, fmt.Errorf("get HelmRelease: %w", err)
+	}
+	return true, nil
+}
+
 func (e *FluxEngine) SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*StatusSnapshot, error) {
 	hr := &unstructured.Unstructured{}
 	hr.SetGroupVersionKind(helmReleaseGVK)

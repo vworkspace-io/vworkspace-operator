@@ -57,7 +57,10 @@ var _ = BeforeSuite(func() {
 	Expect(opsv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "config", "crd", "bases"),
+			filepath.Join("..", "..", "charts", "vworkspace-operator", "charts", "seaweedfs-crds", "crds"),
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 	if dir := getFirstFoundEnvTestBinaryDir(); dir != "" {
