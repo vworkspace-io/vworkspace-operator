@@ -221,20 +221,25 @@ func TestResolveManagedStorageStateFailedWhenReadySecretUnusable(t *testing.T) {
 	cred.SetNamespace(ns)
 	_ = unstructured.SetNestedField(cred.Object, release, "spec", "seaweedRef", "name")
 	_ = unstructured.SetNestedField(cred.Object, "Ready", "status", "phase")
-	_ = unstructured.SetNestedField(cred.Object, "missing-secret", "status", "secretName")
+	_ = unstructured.SetNestedField(cred.Object, "broken-secret", "status", "secretName")
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "broken-secret", Namespace: ns},
+		Data:       map[string][]byte{},
+	}
 
 	app := sampleSeaweedApp()
 	app.Spec.Release.Name = release
 	app.SetNamespace(ns)
 	app.Spec.Release.Namespace = ns
 
-	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cred).Build())
+	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cred, secret).Build())
 	got, pending, failed, err := engine.ResolveManagedStorageState(context.Background(), app)
 	if err != nil {
 		t.Fatalf("ResolveManagedStorageState: %v", err)
 	}
 	if got != nil || pending || !failed {
-		t.Fatalf("expected terminal failed when Ready secret is missing, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
+		t.Fatalf("expected terminal failed when Ready secret has no usable keys, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
 	}
 }
 
@@ -297,8 +302,8 @@ func TestResolveManagedStorageStatePendingWhenSecretMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveManagedStorageState: %v", err)
 	}
-	if got != nil || pending || !failed {
-		t.Fatalf("expected terminal failed when only Ready credential has missing secret, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
+	if got != nil || !pending || failed {
+		t.Fatalf("expected pending while secret is missing, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
 	}
 }
 

@@ -46,8 +46,10 @@ func (e *SeaweedEngine) ResolveManagedStorage(ctx context.Context, app *appsv1al
 }
 
 // ResolveManagedStorageState resolves inline credentials when available. pending is true
-// when matching S3Credentials CRs exist but none are Ready with usable keys. failed is
-// true when matching CRs exist but all are in a terminal non-Ready phase (e.g. Failed).
+// when matching S3Credentials CRs exist but none are Ready with usable keys, or a Ready
+// credential's backing Secret is not yet available. failed is true when matching CRs exist
+// but all are in a terminal non-Ready phase (e.g. Failed), or Ready credentials reference
+// Secrets that exist but contain no usable keys.
 // When multiple Ready credentials match the same Seaweed release, the lexicographically
 // smallest Ready CR name wins (stable selection for smoke vs chart credentials).
 func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*ManagedStorageSnapshot, bool, bool, error) {
@@ -70,20 +72,39 @@ func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *app
 		return nil, stillPending, !stillPending, nil
 	}
 
+	var secretMissing bool
+	var unusable bool
 	for _, item := range readyCandidates {
-		snapshot, err := e.snapshotFromS3Credentials(ctx, ns, releaseName, item)
+		snapshot, outcome, err := e.snapshotFromS3Credentials(ctx, ns, releaseName, item)
 		if err != nil {
 			return nil, true, false, err
 		}
 		if snapshot != nil {
 			return snapshot, false, false, nil
 		}
+		switch outcome {
+		case credentialSnapshotSecretMissing:
+			secretMissing = true
+		case credentialSnapshotUnusable:
+			unusable = true
+		}
 	}
-	if stillPending {
+	if stillPending || secretMissing {
 		return nil, true, false, nil
 	}
-	return nil, false, true, nil
+	if unusable {
+		return nil, false, true, nil
+	}
+	return nil, false, false, nil
 }
+
+type credentialSnapshotOutcome int
+
+const (
+	credentialSnapshotOK credentialSnapshotOutcome = iota
+	credentialSnapshotSecretMissing
+	credentialSnapshotUnusable
+)
 
 func splitS3CredentialsByPhase(candidates []unstructured.Unstructured) (ready []unstructured.Unstructured, pending bool) {
 	for _, item := range candidates {
@@ -125,10 +146,10 @@ func (e *SeaweedEngine) listMatchingS3Credentials(ctx context.Context, ns, relea
 	return candidates, nil
 }
 
-func (e *SeaweedEngine) snapshotFromS3Credentials(ctx context.Context, ns, releaseName string, item unstructured.Unstructured) (*ManagedStorageSnapshot, error) {
+func (e *SeaweedEngine) snapshotFromS3Credentials(ctx context.Context, ns, releaseName string, item unstructured.Unstructured) (*ManagedStorageSnapshot, credentialSnapshotOutcome, error) {
 	phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
 	if phase != "" && phase != s3CredentialsPhaseReady {
-		return nil, nil
+		return nil, credentialSnapshotUnusable, nil
 	}
 	accessKey, _, _ := unstructured.NestedString(item.Object, "status", "accessKey")
 	secretName, _, _ := unstructured.NestedString(item.Object, "status", "secretName")
@@ -145,25 +166,25 @@ func (e *SeaweedEngine) snapshotFromS3Credentials(ctx context.Context, ns, relea
 		secretKeyField = "secretKey"
 	}
 	if secretName == "" {
-		return nil, nil
+		return nil, credentialSnapshotUnusable, nil
 	}
 	secret := &corev1.Secret{}
 	if err := e.Client.Get(ctx, client.ObjectKey{Namespace: ns, Name: secretName}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, nil
+			return nil, credentialSnapshotSecretMissing, nil
 		}
-		return nil, fmt.Errorf("get S3Credentials secret %s/%s: %w", ns, secretName, err)
+		return nil, credentialSnapshotUnusable, fmt.Errorf("get S3Credentials secret %s/%s: %w", ns, secretName, err)
 	}
 	secretKey := string(secret.Data[secretKeyField])
 	if accessKey == "" {
 		accessKey = string(secret.Data[accessKeyField])
 	}
 	if accessKey == "" || secretKey == "" {
-		return nil, nil
+		return nil, credentialSnapshotUnusable, nil
 	}
 	return &ManagedStorageSnapshot{
 		AccessKeyID:     accessKey,
 		SecretAccessKey: secretKey,
 		BucketName:      releaseName,
-	}, nil
+	}, credentialSnapshotOK, nil
 }

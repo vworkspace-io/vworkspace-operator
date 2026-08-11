@@ -29,6 +29,7 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/conditions"
 	"github.com/vworkspace-io/vworkspace-operator/internal/helmengine"
 	"github.com/vworkspace-io/vworkspace-operator/internal/seaweedengine"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -407,6 +408,8 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	ready.LastTransitionTime = metav1.Now()
 	ready.Reason = "ManagedStorageReady"
 	ready.Message = "Inline S3 credentials available for control-plane registry sync"
+	// ManagedStorageReady is delivered via supplemental agent events only; ApplicationInstance
+	// status keeps the prior SeaweedReady reason for in-cluster observers.
 
 	reportKey := managedStorageReportKey(ms)
 	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
@@ -847,6 +850,10 @@ func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error
 			seaweedengine.S3CredentialsObject(),
 			handler.EnqueueRequestsFromMapFunc(r.mapS3CredentialsToApplicationInstance),
 		).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.mapManagedStorageSecretToApplicationInstance),
+		).
 		Named("applicationinstance").
 		Complete(r)
 }
@@ -871,6 +878,53 @@ func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ct
 	// namespace-local list covers every ApplicationInstance that can reference
 	// S3Credentials in cred.GetNamespace().
 	return r.applicationInstancesForSeaweedRef(list.Items, releaseName, cred.GetNamespace())
+}
+
+func (r *ApplicationInstanceReconciler) mapManagedStorageSecretToApplicationInstance(ctx context.Context, obj client.Object) []reconcile.Request {
+	secret, ok := obj.(*corev1.Secret)
+	if !ok {
+		return nil
+	}
+
+	list := &unstructured.UnstructuredList{}
+	credGVK := seaweedengine.S3CredentialsObject().GroupVersionKind()
+	list.SetGroupVersionKind(credGVK)
+	list.SetKind(credGVK.Kind + "List")
+	if err := r.List(ctx, list, client.InNamespace(secret.Namespace)); err != nil {
+		logf.FromContext(ctx).Error(err, "list S3Credentials for Secret watch", "namespace", secret.Namespace)
+		return nil
+	}
+
+	var out []reconcile.Request
+	seen := make(map[string]struct{})
+	for _, item := range list.Items {
+		statusSecret, _, _ := unstructured.NestedString(item.Object, "status", "secretName")
+		specSecret, _, _ := unstructured.NestedString(item.Object, "spec", "secretRef", "name")
+		backingSecret := statusSecret
+		if backingSecret == "" {
+			backingSecret = specSecret
+		}
+		if backingSecret != secret.Name {
+			continue
+		}
+		releaseName, found, _ := unstructured.NestedString(item.Object, "spec", "seaweedRef", "name")
+		if !found || releaseName == "" {
+			continue
+		}
+		key := releaseName + "\x00" + secret.Namespace
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		appList := &appsv1alpha1.ApplicationInstanceList{}
+		if err := r.List(ctx, appList, client.InNamespace(secret.Namespace)); err != nil {
+			logf.FromContext(ctx).Error(err, "list ApplicationInstances for Secret watch", "namespace", secret.Namespace)
+			continue
+		}
+		out = append(out, r.applicationInstancesForSeaweedRef(appList.Items, releaseName, secret.Namespace)...)
+	}
+	return out
 }
 
 func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items []appsv1alpha1.ApplicationInstance, releaseName, releaseNamespace string) []reconcile.Request {
