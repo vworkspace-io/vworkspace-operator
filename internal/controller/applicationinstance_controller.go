@@ -35,6 +35,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+const reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-access-key-id"
+
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
 type ApplicationInstanceReconciler struct {
 	client.Client
@@ -212,7 +214,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	if snapshot == nil || !snapshot.Ready || (snapshot.Ready && snapshot.S3Endpoint == "" && snapshot.HasS3) {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-	return ctrl.Result{}, nil
+	return r.reconcileSeaweedManagedStorage(ctx, app)
 }
 
 // reconcilePlaceholder brings a placeholder (cluster-ops) instance to Ready
@@ -345,6 +347,7 @@ func (r *ApplicationInstanceReconciler) setBlocked(ctx context.Context, app *app
 }
 
 func (r *ApplicationInstanceReconciler) reportConditions(ctx context.Context, app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
+	log := logf.FromContext(ctx)
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	var enrich agent.ConditionEventEnricher
 	if seaweedengine.IsSeaweedWorkload(app) {
@@ -354,7 +357,10 @@ func (r *ApplicationInstanceReconciler) reportConditions(ctx context.Context, ap
 			}
 			extras := agent.EventExtras{Endpoints: agentEndpointsFromStatus(app.Status.Endpoints)}
 			if r.SeaweedEngine != nil {
-				if ms, err := r.SeaweedEngine.ResolveManagedStorage(ctx, app); err == nil && ms != nil {
+				ms, _, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
+				if err != nil {
+					log.V(1).Info("ResolveManagedStorage failed during condition report", "error", err)
+				} else if ms != nil {
 					extras.ManagedStorage = &agent.ManagedStoragePayload{
 						AccessKeyID:     ms.AccessKeyID,
 						SecretAccessKey: ms.SecretAccessKey,
@@ -366,6 +372,55 @@ func (r *ApplicationInstanceReconciler) reportConditions(ctx context.Context, ap
 		}
 	}
 	r.Reporter.ReportConditionTransitions(ref, prev, app.Status.Conditions, enrich)
+}
+
+func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	if !conditions.IsTrue(app.Status.Conditions, appsv1alpha1.ConditionReady) {
+		return ctrl.Result{}, nil
+	}
+
+	ms, pending, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
+	if err != nil {
+		log.V(1).Info("ResolveManagedStorage failed, will retry", "error", err)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	if ms == nil {
+		if pending {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+
+	reported := app.Annotations[reportedManagedStorageAccessKeyAnnotation]
+	if reported == ms.AccessKeyID {
+		return ctrl.Result{}, nil
+	}
+
+	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
+	if !ok {
+		return ctrl.Result{}, nil
+	}
+
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
+		Endpoints: agentEndpointsFromStatus(app.Status.Endpoints),
+		ManagedStorage: &agent.ManagedStoragePayload{
+			AccessKeyID:     ms.AccessKeyID,
+			SecretAccessKey: ms.SecretAccessKey,
+			BucketName:      ms.BucketName,
+		},
+	}, ms.AccessKeyID)
+
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[reportedManagedStorageAccessKeyAnnotation] = ms.AccessKeyID
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("record reported managed storage: %w", err)
+	}
+	return ctrl.Result{}, nil
 }
 
 func agentEndpointsFromStatus(endpoints []appsv1alpha1.EndpointStatus) []agent.EndpointPayload {

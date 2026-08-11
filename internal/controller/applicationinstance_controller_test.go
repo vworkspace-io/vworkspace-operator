@@ -111,6 +111,10 @@ func (e *recordingSeaweedEngine) ResolveManagedStorage(ctx context.Context, app 
 	return nil, nil
 }
 
+func (e *recordingSeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*seaweedengine.ManagedStorageSnapshot, bool, error) {
+	return nil, false, nil
+}
+
 func readyConditionStatus(conds []metav1.Condition) (metav1.ConditionStatus, string) {
 	for _, c := range conds {
 		if c.Type == appsv1alpha1.ConditionReady {
