@@ -35,10 +35,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -853,6 +855,7 @@ func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Watches(
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapManagedStorageSecretToApplicationInstance),
+			builder.WithPredicates(r.managedStorageSecretPredicate()),
 		).
 		Named("applicationinstance").
 		Complete(r)
@@ -898,13 +901,7 @@ func (r *ApplicationInstanceReconciler) mapManagedStorageSecretToApplicationInst
 	var out []reconcile.Request
 	seen := make(map[string]struct{})
 	for _, item := range list.Items {
-		statusSecret, _, _ := unstructured.NestedString(item.Object, "status", "secretName")
-		specSecret, _, _ := unstructured.NestedString(item.Object, "spec", "secretRef", "name")
-		backingSecret := statusSecret
-		if backingSecret == "" {
-			backingSecret = specSecret
-		}
-		if backingSecret != secret.Name {
+		if s3CredentialsBackingSecretName(item) != secret.Name {
 			continue
 		}
 		releaseName, found, _ := unstructured.NestedString(item.Object, "spec", "seaweedRef", "name")
@@ -925,6 +922,37 @@ func (r *ApplicationInstanceReconciler) mapManagedStorageSecretToApplicationInst
 		out = append(out, r.applicationInstancesForSeaweedRef(appList.Items, releaseName, secret.Namespace)...)
 	}
 	return out
+}
+
+func (r *ApplicationInstanceReconciler) managedStorageSecretPredicate() predicate.Predicate {
+	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		secret, ok := obj.(*corev1.Secret)
+		if !ok {
+			return false
+		}
+		list := &unstructured.UnstructuredList{}
+		credGVK := seaweedengine.S3CredentialsObject().GroupVersionKind()
+		list.SetGroupVersionKind(credGVK)
+		list.SetKind(credGVK.Kind + "List")
+		if err := r.List(context.Background(), list, client.InNamespace(secret.Namespace)); err != nil {
+			return false
+		}
+		for _, item := range list.Items {
+			if s3CredentialsBackingSecretName(item) == secret.Name {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func s3CredentialsBackingSecretName(item unstructured.Unstructured) string {
+	statusSecret, _, _ := unstructured.NestedString(item.Object, "status", "secretName")
+	specSecret, _, _ := unstructured.NestedString(item.Object, "spec", "secretRef", "name")
+	if statusSecret != "" {
+		return statusSecret
+	}
+	return specSecret
 }
 
 func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items []appsv1alpha1.ApplicationInstance, releaseName, releaseNamespace string) []reconcile.Request {
