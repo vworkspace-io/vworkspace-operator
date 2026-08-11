@@ -143,8 +143,6 @@ rules:
   - get
   - patch
   - update
-# Managed storage (P10-T006) lists S3Credentials and reads backing Secrets via the
-# core "" apiGroup secrets get rule above.
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:

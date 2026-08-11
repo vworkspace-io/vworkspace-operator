@@ -156,7 +156,7 @@ func TestReconcileSeaweedManagedStorageEmitsSingleSupplementalEvent(t *testing.T
 	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(app), updated); err != nil {
 		t.Fatalf("get app: %v", err)
 	}
-	if updated.Annotations[reportedManagedStorageAccessKeyAnnotation] != "admin" {
+	if updated.Annotations[reportedManagedStorageAccessKeyAnnotation] == "" {
 		t.Fatalf("expected reported annotation, got %#v", updated.Annotations)
 	}
 

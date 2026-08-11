@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -38,7 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-access-key-id"
+const reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-key"
 
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
 type ApplicationInstanceReconciler struct {
@@ -383,8 +385,8 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{}, nil
 	}
 
-	reported := app.Annotations[reportedManagedStorageAccessKeyAnnotation]
-	if reported == ms.AccessKeyID {
+	reportKey := managedStorageReportKey(ms)
+	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
 		return ctrl.Result{}, nil
 	}
 
@@ -392,6 +394,9 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	if !ok {
 		return ctrl.Result{}, nil
 	}
+	ready.LastTransitionTime = metav1.Now()
+	ready.Reason = "ManagedStorageReady"
+	ready.Message = "Inline S3 credentials available for control-plane registry sync"
 
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	if !r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
@@ -401,7 +406,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 			SecretAccessKey: ms.SecretAccessKey,
 			BucketName:      ms.BucketName,
 		},
-	}, ms.AccessKeyID) {
+	}, reportKey) {
 		return ctrl.Result{}, nil
 	}
 
@@ -409,7 +414,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
 	}
-	app.Annotations[reportedManagedStorageAccessKeyAnnotation] = ms.AccessKeyID
+	app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
 	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("record reported managed storage: %w", err)
 	}
@@ -529,28 +534,64 @@ func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ct
 	}
 
 	list := &appsv1alpha1.ApplicationInstanceList{}
-	if err := r.List(ctx, list); err != nil {
+	if err := r.List(ctx, list, client.InNamespace(cred.GetNamespace())); err != nil {
 		logf.FromContext(ctx).Error(err, "list ApplicationInstances for S3Credentials watch")
 		return nil
 	}
 
 	var out []reconcile.Request
-	for i := range list.Items {
-		app := &list.Items[i]
+	out = append(out, r.applicationInstancesForSeaweedRef(list.Items, releaseName, cred.GetNamespace())...)
+
+	// Cross-namespace ApplicationInstances reference release.namespace explicitly.
+	all := &appsv1alpha1.ApplicationInstanceList{}
+	if err := r.List(ctx, all); err != nil {
+		logf.FromContext(ctx).Error(err, "list ApplicationInstances for cross-namespace S3Credentials watch")
+		return out
+	}
+	out = append(out, r.applicationInstancesForSeaweedRef(all.Items, releaseName, cred.GetNamespace())...)
+	return dedupeReconcileRequests(out)
+}
+
+func (r *ApplicationInstanceReconciler) applicationInstancesForSeaweedRef(items []appsv1alpha1.ApplicationInstance, releaseName, releaseNamespace string) []reconcile.Request {
+	var out []reconcile.Request
+	for i := range items {
+		app := &items[i]
 		if !seaweedengine.IsSeaweedWorkload(app) {
 			continue
 		}
 		if app.Spec.Release == nil || app.Spec.Release.Name != releaseName {
 			continue
 		}
-		releaseNS := app.Spec.Release.Namespace
-		if releaseNS == "" {
-			releaseNS = app.Namespace
+		ns := app.Spec.Release.Namespace
+		if ns == "" {
+			ns = app.Namespace
 		}
-		if releaseNS != cred.GetNamespace() {
+		if ns != releaseNamespace {
 			continue
 		}
 		out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(app)})
 	}
 	return out
+}
+
+func dedupeReconcileRequests(in []reconcile.Request) []reconcile.Request {
+	if len(in) <= 1 {
+		return in
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]reconcile.Request, 0, len(in))
+	for _, req := range in {
+		key := req.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, req)
+	}
+	return out
+}
+
+func managedStorageReportKey(ms *seaweedengine.ManagedStorageSnapshot) string {
+	sum := sha256.Sum256([]byte(ms.AccessKeyID + "\x00" + ms.SecretAccessKey))
+	return hex.EncodeToString(sum[:8])
 }
