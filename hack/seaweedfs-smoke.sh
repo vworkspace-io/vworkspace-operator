@@ -309,7 +309,7 @@ read_smoke_credentials() {
 run_s3_list_smoke() {
   log "running in-cluster aws s3 ls against ${S3_URL}"
   kubectl run "seaweedfs-s3-smoke-${RANDOM}" \
-    --rm -i --restart=Never \
+    --rm --restart=Never \
     --namespace="${NAMESPACE}" \
     --image=amazon/aws-cli:2.22.12 \
     --env="AWS_ACCESS_KEY_ID=${SMOKE_ACCESS_KEY}" \

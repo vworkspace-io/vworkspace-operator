@@ -36,7 +36,7 @@ func (e *stagedManagedStorageEngine) ResolveManagedStorageState(context.Context,
 	return state.snapshot, state.pending, state.err
 }
 
-func TestReconcileSeaweedManagedStorageRequeuesUntilReported(t *testing.T) {
+func TestReconcileSeaweedManagedStorageQuietWhenNoCredentialsExist(t *testing.T) {
 	t.Parallel()
 
 	app := sampleSeaweedApplicationInstance()
@@ -62,8 +62,39 @@ func TestReconcileSeaweedManagedStorageRequeuesUntilReported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
 	}
+	if !result.IsZero() {
+		t.Fatalf("expected quiet steady state when no S3Credentials exist, got %+v", result)
+	}
+}
+
+func TestReconcileSeaweedManagedStorageRequeuesWhileCredentialsPending(t *testing.T) {
+	t.Parallel()
+
+	app := sampleSeaweedApplicationInstance()
+	app.Status.Conditions = []metav1.Condition{{
+		Type:               appsv1alpha1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SeaweedReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	scheme := runtime.NewScheme()
+	_ = appsv1alpha1.AddToScheme(scheme)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(app).WithObjects(app).Build()
+
+	reconciler := &ApplicationInstanceReconciler{
+		Client: cl,
+		SeaweedEngine: &stagedManagedStorageEngine{
+			states: []managedStorageState{{snapshot: nil, pending: true}},
+		},
+	}
+
+	result, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app)
+	if err != nil {
+		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
+	}
 	if result.RequeueAfter != 30*time.Second {
-		t.Fatalf("expected requeue while annotation unset, got %+v", result)
+		t.Fatalf("expected requeue while credentials pending, got %+v", result)
 	}
 }
 

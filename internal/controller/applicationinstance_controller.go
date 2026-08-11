@@ -28,11 +28,14 @@ import (
 	"github.com/vworkspace-io/vworkspace-operator/internal/seaweedengine"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-access-key-id"
@@ -367,13 +370,13 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{}, nil
 	}
 
-	ms, _, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
+	ms, pending, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
 	if err != nil {
-		log.V(1).Info("ResolveManagedStorage failed, will retry", "error", err)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		log.Error(err, "ResolveManagedStorage failed")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	if ms == nil {
-		if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == "" {
+		if pending {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 		return ctrl.Result{}, nil
@@ -504,6 +507,39 @@ func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1alpha1.ApplicationInstance{}).
 		Owns(seaweedengine.SeaweedObject()).
+		Watches(
+			seaweedengine.S3CredentialsObject(),
+			handler.EnqueueRequestsFromMapFunc(r.mapS3CredentialsToApplicationInstance),
+		).
 		Named("applicationinstance").
 		Complete(r)
+}
+
+func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ctx context.Context, obj client.Object) []reconcile.Request {
+	cred, ok := obj.(*unstructured.Unstructured)
+	if !ok || cred.GetKind() != "S3Credentials" {
+		return nil
+	}
+	releaseName, found, _ := unstructured.NestedString(cred.Object, "spec", "seaweedRef", "name")
+	if !found || releaseName == "" {
+		return nil
+	}
+
+	list := &appsv1alpha1.ApplicationInstanceList{}
+	if err := r.List(ctx, list, client.InNamespace(cred.GetNamespace())); err != nil {
+		return nil
+	}
+
+	var out []reconcile.Request
+	for i := range list.Items {
+		app := &list.Items[i]
+		if !seaweedengine.IsSeaweedWorkload(app) {
+			continue
+		}
+		if app.Spec.Release == nil || app.Spec.Release.Name != releaseName {
+			continue
+		}
+		out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(app)})
+	}
+	return out
 }

@@ -16,6 +16,13 @@ var s3CredentialsGVK = schema.GroupVersionKind{
 	Group: "seaweed.seaweedfs.com", Version: "v1", Kind: "S3Credentials",
 }
 
+// S3CredentialsObject returns an empty S3Credentials CR placeholder for controller watches.
+func S3CredentialsObject() *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(s3CredentialsGVK)
+	return obj
+}
+
 // ManagedStorageSnapshot carries inline S3 credentials for control-plane registry sync.
 type ManagedStorageSnapshot struct {
 	AccessKeyID     string
