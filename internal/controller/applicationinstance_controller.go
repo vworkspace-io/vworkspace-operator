@@ -460,10 +460,13 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		}
 		return ctrl.Result{}, nil
 	}
-	claimed, err := r.claimManagedStorageDelivery(ctx, app, reportKey)
+	claimed, requeue, err := r.claimManagedStorageDelivery(ctx, app, reportKey)
 	if err != nil {
 		log.Error(err, "claim managed storage delivery")
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	if requeue {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 	if !claimed {
 		return ctrl.Result{}, nil
@@ -486,13 +489,6 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.C
 	if app.Annotations[reportedManagedStorageFailedAnnotation] == "true" {
 		return ctrl.Result{}, nil
 	}
-	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
-	r.Reporter.ReportAudit(ref, "ManagedStorageFailed", []metav1.Condition{{
-		Type:    appsv1alpha1.ConditionReady,
-		Status:  metav1.ConditionTrue,
-		Reason:  "ManagedStorageFailed",
-		Message: "Matching S3Credentials CRs are unavailable for managed storage reporting",
-	}})
 	patchBase := app.DeepCopy()
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
@@ -501,6 +497,13 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.C
 	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	r.Reporter.ReportAudit(ref, "ManagedStorageFailed", []metav1.Condition{{
+		Type:    appsv1alpha1.ConditionReady,
+		Status:  metav1.ConditionTrue,
+		Reason:  "ManagedStorageFailed",
+		Message: "Matching S3Credentials CRs are unavailable for managed storage reporting",
+	}})
 	return ctrl.Result{}, nil
 }
 
@@ -516,14 +519,14 @@ func (r *ApplicationInstanceReconciler) clearManagedStorageClaim(ctx context.Con
 	return nil
 }
 
-func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.Context, app *appsv1alpha1.ApplicationInstance, reportKey string) (bool, error) {
+func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.Context, app *appsv1alpha1.ApplicationInstance, reportKey string) (claimed bool, requeue bool, err error) {
 	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
-		return false, nil
+		return false, false, nil
 	}
 	claim := app.Annotations[managedStorageClaimAnnotation]
 	if claim == reportKey {
 		// Posted delivery is ack-only; an unposted claim may resume after crash.
-		return app.Annotations[managedStoragePostedAnnotation] != reportKey, nil
+		return app.Annotations[managedStoragePostedAnnotation] != reportKey, false, nil
 	}
 	patchBase := app.DeepCopy()
 	if app.Annotations == nil {
@@ -532,11 +535,11 @@ func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.
 	app.Annotations[managedStorageClaimAnnotation] = reportKey
 	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
 		if apierrors.IsConflict(err) {
-			return false, nil
+			return false, true, nil
 		}
-		return false, err
+		return false, false, err
 	}
-	return true, nil
+	return true, false, nil
 }
 
 // PrepareManagedStoragePost marks managed-storage events as posting before PostEvents.
