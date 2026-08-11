@@ -408,6 +408,7 @@ func TestReconcileSeaweedManagedStorageClearsStalePendingOnRotation(t *testing.T
 	batcher.OnEventsPostFailed = reconciler.AbortManagedStoragePost
 	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
 	reconciler.markStorageInFlight(app.Namespace, app.Name, "stale-key")
+	app.Annotations = map[string]string{managedStorageClaimAnnotation: "stale-key"}
 
 	if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
 		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)

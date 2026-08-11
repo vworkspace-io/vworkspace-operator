@@ -412,6 +412,12 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		r.clearStorageDeliveryState(app.Namespace, app.Name)
 		return ctrl.Result{}, nil
 	}
+	if claim := app.Annotations[managedStorageClaimAnnotation]; claim != "" && claim != reportKey {
+		if err := r.clearManagedStorageClaim(ctx, app); err != nil {
+			log.Error(err, "clear stale managed storage claim")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+	}
 
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
 	eventKey := agent.ManagedStorageEventKey(ref, ready, reportKey)
@@ -488,6 +494,18 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.C
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) clearManagedStorageClaim(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error {
+	if app.Annotations[managedStorageClaimAnnotation] == "" {
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	delete(app.Annotations, managedStorageClaimAnnotation)
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.Context, app *appsv1alpha1.ApplicationInstance, reportKey string) (bool, error) {
