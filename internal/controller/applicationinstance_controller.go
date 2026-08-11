@@ -562,12 +562,12 @@ func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.C
 	if r.Reporter.HasPendingEvent(eventKey) {
 		return ctrl.Result{}, nil
 	}
-	r.Reporter.ReportAudit(ref, "ManagedStorageFailed", []metav1.Condition{{
+	r.Reporter.ReportAuditWithEventKey(ref, "ManagedStorageFailed", []metav1.Condition{{
 		Type:    appsv1alpha1.ConditionReady,
 		Status:  metav1.ConditionTrue,
 		Reason:  "ManagedStorageFailed",
 		Message: "Matching S3Credentials CRs are unavailable for managed storage reporting",
-	}})
+	}}, eventKey)
 	return ctrl.Result{}, nil
 }
 

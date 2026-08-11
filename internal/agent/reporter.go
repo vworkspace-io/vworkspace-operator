@@ -134,6 +134,15 @@ func (r StatusReporter) ReportManagedStorageReady(ref AppliedRef, ready metav1.C
 
 // ReportAudit enqueues a single audit-style event (e.g. credential rotation).
 func (r StatusReporter) ReportAudit(ref AppliedRef, kind string, conditions []metav1.Condition) {
+	r.reportAudit(ref, kind, conditions, "")
+}
+
+// ReportAuditWithEventKey enqueues an audit event using an explicit dedup key.
+func (r StatusReporter) ReportAuditWithEventKey(ref AppliedRef, kind string, conditions []metav1.Condition, eventKey string) {
+	r.reportAudit(ref, kind, conditions, eventKey)
+}
+
+func (r StatusReporter) reportAudit(ref AppliedRef, kind string, conditions []metav1.Condition, eventKey string) {
 	if r.batcher == nil {
 		return
 	}
@@ -143,7 +152,9 @@ func (r StatusReporter) ReportAudit(ref AppliedRef, kind string, conditions []me
 		Conditions:  conditions,
 		Timestamp:   time.Now().UTC(),
 	}
-	if len(conditions) > 0 {
+	if eventKey != "" {
+		event.EventKey = eventKey
+	} else if len(conditions) > 0 {
 		event.EventKey = fmt.Sprintf("%s/%s/%s", kind, ref.UID, conditions[0].Type)
 	}
 	r.batcher.Enqueue(event)
