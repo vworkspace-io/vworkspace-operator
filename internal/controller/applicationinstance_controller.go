@@ -468,10 +468,6 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 	if !claimed {
-		if app.Annotations[managedStorageClaimAnnotation] == reportKey &&
-			app.Annotations[managedStoragePostedAnnotation] != reportKey {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-		}
 		return ctrl.Result{}, nil
 	}
 	if !r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
@@ -482,6 +478,10 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 			BucketName:      ms.BucketName,
 		},
 	}, reportKey) {
+		if err := r.clearManagedStorageClaim(ctx, app); err != nil {
+			log.Error(err, "clear managed storage claim after enqueue failure")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 	r.markStorageInFlight(app.Namespace, app.Name, reportKey)
@@ -620,16 +620,7 @@ func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.
 	}
 	claim := app.Annotations[managedStorageClaimAnnotation]
 	if claim == reportKey {
-		if app.Annotations[managedStoragePostedAnnotation] == reportKey {
-			return false, false, nil
-		}
-		if postingKey, posting := r.postingStorageReportKey(app.Namespace, app.Name); posting && postingKey == reportKey {
-			return true, false, nil
-		}
-		if inFlightKey, ok := r.inFlightStorageReportKey(app.Namespace, app.Name); ok && inFlightKey == reportKey {
-			return true, false, nil
-		}
-		return false, false, nil
+		return app.Annotations[managedStoragePostedAnnotation] != reportKey, false, nil
 	}
 	patchBase := app.DeepCopy()
 	if app.Annotations == nil {
