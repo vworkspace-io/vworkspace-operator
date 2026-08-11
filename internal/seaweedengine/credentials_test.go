@@ -79,12 +79,12 @@ func TestResolveManagedStorageStateQuietWhenAllCredentialsFailed(t *testing.T) {
 	app.Spec.Release.Namespace = ns
 
 	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cred).Build())
-	got, pending, err := engine.ResolveManagedStorageState(context.Background(), app)
+	got, pending, failed, err := engine.ResolveManagedStorageState(context.Background(), app)
 	if err != nil {
 		t.Fatalf("ResolveManagedStorageState: %v", err)
 	}
-	if got != nil || pending {
-		t.Fatalf("expected quiet terminal state for Failed credentials, got snapshot=%+v pending=%v", got, pending)
+	if got != nil || pending || !failed {
+		t.Fatalf("expected terminal Failed state, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
 	}
 }
 
@@ -126,12 +126,12 @@ func TestResolveManagedStorageSelectsSmallestReadyCredential(t *testing.T) {
 		makeCred("z-creds", "Ready"),
 		secretFor("z-creds"),
 	).Build())
-	got, pending, err := engine.ResolveManagedStorageState(context.Background(), app)
+	got, pending, failed, err := engine.ResolveManagedStorageState(context.Background(), app)
 	if err != nil {
 		t.Fatalf("ResolveManagedStorageState: %v", err)
 	}
-	if pending || got == nil || got.AccessKeyID != "z-creds-admin" {
-		t.Fatalf("expected smallest Ready credential z-creds, got snapshot=%+v pending=%v", got, pending)
+	if pending || failed || got == nil || got.AccessKeyID != "z-creds-admin" {
+		t.Fatalf("expected smallest Ready credential z-creds, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
 	}
 }
 
@@ -201,12 +201,12 @@ func TestResolveManagedStorageStatePendingWhenCredentialsNotReady(t *testing.T) 
 	app.Spec.Release.Namespace = ns
 
 	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cred).Build())
-	got, pending, err := engine.ResolveManagedStorageState(context.Background(), app)
+	got, pending, failed, err := engine.ResolveManagedStorageState(context.Background(), app)
 	if err != nil {
 		t.Fatalf("ResolveManagedStorageState: %v", err)
 	}
-	if got != nil || !pending {
-		t.Fatalf("expected pending state, got snapshot=%+v pending=%v", got, pending)
+	if got != nil || !pending || failed {
+		t.Fatalf("expected pending state, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
 	}
 }
 
@@ -229,12 +229,12 @@ func TestResolveManagedStorageStatePendingWhenSecretMissing(t *testing.T) {
 	app.Spec.Release.Namespace = ns
 
 	engine := NewSeaweedEngine(fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cred).Build())
-	got, pending, err := engine.ResolveManagedStorageState(context.Background(), app)
+	got, pending, failed, err := engine.ResolveManagedStorageState(context.Background(), app)
 	if err != nil {
 		t.Fatalf("ResolveManagedStorageState: %v", err)
 	}
-	if got != nil || !pending {
-		t.Fatalf("expected pending while secret is missing, got snapshot=%+v pending=%v", got, pending)
+	if got != nil || !pending || failed {
+		t.Fatalf("expected pending while secret is missing, got snapshot=%+v pending=%v failed=%v", got, pending, failed)
 	}
 }
 

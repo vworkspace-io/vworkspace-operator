@@ -41,44 +41,45 @@ type ManagedStorageSnapshot struct {
 // ResolveManagedStorage reads the first Ready S3Credentials CR for the Seaweed cluster
 // and returns inline keys for agent event payloads (P10-T005 / P10-T006).
 func (e *SeaweedEngine) ResolveManagedStorage(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*ManagedStorageSnapshot, error) {
-	snapshot, _, err := e.ResolveManagedStorageState(ctx, app)
+	snapshot, _, _, err := e.ResolveManagedStorageState(ctx, app)
 	return snapshot, err
 }
 
 // ResolveManagedStorageState resolves inline credentials when available. pending is true
-// when matching S3Credentials CRs exist but none are Ready with usable keys. When
-// multiple Ready credentials match the same Seaweed release, the lexicographically
+// when matching S3Credentials CRs exist but none are Ready with usable keys. failed is
+// true when matching CRs exist but all are in a terminal non-Ready phase (e.g. Failed).
+// When multiple Ready credentials match the same Seaweed release, the lexicographically
 // smallest Ready CR name wins (stable selection for smoke vs chart credentials).
-func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*ManagedStorageSnapshot, bool, error) {
+func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*ManagedStorageSnapshot, bool, bool, error) {
 	if err := validateReleaseRef(app); err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	ns := releaseNamespace(app)
 	releaseName := app.Spec.Release.Name
 
 	candidates, err := e.listMatchingS3Credentials(ctx, ns, releaseName)
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	if len(candidates) == 0 {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 
 	readyCandidates, stillPending := splitS3CredentialsByPhase(candidates)
 	if len(readyCandidates) == 0 {
-		return nil, stillPending, nil
+		return nil, stillPending, !stillPending, nil
 	}
 
 	for _, item := range readyCandidates {
 		snapshot, err := e.snapshotFromS3Credentials(ctx, ns, releaseName, item)
 		if err != nil {
-			return nil, true, err
+			return nil, true, false, err
 		}
 		if snapshot != nil {
-			return snapshot, false, nil
+			return snapshot, false, false, nil
 		}
 	}
-	return nil, true, nil
+	return nil, true, false, nil
 }
 
 func splitS3CredentialsByPhase(candidates []unstructured.Unstructured) (ready []unstructured.Unstructured, pending bool) {

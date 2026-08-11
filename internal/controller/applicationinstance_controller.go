@@ -44,6 +44,8 @@ import (
 const (
 	reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-key"
 	managedStorageAckRetryAnnotation          = "vworkspace.io/managed-storage-ack-retry"
+	managedStorageClaimAnnotation             = "vworkspace.io/managed-storage-claim"
+	reportedManagedStorageFailedAnnotation    = "vworkspace.io/reported-managed-storage-failed"
 )
 
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
@@ -382,7 +384,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 		return ctrl.Result{}, nil
 	}
 
-	ms, pending, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
+	ms, pending, failed, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
 	if err != nil {
 		log.Error(err, "ResolveManagedStorage failed")
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -390,6 +392,9 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	if ms == nil {
 		if pending {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		if failed {
+			return r.reportManagedStorageFailed(ctx, app)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -441,6 +446,14 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	if r.Reporter.HasPendingEvent(eventKey) {
 		return ctrl.Result{}, nil
 	}
+	claimed, err := r.claimManagedStorageDelivery(ctx, app, reportKey)
+	if err != nil {
+		log.Error(err, "claim managed storage delivery")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	if !claimed {
+		return ctrl.Result{}, nil
+	}
 	if !r.Reporter.ReportManagedStorageReady(ref, ready, agent.EventExtras{
 		Endpoints: agentEndpointsFromStatus(app.Status.Endpoints),
 		ManagedStorage: &agent.ManagedStoragePayload{
@@ -453,6 +466,53 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	}
 	r.markStorageInFlight(app.Namespace, app.Name, reportKey)
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) reportManagedStorageFailed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (ctrl.Result, error) {
+	if app.Annotations[reportedManagedStorageFailedAnnotation] == "true" {
+		return ctrl.Result{}, nil
+	}
+	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
+	r.Reporter.ReportAudit(ref, "ManagedStorageFailed", []metav1.Condition{{
+		Type:    appsv1alpha1.ConditionReady,
+		Status:  metav1.ConditionTrue,
+		Reason:  "ManagedStorageFailed",
+		Message: "All matching S3Credentials CRs are in a terminal Failed phase",
+	}})
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[reportedManagedStorageFailedAnnotation] = "true"
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationInstanceReconciler) claimManagedStorageDelivery(ctx context.Context, app *appsv1alpha1.ApplicationInstance, reportKey string) (bool, error) {
+	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+		return false, nil
+	}
+	claim := app.Annotations[managedStorageClaimAnnotation]
+	if claim != "" && claim != reportKey {
+		return false, nil
+	}
+	if claim == reportKey {
+		return true, nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[managedStorageClaimAnnotation] = reportKey
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		if apierrors.IsConflict(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // PrepareManagedStoragePost marks managed-storage events as posting before PostEvents.
@@ -517,27 +577,31 @@ func (r *ApplicationInstanceReconciler) triggerManagedStorageAckRetry(ctx contex
 }
 
 func (r *ApplicationInstanceReconciler) patchManagedStorageAck(ctx context.Context, namespace, name, reportKey string) error {
-	app := &appsv1alpha1.ApplicationInstance{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
-		return fmt.Errorf("get ApplicationInstance: %w", err)
-	}
-	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
-		r.clearStorageDeliveryState(namespace, name)
-		return nil
-	}
-	patchBase := app.DeepCopy()
-	if app.Annotations == nil {
-		app.Annotations = map[string]string{}
-	}
-	app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
 	var patchErr error
 	for attempt := range 3 {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 		}
+		app := &appsv1alpha1.ApplicationInstance{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+			return fmt.Errorf("get ApplicationInstance: %w", err)
+		}
+		if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+			r.clearStorageDeliveryState(namespace, name)
+			return nil
+		}
+		patchBase := app.DeepCopy()
+		if app.Annotations == nil {
+			app.Annotations = map[string]string{}
+		}
+		app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
+		delete(app.Annotations, managedStorageClaimAnnotation)
 		if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
 			patchErr = err
-			continue
+			if apierrors.IsConflict(err) {
+				continue
+			}
+			break
 		}
 		r.clearStorageDeliveryState(namespace, name)
 		return nil

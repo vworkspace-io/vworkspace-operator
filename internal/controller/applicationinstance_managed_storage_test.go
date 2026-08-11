@@ -23,17 +23,18 @@ type stagedManagedStorageEngine struct {
 type managedStorageState struct {
 	snapshot *seaweedengine.ManagedStorageSnapshot
 	pending  bool
+	failed   bool
 	err      error
 }
 
-func (e *stagedManagedStorageEngine) ResolveManagedStorageState(context.Context, *appsv1alpha1.ApplicationInstance) (*seaweedengine.ManagedStorageSnapshot, bool, error) {
+func (e *stagedManagedStorageEngine) ResolveManagedStorageState(context.Context, *appsv1alpha1.ApplicationInstance) (*seaweedengine.ManagedStorageSnapshot, bool, bool, error) {
 	idx := e.calls
 	if idx >= len(e.states) {
 		idx = len(e.states) - 1
 	}
 	e.calls++
 	state := e.states[idx]
-	return state.snapshot, state.pending, state.err
+	return state.snapshot, state.pending, state.failed, state.err
 }
 
 func TestReconcileSeaweedManagedStorageQuietWhenNoCredentialsExist(t *testing.T) {
