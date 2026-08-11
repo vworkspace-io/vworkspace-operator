@@ -74,6 +74,58 @@ func TestStatusReporterEnqueuesChangedConditions(t *testing.T) {
 	}
 }
 
+func TestStatusReporterEnrichesConditionEvents(t *testing.T) {
+	var posted []Event
+	client := &recordingClient{postEvents: func(events []Event) error {
+		posted = append(posted, events...)
+		return nil
+	}}
+	batcher := NewEventBatcher(client)
+	reporter := NewStatusReporter(batcher)
+
+	ref := AppliedRef{
+		APIVersion: "apps.vworkspace.io/v1alpha1",
+		Kind:       "ApplicationInstance",
+		Namespace:  "seaweedfs",
+		Name:       "seaweedfs-dev",
+		UID:        "uid-1",
+		Generation: 1,
+	}
+	prev := []metav1.Condition{}
+	next := []metav1.Condition{{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "SeaweedReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+	enrich := func(condition metav1.Condition) EventExtras {
+		if condition.Type != "Ready" {
+			return EventExtras{}
+		}
+		return EventExtras{
+			Endpoints: []EndpointPayload{{Name: "s3", URL: "http://seaweedfs-dev-s3.seaweedfs.svc:8333"}},
+			ManagedStorage: &ManagedStoragePayload{
+				AccessKeyID:     "admin",
+				SecretAccessKey: "secret",
+				BucketName:      "seaweedfs-dev",
+			},
+		}
+	}
+
+	reporter.ReportConditionTransitions(ref, prev, next, enrich)
+	batcher.Flush(t.Context())
+
+	if len(posted) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(posted))
+	}
+	if len(posted[0].Endpoints) != 1 || posted[0].Endpoints[0].URL == "" {
+		t.Fatalf("expected endpoints on event: %+v", posted[0].Endpoints)
+	}
+	if posted[0].ManagedStorage == nil || posted[0].ManagedStorage.AccessKeyID != "admin" {
+		t.Fatalf("expected managedStorage on event: %+v", posted[0].ManagedStorage)
+	}
+}
+
 func TestStatusReporterSkipsUnchangedConditions(t *testing.T) {
 	var posted []Event
 	client := &recordingClient{postEvents: func(events []Event) error {

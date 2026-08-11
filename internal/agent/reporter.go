@@ -24,14 +24,26 @@ func NoopStatusReporter() StatusReporter {
 	return StatusReporter{}
 }
 
+// ConditionEventEnricher optionally adds endpoints / managedStorage to a condition event.
+type ConditionEventEnricher func(condition metav1.Condition) EventExtras
+
 // ReportConditionTransitions enqueues events for conditions that changed between prev and next.
-func (r StatusReporter) ReportConditionTransitions(ref AppliedRef, prev, next []metav1.Condition) {
+func (r StatusReporter) ReportConditionTransitions(ref AppliedRef, prev, next []metav1.Condition, enrich ...ConditionEventEnricher) {
 	if r.batcher == nil {
 		return
+	}
+	var enricher ConditionEventEnricher
+	if len(enrich) > 0 {
+		enricher = enrich[0]
 	}
 	for _, condition := range changedConditions(prev, next) {
 		event := ConditionTransitionEvent(ref, []metav1.Condition{condition})
 		event.EventKey = ConditionEventKey(ref, condition)
+		if enricher != nil {
+			extra := enricher(condition)
+			event.Endpoints = extra.Endpoints
+			event.ManagedStorage = extra.ManagedStorage
+		}
 		r.batcher.Enqueue(event)
 	}
 }

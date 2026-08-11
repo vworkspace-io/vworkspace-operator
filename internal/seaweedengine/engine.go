@@ -23,6 +23,7 @@ type Engine interface {
 	DeleteSeaweed(ctx context.Context, app *appsv1alpha1.ApplicationInstance) error
 	SeaweedExists(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (bool, error)
 	SyncStatus(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*StatusSnapshot, error)
+	ResolveManagedStorage(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*ManagedStorageSnapshot, error)
 }
 
 // StatusSnapshot captures mapped Seaweed status for ApplicationInstance conditions.

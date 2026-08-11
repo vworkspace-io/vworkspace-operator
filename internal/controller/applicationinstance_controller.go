@@ -51,6 +51,7 @@ type ApplicationInstanceReconciler struct {
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories;ocirepositories,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=seaweeds/status,verbs=get
+// +kubebuilder:rbac:groups=seaweed.seaweedfs.com,resources=s3credentials,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 
 func (r *ApplicationInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -113,7 +114,7 @@ func (r *ApplicationInstanceReconciler) reconcileHelm(ctx context.Context, app *
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -137,7 +138,7 @@ func (r *ApplicationInstanceReconciler) reconcileHelm(ctx context.Context, app *
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 
 	if snapshot != nil && !snapshot.Ready {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -179,7 +180,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 		if statusErr := r.Status().Update(ctx, app); statusErr != nil {
 			return ctrl.Result{}, fmt.Errorf("update status after ensure failure: %w", statusErr)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -206,7 +207,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweed(ctx context.Context, ap
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 
 	if snapshot == nil || !snapshot.Ready || (snapshot.Ready && snapshot.S3Endpoint == "" && snapshot.HasS3) {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -236,7 +237,7 @@ func (r *ApplicationInstanceReconciler) reconcilePlaceholder(ctx context.Context
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update placeholder status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 	return ctrl.Result{}, nil
 }
 
@@ -251,7 +252,7 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 		if err := r.Status().Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		controllerutil.RemoveFinalizer(app, appsv1alpha1.ApplicationInstanceFinalizer)
 		if err := r.Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("remove finalizer: %w", err)
@@ -264,14 +265,14 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 		if err := r.Status().Update(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 		}
-		r.reportConditions(app, prevConditions)
+		r.reportConditions(ctx, app, prevConditions)
 		if r.SeaweedEngine == nil {
 			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionBlocked, metav1.ConditionTrue, "MissingDependencies", "seaweed engine is not configured")
 			app.Status.Conditions = conditions.Set(app.Status.Conditions, appsv1alpha1.ConditionDeleting, metav1.ConditionTrue, "Blocked", "Cannot uninstall Seaweed CR until seaweed engine is configured")
 			if err := r.Status().Update(ctx, app); err != nil {
 				return ctrl.Result{}, fmt.Errorf("update blocked status during finalize: %w", err)
 			}
-			r.reportConditions(app, prevConditions)
+			r.reportConditions(ctx, app, prevConditions)
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
 		}
 		if err := r.SeaweedEngine.DeleteSeaweed(ctx, app); err != nil {
@@ -318,7 +319,7 @@ func (r *ApplicationInstanceReconciler) finalize(ctx context.Context, app *appsv
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update deleting status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 	if r.Engine != nil {
 		if err := r.Engine.DeleteRelease(ctx, app); err != nil {
 			log.Error(err, "delete helm release failed")
@@ -339,13 +340,46 @@ func (r *ApplicationInstanceReconciler) setBlocked(ctx context.Context, app *app
 	if err := r.Status().Update(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update blocked status: %w", err)
 	}
-	r.reportConditions(app, prevConditions)
+	r.reportConditions(ctx, app, prevConditions)
 	return ctrl.Result{}, nil
 }
 
-func (r *ApplicationInstanceReconciler) reportConditions(app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
+func (r *ApplicationInstanceReconciler) reportConditions(ctx context.Context, app *appsv1alpha1.ApplicationInstance, prev []metav1.Condition) {
 	ref := agent.ResourceRefFromMeta(appsv1alpha1.GroupVersion.WithKind("ApplicationInstance"), app.ObjectMeta)
-	r.Reporter.ReportConditionTransitions(ref, prev, app.Status.Conditions)
+	var enrich agent.ConditionEventEnricher
+	if seaweedengine.IsSeaweedWorkload(app) {
+		enrich = func(condition metav1.Condition) agent.EventExtras {
+			if condition.Type != appsv1alpha1.ConditionReady || condition.Status != metav1.ConditionTrue {
+				return agent.EventExtras{}
+			}
+			extras := agent.EventExtras{Endpoints: agentEndpointsFromStatus(app.Status.Endpoints)}
+			if r.SeaweedEngine != nil {
+				if ms, err := r.SeaweedEngine.ResolveManagedStorage(ctx, app); err == nil && ms != nil {
+					extras.ManagedStorage = &agent.ManagedStoragePayload{
+						AccessKeyID:     ms.AccessKeyID,
+						SecretAccessKey: ms.SecretAccessKey,
+						BucketName:      ms.BucketName,
+					}
+				}
+			}
+			return extras
+		}
+	}
+	r.Reporter.ReportConditionTransitions(ref, prev, app.Status.Conditions, enrich)
+}
+
+func agentEndpointsFromStatus(endpoints []appsv1alpha1.EndpointStatus) []agent.EndpointPayload {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	out := make([]agent.EndpointPayload, 0, len(endpoints))
+	for _, ep := range endpoints {
+		if ep.URL == "" {
+			continue
+		}
+		out = append(out, agent.EndpointPayload{Name: ep.Name, URL: ep.URL})
+	}
+	return out
 }
 
 func (r *ApplicationInstanceReconciler) applyHelmStatusSnapshot(app *appsv1alpha1.ApplicationInstance, snapshot *helmengine.StatusSnapshot) {

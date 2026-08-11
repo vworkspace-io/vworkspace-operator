@@ -65,6 +65,25 @@ type JobResult struct {
 	Timestamp  time.Time   `json:"timestamp"`
 }
 
+// EndpointPayload reports a reachable service URL on Ready ApplicationInstance events.
+type EndpointPayload struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// ManagedStoragePayload carries inline S3 credentials for managed SeaweedFS registry sync.
+type ManagedStoragePayload struct {
+	AccessKeyID     string `json:"accessKeyId,omitempty"`
+	SecretAccessKey string `json:"secretAccessKey,omitempty"`
+	BucketName      string `json:"bucketName,omitempty"`
+}
+
+// EventExtras optional fields merged into selected ConditionTransition events.
+type EventExtras struct {
+	Endpoints      []EndpointPayload
+	ManagedStorage *ManagedStoragePayload
+}
+
 // Event represents a batched status event.
 type Event struct {
 	// EventKey is a stable idempotency key for control-plane-side deduplication.
@@ -72,6 +91,8 @@ type Event struct {
 	Kind        string             `json:"kind"`
 	ResourceRef AppliedRef         `json:"resourceRef"`
 	Conditions  []metav1.Condition `json:"conditions,omitempty"`
+	Endpoints      []EndpointPayload      `json:"endpoints,omitempty"`
+	ManagedStorage *ManagedStoragePayload `json:"managedStorage,omitempty"`
 	Timestamp   time.Time          `json:"timestamp"`
 }
 

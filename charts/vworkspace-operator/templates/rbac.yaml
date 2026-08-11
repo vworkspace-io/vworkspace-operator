@@ -46,6 +46,9 @@ rules:
     resources: ["seaweeds"]
     verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
   - apiGroups: ["seaweed.seaweedfs.com"]
+    resources: ["s3credentials"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["seaweed.seaweedfs.com"]
     resources: ["seaweeds/status"]
     verbs: ["get"]
 ---
