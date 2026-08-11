@@ -39,7 +39,9 @@ func (e *SeaweedEngine) ResolveManagedStorage(ctx context.Context, app *appsv1al
 }
 
 // ResolveManagedStorageState resolves inline credentials when available. pending is true
-// when matching S3Credentials CRs exist but are not yet Ready with usable keys.
+// when matching S3Credentials CRs exist but are not yet Ready with usable keys. When
+// multiple Ready credentials match the same Seaweed release, the lexicographically
+// smallest CR name wins (stable, documented selection for smoke vs chart credentials).
 func (e *SeaweedEngine) ResolveManagedStorageState(ctx context.Context, app *appsv1alpha1.ApplicationInstance) (*ManagedStorageSnapshot, bool, error) {
 	if err := validateReleaseRef(app); err != nil {
 		return nil, false, err

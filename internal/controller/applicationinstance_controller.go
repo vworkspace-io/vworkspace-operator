@@ -374,7 +374,7 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	ms, pending, err := r.SeaweedEngine.ResolveManagedStorageState(ctx, app)
 	if err != nil {
 		log.Error(err, "ResolveManagedStorage failed")
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	if ms == nil {
 		if pending {
