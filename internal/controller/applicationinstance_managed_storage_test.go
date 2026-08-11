@@ -178,6 +178,70 @@ func TestReconcileSeaweedManagedStorageEmitsSingleSupplementalEvent(t *testing.T
 	}
 }
 
+func TestReconcileSeaweedManagedStorageRetriesAckWithoutRepost(t *testing.T) {
+	t.Parallel()
+
+	app := sampleSeaweedApplicationInstance()
+	app.Status.Conditions = []metav1.Condition{{
+		Type:               appsv1alpha1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SeaweedReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+
+	scheme := runtime.NewScheme()
+	_ = appsv1alpha1.AddToScheme(scheme)
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(app).WithObjects(app).Build()
+
+	var posted []agent.Event
+	batcher := agent.NewEventBatcher(&managedStorageRecordingClient{postEvents: func(events []agent.Event) error {
+		posted = append(posted, events...)
+		return nil
+	}})
+
+	reconciler := &ApplicationInstanceReconciler{
+		Client: cl,
+		SeaweedEngine: &stagedManagedStorageEngine{
+			states: []managedStorageState{{
+				snapshot: &seaweedengine.ManagedStorageSnapshot{
+					AccessKeyID:     "admin",
+					SecretAccessKey: "secret",
+					BucketName:      testSeaweedRelease,
+				},
+			}},
+		},
+		Reporter: agent.NewStatusReporter(batcher),
+	}
+	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
+
+	reportKey := managedStorageReportKey(&seaweedengine.ManagedStorageSnapshot{
+		AccessKeyID:     "admin",
+		SecretAccessKey: "secret",
+		BucketName:      testSeaweedRelease,
+	})
+	reconciler.markStorageAckPending(app.Namespace, app.Name, reportKey)
+
+	result, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app)
+	if err != nil {
+		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
+	}
+	if !result.IsZero() {
+		t.Fatalf("expected quiet reconcile after ack retry, got %+v", result)
+	}
+	batcher.Flush(t.Context())
+	if len(posted) != 0 {
+		t.Fatalf("expected no repost while ack pending, got %d events", len(posted))
+	}
+
+	updated := &appsv1alpha1.ApplicationInstance{}
+	if err := cl.Get(context.Background(), client.ObjectKeyFromObject(app), updated); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if updated.Annotations[reportedManagedStorageAccessKeyAnnotation] != reportKey {
+		t.Fatalf("expected ack annotation %q, got %#v", reportKey, updated.Annotations)
+	}
+}
+
 func sampleSeaweedApplicationInstance() *appsv1alpha1.ApplicationInstance {
 	return &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{

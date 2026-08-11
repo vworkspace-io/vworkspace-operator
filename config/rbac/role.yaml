@@ -4,7 +4,6 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
-# Core resources. secrets get: P10-T006 resolves S3Credentials backing Secrets.
 - apiGroups:
   - ""
   resources:
@@ -152,7 +151,6 @@ rules:
   - get
   - list
   - watch
-  # Secret reads for credential resolution use the core secrets get rule above.
 - apiGroups:
   - seaweed.seaweedfs.com
   resources:

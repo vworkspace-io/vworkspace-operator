@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
@@ -49,6 +50,9 @@ type ApplicationInstanceReconciler struct {
 	Engine        helmengine.Engine
 	SeaweedEngine seaweedengine.Engine
 	Reporter      agent.StatusReporter
+
+	storageAckMu      sync.Mutex
+	storageAckPending map[string]string // namespace/name -> reportKey awaiting annotation patch
 }
 
 // +kubebuilder:rbac:groups=apps.vworkspace.io,resources=applicationinstances,verbs=get;list;watch;create;update;patch;delete
@@ -389,6 +393,16 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
 		return ctrl.Result{}, nil
 	}
+	if pendingKey, ok := r.pendingStorageAckReportKey(app.Namespace, app.Name); ok {
+		if pendingKey != reportKey {
+			return ctrl.Result{}, nil
+		}
+		if err := r.patchManagedStorageAck(ctx, app.Namespace, app.Name, reportKey); err != nil {
+			log.Error(err, "retry managed storage delivery ack")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{}, nil
+	}
 
 	ready, ok := conditions.Get(app.Status.Conditions, appsv1alpha1.ConditionReady)
 	if !ok {
@@ -425,25 +439,67 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 			continue
 		}
 		ref := event.ResourceRef
-		app := &appsv1alpha1.ApplicationInstance{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, app); err != nil {
-			logf.FromContext(ctx).Error(err, "ack managed storage delivery: get ApplicationInstance",
-				"namespace", ref.Namespace, "name", ref.Name)
-			continue
-		}
-		if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
-			continue
-		}
-		patchBase := app.DeepCopy()
-		if app.Annotations == nil {
-			app.Annotations = map[string]string{}
-		}
-		app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
-		if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
-			logf.FromContext(ctx).Error(err, "ack managed storage delivery: patch ApplicationInstance",
+		if err := r.patchManagedStorageAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
+			r.markStorageAckPending(ref.Namespace, ref.Name, reportKey)
+			logf.FromContext(ctx).Error(err, "ack managed storage delivery",
 				"namespace", ref.Namespace, "name", ref.Name)
 		}
 	}
+}
+
+func (r *ApplicationInstanceReconciler) patchManagedStorageAck(ctx context.Context, namespace, name, reportKey string) error {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		return fmt.Errorf("get ApplicationInstance: %w", err)
+	}
+	if app.Annotations[reportedManagedStorageAccessKeyAnnotation] == reportKey {
+		r.clearStorageAckPending(namespace, name)
+		return nil
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[reportedManagedStorageAccessKeyAnnotation] = reportKey
+	var patchErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+		}
+		if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+			patchErr = err
+			continue
+		}
+		r.clearStorageAckPending(namespace, name)
+		return nil
+	}
+	return fmt.Errorf("patch ApplicationInstance: %w", patchErr)
+}
+
+func storageAckKey(namespace, name string) string {
+	return namespace + "/" + name
+}
+
+func (r *ApplicationInstanceReconciler) markStorageAckPending(namespace, name, reportKey string) {
+	r.storageAckMu.Lock()
+	defer r.storageAckMu.Unlock()
+	if r.storageAckPending == nil {
+		r.storageAckPending = make(map[string]string)
+	}
+	r.storageAckPending[storageAckKey(namespace, name)] = reportKey
+}
+
+func (r *ApplicationInstanceReconciler) pendingStorageAckReportKey(namespace, name string) (string, bool) {
+	r.storageAckMu.Lock()
+	defer r.storageAckMu.Unlock()
+	reportKey, ok := r.storageAckPending[storageAckKey(namespace, name)]
+	return reportKey, ok
+}
+
+func (r *ApplicationInstanceReconciler) clearStorageAckPending(namespace, name string) {
+	r.storageAckMu.Lock()
+	defer r.storageAckMu.Unlock()
+	delete(r.storageAckPending, storageAckKey(namespace, name))
 }
 
 func agentEndpointsFromStatus(endpoints []appsv1alpha1.EndpointStatus) []agent.EndpointPayload {
