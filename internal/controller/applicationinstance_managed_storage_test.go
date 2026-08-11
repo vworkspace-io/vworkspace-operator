@@ -276,19 +276,24 @@ func TestReconcileSeaweedManagedStorageInFlightBlocksRepost(t *testing.T) {
 		},
 		Reporter: agent.NewStatusReporter(batcher),
 	}
-	reportKey := managedStorageReportKey(&seaweedengine.ManagedStorageSnapshot{
-		AccessKeyID:     "admin",
-		SecretAccessKey: "secret",
-		BucketName:      testSeaweedRelease,
-	})
-	reconciler.markStorageInFlight(app.Namespace, app.Name, reportKey)
 
 	if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
-		t.Fatalf("reconcileSeaweedManagedStorage: %v", err)
+		t.Fatalf("first reconcileSeaweedManagedStorage: %v", err)
+	}
+	if batcher.Len() != 1 {
+		t.Fatalf("expected one buffered event, got %d", batcher.Len())
+	}
+
+	posted = nil
+	if _, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app); err != nil {
+		t.Fatalf("second reconcileSeaweedManagedStorage: %v", err)
+	}
+	if batcher.Len() != 1 {
+		t.Fatalf("expected buffered event to remain while in flight, got %d", batcher.Len())
 	}
 	batcher.Flush(t.Context())
-	if len(posted) != 0 {
-		t.Fatalf("expected no repost while in flight, got %d events", len(posted))
+	if len(posted) != 1 {
+		t.Fatalf("expected one post after flush, got %d events", len(posted))
 	}
 
 	updated := &appsv1alpha1.ApplicationInstance{}

@@ -41,7 +41,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-key"
+const (
+	reportedManagedStorageAccessKeyAnnotation = "vworkspace.io/reported-managed-storage-key"
+	managedStorageAckRetryAnnotation          = "vworkspace.io/managed-storage-ack-retry"
+)
 
 // ApplicationInstanceReconciler reconciles ApplicationInstance resources.
 type ApplicationInstanceReconciler struct {
@@ -408,10 +411,14 @@ func (r *ApplicationInstanceReconciler) reconcileSeaweedManagedStorage(ctx conte
 	eventKey := agent.ManagedStorageEventKey(ref, ready, reportKey)
 
 	if inFlightKey, ok := r.inFlightStorageReportKey(app.Namespace, app.Name); ok {
-		if inFlightKey != reportKey {
+		switch {
+		case inFlightKey != reportKey:
 			r.clearStorageInFlight(app.Namespace, app.Name)
-		} else {
+		case r.Reporter.HasPendingEvent(eventKey):
 			return ctrl.Result{}, nil
+		default:
+			// Event left the batcher without delivery; allow a resend.
+			r.clearStorageInFlight(app.Namespace, app.Name)
 		}
 	}
 
@@ -455,9 +462,28 @@ func (r *ApplicationInstanceReconciler) AckManagedStorageDelivered(ctx context.C
 		r.clearStorageInFlight(ref.Namespace, ref.Name)
 		if err := r.patchManagedStorageAck(ctx, ref.Namespace, ref.Name, reportKey); err != nil {
 			r.markStorageAckPending(ref.Namespace, ref.Name, reportKey)
+			r.triggerManagedStorageAckRetry(ctx, ref.Namespace, ref.Name)
 			logf.FromContext(ctx).Error(err, "ack managed storage delivery",
 				"namespace", ref.Namespace, "name", ref.Name)
 		}
+	}
+}
+
+func (r *ApplicationInstanceReconciler) triggerManagedStorageAckRetry(ctx context.Context, namespace, name string) {
+	app := &appsv1alpha1.ApplicationInstance{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, app); err != nil {
+		logf.FromContext(ctx).Error(err, "trigger managed storage ack retry",
+			"namespace", namespace, "name", name)
+		return
+	}
+	patchBase := app.DeepCopy()
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+	app.Annotations[managedStorageAckRetryAnnotation] = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := r.Patch(ctx, app, client.MergeFrom(patchBase)); err != nil {
+		logf.FromContext(ctx).Error(err, "trigger managed storage ack retry patch",
+			"namespace", namespace, "name", name)
 	}
 }
 
