@@ -457,6 +457,7 @@ func TestReconcileSeaweedManagedStorageReportsEndpointsWithoutCredentials(t *tes
 		},
 		Reporter: agent.NewStatusReporter(batcher),
 	}
+	batcher.OnEventsDelivered = reconciler.AckManagedStorageDelivered
 
 	result, err := reconciler.reconcileSeaweedManagedStorage(context.Background(), app)
 	if err != nil {

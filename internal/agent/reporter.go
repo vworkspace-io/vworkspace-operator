@@ -51,6 +51,9 @@ func (r StatusReporter) ReportConditionTransitions(ref AppliedRef, prev, next []
 const managedStorageEventKeyPrefix = "managedStorage/"
 const endpointsEventKeyPrefix = "endpoints/"
 
+// EndpointsEventKeyPrefix exposes the endpoints supplemental event prefix for delivery acks.
+const EndpointsEventKeyPrefix = endpointsEventKeyPrefix
+
 // ManagedStorageEventKey builds the deduplication key for supplemental managed-storage events.
 func ManagedStorageEventKey(ref AppliedRef, ready metav1.Condition, reportKey string) string {
 	return fmt.Sprintf(
@@ -82,6 +85,18 @@ func (r StatusReporter) HasPendingEvent(eventKey string) bool {
 		return false
 	}
 	return r.batcher.HasEventKey(eventKey)
+}
+
+// EndpointsReportKeyFromEventKey extracts the endpoints report key from a supplemental event key.
+func EndpointsReportKeyFromEventKey(eventKey string) (string, bool) {
+	if !strings.HasPrefix(eventKey, endpointsEventKeyPrefix) {
+		return "", false
+	}
+	parts := strings.Split(eventKey, "/")
+	if len(parts) != 4 {
+		return "", false
+	}
+	return parts[3], true
 }
 
 // EndpointsEventKey builds the deduplication key for supplemental endpoint-only events.
