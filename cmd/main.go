@@ -78,6 +78,7 @@ func main() {
 	var agentCredentialsSecret string
 	var agentCredentialsNamespace string
 	var enableWebhooks bool
+	var enableSeaweedWatches bool
 	var approvalClaimSecret string
 	var veleroNamespace string
 	var tlsOpts []func(*tls.Config)
@@ -101,6 +102,8 @@ func main() {
 	flag.StringVar(&agentCredentialsNamespace, "agent-credentials-namespace", os.Getenv("POD_NAMESPACE"),
 		"Namespace of the agent credentials Secret.")
 	flag.BoolVar(&enableWebhooks, "webhooks-enabled", false, "Enable validating admission webhooks.")
+	flag.BoolVar(&enableSeaweedWatches, "seaweed-watches-enabled", false,
+		"Enable Seaweed and S3Credentials controller watches (requires seaweed.seaweedfs.com CRDs).")
 	flag.StringVar(&approvalClaimSecret, "approval-claim-secret", os.Getenv("VWORKSPACE_APPROVAL_CLAIM_SECRET"),
 		"HMAC secret for verifying Operation.spec.approvals.claim (vws1 tokens from the control plane).")
 	defaultVeleroNS := engines.DefaultVeleroNamespace
@@ -172,12 +175,20 @@ func main() {
 	eventBatcher.Log = ctrl.Log.WithName("agent-events")
 	statusReporter := agent.NewStatusReporter(eventBatcher)
 
+	seaweedWatches := seaweedengine.CRDsAvailable(mgr.GetRESTMapper())
+	if !seaweedWatches && enableSeaweedWatches {
+		setupLog.Info("seaweed-watches-enabled but Seaweed CRDs are not installed; controller watches disabled")
+	} else if seaweedWatches {
+		setupLog.Info("Seaweed CRDs available; registering ApplicationInstance watches on Seaweed and S3Credentials")
+	}
+
 	appReconciler := &controller.ApplicationInstanceReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Engine:        fluxEngine,
-		SeaweedEngine: seaweedEngine,
-		Reporter:      statusReporter,
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		Engine:                fluxEngine,
+		SeaweedEngine:         seaweedEngine,
+		Reporter:              statusReporter,
+		SeaweedWatchesEnabled: seaweedWatches,
 	}
 	eventBatcher.OnBeforePostEvents = appReconciler.PrepareManagedStoragePost
 	eventBatcher.OnEventsPostFailed = appReconciler.AbortManagedStoragePost
