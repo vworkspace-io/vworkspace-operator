@@ -181,3 +181,49 @@ func TestApplicationInstanceWebhookRejectsManagedInlineSecret(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestApplicationInstanceWebhookRejectsNativeSeaweedWithChart(t *testing.T) {
+	hook := newAppInstanceWebhook(t)
+	app := &appsv1alpha1.ApplicationInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
+		Spec: appsv1alpha1.ApplicationInstanceSpec{
+			AppRef: appsv1alpha1.AppRef{CatalogID: "seaweedfs"},
+			Chart: &appsv1alpha1.ChartSpec{
+				SourceType: appsv1alpha1.ChartSourceHelm,
+				URL:        "https://example.com",
+				Name:       "seaweedfs",
+				Version:    "0.1.0",
+			},
+			Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
+			Values: &appsv1alpha1.ValuesSpec{
+				Source: appsv1alpha1.ValuesSourceInline,
+				Inline: &runtime.RawExtension{Raw: []byte(`{"s3":{"replicas":1}}`)},
+			},
+		},
+	}
+	_, err := hook.ValidateCreate(context.Background(), app)
+	if err == nil {
+		t.Fatal("expected native SeaweedFS instance with chart to be rejected at admission")
+	}
+	if !strings.Contains(err.Error(), "spec.chart must not be set for native SeaweedFS workloads") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplicationInstanceWebhookAdmitsNativeSeaweedWithoutChart(t *testing.T) {
+	hook := newAppInstanceWebhook(t)
+	app := &appsv1alpha1.ApplicationInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
+		Spec: appsv1alpha1.ApplicationInstanceSpec{
+			AppRef: appsv1alpha1.AppRef{CatalogID: "seaweedfs"},
+			Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
+			Values: &appsv1alpha1.ValuesSpec{
+				Source: appsv1alpha1.ValuesSourceInline,
+				Inline: &runtime.RawExtension{Raw: []byte(`{"s3":{"replicas":1}}`)},
+			},
+		},
+	}
+	if _, err := hook.ValidateCreate(context.Background(), app); err != nil {
+		t.Fatalf("expected chart-less native SeaweedFS instance to be admitted: %v", err)
+	}
+}
