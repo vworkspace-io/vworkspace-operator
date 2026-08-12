@@ -140,7 +140,7 @@ kind: ApplicationInstance
 metadata:
   name: ${INSTANCE_NAME}
   namespace: ${NAMESPACE}
-  spec:
+spec:
   appRef:
     catalogId: seaweedfs
   release:
