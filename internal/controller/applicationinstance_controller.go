@@ -61,6 +61,9 @@ type ApplicationInstanceReconciler struct {
 	Engine        helmengine.Engine
 	SeaweedEngine seaweedengine.Engine
 	Reporter      agent.StatusReporter
+	// SeaweedWatchesEnabled registers Owns/Watches on Seaweed and S3Credentials when true.
+	// Requires seaweed.seaweedfs.com CRDs; leave false on contract-tier clusters without them.
+	SeaweedWatchesEnabled bool
 
 	storageDeliveryMu sync.Mutex
 	storageInFlight   map[string]string // namespace/name -> reportKey enqueued, not yet accepted by control plane
@@ -987,15 +990,17 @@ func (r *ApplicationInstanceReconciler) applySeaweedStatusSnapshot(app *appsv1al
 }
 
 func (r *ApplicationInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv1alpha1.ApplicationInstance{}).
-		Owns(seaweedengine.SeaweedObject()).
-		Watches(
-			seaweedengine.S3CredentialsObject(),
-			handler.EnqueueRequestsFromMapFunc(r.mapS3CredentialsToApplicationInstance),
-		).
-		Named("applicationinstance").
-		Complete(r)
+	builder := ctrl.NewControllerManagedBy(mgr).
+		For(&appsv1alpha1.ApplicationInstance{})
+	if r.SeaweedWatchesEnabled {
+		builder = builder.
+			Owns(seaweedengine.SeaweedObject()).
+			Watches(
+				seaweedengine.S3CredentialsObject(),
+				handler.EnqueueRequestsFromMapFunc(r.mapS3CredentialsToApplicationInstance),
+			)
+	}
+	return builder.Named("applicationinstance").Complete(r)
 }
 
 func (r *ApplicationInstanceReconciler) mapS3CredentialsToApplicationInstance(ctx context.Context, obj client.Object) []reconcile.Request {

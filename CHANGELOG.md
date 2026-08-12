@@ -15,6 +15,18 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
   until `status.phase=Available` (fails fast on `Unavailable`) so control-plane
   BYO S3 BSL validation can rely on agent job success.
 
+## [0.0.13] - 2026-08-12
+
+Hotfix — operator no longer CrashLoopBackOff on contract-tier clusters without Seaweed CRDs (P10-T006 regression in v0.0.12).
+
+### Fixed
+
+- ApplicationInstance controller registers Seaweed and S3Credentials watches only when `seaweed.seaweedfs.com` CRDs are present. Contract-tier installs (`seaweedfsOperator.crdsInstall: false`, default) start cleanly; bundle profiles enable watches via `seaweedfsOperator.crdsInstall: true` or by installing CRDs separately.
+
+### Added
+
+- `--seaweed-watches-enabled` manager flag (Helm sets it when `seaweedfsOperator.crdsInstall=true`).
+
 ## [0.0.10] - 2026-06-27
 
 Phase 6 operator release — adds `ApplicationInstance.spec.mode: placeholder` for per-cluster cluster-ops sentinel instances (Option B from the hub design). **Upgrade the operator (CRDs + controller) before enabling placeholder mode from the control plane** — the server emits `spec.mode: placeholder` only after operator **v0.0.10+** is installed.

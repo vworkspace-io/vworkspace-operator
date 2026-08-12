@@ -39,6 +39,9 @@ spec:
             {{- if .Values.velero.enabled }}
             - --velero-namespace={{ .Values.velero.namespace }}
             {{- end }}
+            {{- if .Values.seaweedfsOperator.crdsInstall }}
+            - --seaweed-watches-enabled=true
+            {{- end }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
