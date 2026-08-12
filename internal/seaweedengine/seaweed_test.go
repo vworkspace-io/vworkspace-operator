@@ -175,12 +175,6 @@ func sampleSeaweedApp() *appsv1alpha1.ApplicationInstance {
 		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
 			AppRef: appsv1alpha1.AppRef{CatalogID: CatalogIDSeaweedFS},
-			Chart: &appsv1alpha1.ChartSpec{
-				SourceType: appsv1alpha1.ChartSourceHelm,
-				URL:        "https://vworkspace-io.github.io/vworkspace-server/charts/",
-				Name:       "seaweedfs",
-				Version:    "0.1.0",
-			},
 			Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
 			Values: &appsv1alpha1.ValuesSpec{
 				Source: appsv1alpha1.ValuesSourceInline,
