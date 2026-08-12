@@ -80,6 +80,46 @@ spec:
 
 `chart`, `release`, and `values` must be omitted in placeholder mode. Capability annotations are required so the operation webhook can match `Operation.spec.engine` to the target.
 
+### Native SeaweedFS (`catalogId: seaweedfs`)
+
+Requires operator **v0.0.12+** with `SeaweedEngine` (P10-T004) and the bundled `seaweedfs-operator` CRDs. SeaweedFS is reconciled as a native `Seaweed` CR — **not** via Flux `HelmRelease`. In this path `spec.chart` must be omitted; `release` and `values` are still required.
+
+```yaml
+apiVersion: apps.vworkspace.io/v1alpha1
+kind: ApplicationInstance
+metadata:
+  name: seaweedfs-dev
+  namespace: seaweedfs
+spec:
+  appRef:
+    catalogId: seaweedfs
+  release:
+    name: seaweedfs-dev
+    namespace: seaweedfs
+  values:
+    source: inline
+    inline:
+      master:
+        replicas: 1
+      volume:
+        replicas: 1
+        requests:
+          storage: 10Gi
+      filer:
+        replicas: 1
+      s3:
+        replicas: 1
+```
+
+**Upgrade from wrapper-chart SeaweedFS (P10-T003 → P10-T007):** existing `ApplicationInstance` objects that still declare `spec.chart` for `catalogId: seaweedfs` are rejected at admission. Remove the `chart` stanza (control-plane redeploy after server P10-T007 emits chart-less jobs, or patch in-cluster):
+
+```bash
+kubectl patch applicationinstance seaweedfs-dev -n seaweedfs --type=json \
+  -p='[{"op":"remove","path":"/spec/chart"}]'
+```
+
+Then confirm the instance reconciles via `SeaweedEngine` (`Ready=True`, no `HelmRelease`).
+
 ## `spec`
 
 ### `mode`
@@ -98,7 +138,7 @@ Switching an existing managed instance that owns (or may own) a Helm release to 
 
 ### `chart`
 
-Identifies the Helm chart to deploy. **Required in `managed` mode; must be omitted in `placeholder` mode.**
+Identifies the Helm chart to deploy. **Required in `managed` mode for Helm-first catalog entries; must be omitted in `placeholder` mode and for native workloads such as `catalogId: seaweedfs` (see above).**
 
 | Field                | Type   | Required | Description |
 |----------------------|--------|----------|-------------|
@@ -171,6 +211,7 @@ The operator ships a validating admission webhook (`validate.applicationinstance
 - **Values exclusivity.** Exactly one of `values.inline`, `values.secretRef`, `values.configMapRef` is populated, matching `values.source`. The webhook rejects multiple or absent sources.
 - **Immutability of release identity.** `release.name` and `release.namespace` are immutable after creation. Renaming a release in place would orphan the underlying `HelmRelease`; the right move is to delete and recreate the `ApplicationInstance`.
 - **Placeholder contract.** When `spec.mode` is `placeholder`, `chart`, `release`, and `values` must be absent. Managed→placeholder updates are rejected when the instance owns or may own a Helm release.
+- **Native SeaweedFS.** When `spec.appRef.catalogId` is `seaweedfs`, `spec.chart` must be absent; `release` and `values` are required. Chart-backed SeaweedFS instances from P10-T003 must drop `spec.chart` before upgrade (see migration note above).
 - **Mode default.** Empty or unset `spec.mode` is treated as `managed` (CRD default).
 
 The webhook is strict by default. Soft warnings (deprecated chart source, deprecated integration shortcut) are surfaced as conditions on the resource rather than as admission rejections, so the operator can ship deprecations without breaking applies.

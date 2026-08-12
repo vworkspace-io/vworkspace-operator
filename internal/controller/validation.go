@@ -65,7 +65,10 @@ func validatePlaceholderSpec(namespace string, spec appsv1alpha1.ApplicationInst
 // still required; chart must be omitted so Flux Helm is not invoked.
 func validateNativeSeaweedSpec(namespace string, spec appsv1alpha1.ApplicationInstanceSpec) error {
 	if spec.Chart != nil {
-		return fmt.Errorf("spec.chart must not be set for native SeaweedFS workloads")
+		return fmt.Errorf(
+			"spec.chart must not be set for native SeaweedFS workloads " +
+				"(remove spec.chart and redeploy; see docs/api/application-instance.md)",
+		)
 	}
 	if spec.Release == nil {
 		return fmt.Errorf("spec.release is required")

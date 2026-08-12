@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Changed
+
+- **P10-T007:** `ApplicationInstance` validation for `catalogId: seaweedfs` rejects
+  `spec.chart` (native `SeaweedEngine` path). Upgrade note and patch command in
+  [application-instance.md](docs/api/application-instance.md#native-seaweedfs-catalogid-seaweedfs).
+
 ### Added
 
 - **P8-T015:** Document BYO S3 `storageLocation` usage in
