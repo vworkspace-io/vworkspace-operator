@@ -333,7 +333,7 @@ var _ = Describe("ApplicationInstance Controller", func() {
 				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
 			},
 			Spec: appsv1alpha1.ApplicationInstanceSpec{
-				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				AppRef:  appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
 				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-dev", Namespace: "default"},
 				Values: &appsv1alpha1.ValuesSpec{
 					Source: appsv1alpha1.ValuesSourceInline,
@@ -380,7 +380,7 @@ var _ = Describe("ApplicationInstance Controller", func() {
 				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
 			},
 			Spec: appsv1alpha1.ApplicationInstanceSpec{
-				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				AppRef:  appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
 				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-cr", Namespace: "default"},
 				Values: &appsv1alpha1.ValuesSpec{
 					Source: appsv1alpha1.ValuesSourceInline,
@@ -418,7 +418,7 @@ var _ = Describe("ApplicationInstance Controller", func() {
 				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
 			},
 			Spec: appsv1alpha1.ApplicationInstanceSpec{
-				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				AppRef:  appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
 				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-del", Namespace: "default"},
 				Values: &appsv1alpha1.ValuesSpec{
 					Source: appsv1alpha1.ValuesSourceInline,
@@ -464,7 +464,7 @@ var _ = Describe("ApplicationInstance Controller", func() {
 				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
 			},
 			Spec: appsv1alpha1.ApplicationInstanceSpec{
-				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				AppRef:  appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
 				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-migrate", Namespace: "default"},
 				Values: &appsv1alpha1.ValuesSpec{
 					Source: appsv1alpha1.ValuesSourceInline,
@@ -507,7 +507,7 @@ var _ = Describe("ApplicationInstance Controller", func() {
 				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
 			},
 			Spec: appsv1alpha1.ApplicationInstanceSpec{
-				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				AppRef:  appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
 				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-migrate-del", Namespace: "default"},
 				Values: &appsv1alpha1.ValuesSpec{
 					Source: appsv1alpha1.ValuesSourceInline,
@@ -551,7 +551,7 @@ var _ = Describe("ApplicationInstance Controller", func() {
 				Finalizers: []string{appsv1alpha1.ApplicationInstanceFinalizer},
 			},
 			Spec: appsv1alpha1.ApplicationInstanceSpec{
-				AppRef: appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
+				AppRef:  appsv1alpha1.AppRef{CatalogID: seaweedengine.CatalogIDSeaweedFS},
 				Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-s3-wait", Namespace: "default"},
 				Values: &appsv1alpha1.ValuesSpec{
 					Source: appsv1alpha1.ValuesSourceInline,

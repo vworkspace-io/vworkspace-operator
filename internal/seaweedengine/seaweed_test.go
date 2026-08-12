@@ -174,7 +174,7 @@ func sampleSeaweedApp() *appsv1alpha1.ApplicationInstance {
 	return &appsv1alpha1.ApplicationInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
 		Spec: appsv1alpha1.ApplicationInstanceSpec{
-			AppRef: appsv1alpha1.AppRef{CatalogID: CatalogIDSeaweedFS},
+			AppRef:  appsv1alpha1.AppRef{CatalogID: CatalogIDSeaweedFS},
 			Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
 			Values: &appsv1alpha1.ValuesSpec{
 				Source: appsv1alpha1.ValuesSourceInline,
