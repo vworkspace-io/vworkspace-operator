@@ -75,6 +75,34 @@ func TestValidateApplicationInstanceSpecPlaceholder(t *testing.T) {
 	}
 }
 
+func TestValidateApplicationInstanceSpecNativeSeaweed(t *testing.T) {
+	native := &appsv1alpha1.ApplicationInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
+		Spec: appsv1alpha1.ApplicationInstanceSpec{
+			AppRef:  appsv1alpha1.AppRef{CatalogID: "seaweedfs"},
+			Release: &appsv1alpha1.ReleaseSpec{Name: "seaweedfs-dev", Namespace: "seaweedfs"},
+			Values: &appsv1alpha1.ValuesSpec{
+				Source: appsv1alpha1.ValuesSourceInline,
+				Inline: &runtime.RawExtension{Raw: []byte(`{"master":{"replicas":1},"s3":{"replicas":1}}`)},
+			},
+		},
+	}
+	if err := ValidateApplicationInstanceSpec(native); err != nil {
+		t.Fatalf("expected valid native seaweedfs spec (no chart), got %v", err)
+	}
+
+	withChart := native.DeepCopy()
+	withChart.Spec.Chart = &appsv1alpha1.ChartSpec{
+		SourceType: appsv1alpha1.ChartSourceHelm,
+		URL:        "https://charts.example.com",
+		Name:       "seaweedfs",
+		Version:    "0.1.0",
+	}
+	if err := ValidateApplicationInstanceSpec(withChart); err == nil {
+		t.Fatal("expected error when native seaweedfs declares a chart")
+	}
+}
+
 func TestValidateOperationSpec(t *testing.T) {
 	op := &opsv1alpha1.Operation{
 		Spec: opsv1alpha1.OperationSpec{

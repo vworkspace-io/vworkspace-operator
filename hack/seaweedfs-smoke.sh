@@ -143,11 +143,6 @@ metadata:
 spec:
   appRef:
     catalogId: seaweedfs
-  chart:
-    sourceType: helm
-    url: https://raw.githubusercontent.com/vworkspace-io/vworkspace-server/main/charts/
-    name: seaweedfs
-    version: "0.1.0"
   release:
     name: ${INSTANCE_NAME}
     namespace: ${NAMESPACE}

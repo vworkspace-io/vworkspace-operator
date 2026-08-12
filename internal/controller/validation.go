@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/seaweedengine"
 )
 
 func ValidateApplicationInstanceSpec(app *appsv1alpha1.ApplicationInstance) error {
@@ -17,6 +18,9 @@ func ValidateApplicationInstanceSpec(app *appsv1alpha1.ApplicationInstance) erro
 	}
 	if spec.IsPlaceholder() {
 		return validatePlaceholderSpec(app.Namespace, spec)
+	}
+	if seaweedengine.IsSeaweedWorkload(app) {
+		return validateNativeSeaweedSpec(app.Namespace, spec)
 	}
 	if spec.Chart == nil {
 		return fmt.Errorf("spec.chart is required")
@@ -54,6 +58,28 @@ func validatePlaceholderSpec(namespace string, spec appsv1alpha1.ApplicationInst
 		}
 	}
 	return nil
+}
+
+// validateNativeSeaweedSpec relaxes chart requirements for catalogId=seaweedfs
+// instances reconciled by SeaweedEngine (P10-T004). Release and values are
+// still required; chart must be omitted so Flux Helm is not invoked.
+func validateNativeSeaweedSpec(namespace string, spec appsv1alpha1.ApplicationInstanceSpec) error {
+	if spec.Chart != nil {
+		return fmt.Errorf(
+			"spec.chart must not be set for native SeaweedFS workloads " +
+				"(remove spec.chart and redeploy; see docs/api/application-instance.md)",
+		)
+	}
+	if spec.Release == nil {
+		return fmt.Errorf("spec.release is required")
+	}
+	if err := validateRelease(namespace, *spec.Release); err != nil {
+		return err
+	}
+	if spec.Values == nil {
+		return fmt.Errorf("spec.values is required")
+	}
+	return validateValues(*spec.Values)
 }
 
 func validateChart(chart appsv1alpha1.ChartSpec) error {

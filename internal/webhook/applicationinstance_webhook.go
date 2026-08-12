@@ -20,6 +20,7 @@ import (
 	"context"
 
 	appsv1alpha1 "github.com/vworkspace-io/vworkspace-operator/api/apps/v1alpha1"
+	"github.com/vworkspace-io/vworkspace-operator/internal/controller"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -54,19 +55,20 @@ func (w *ApplicationInstanceWebhook) ValidateUpdate(_ context.Context, oldObj, a
 	return nil, validateApplicationInstance(app)
 }
 
-// validateApplicationInstance runs admission-time checks. Placeholder
-// (cluster-ops) instances own no Helm release and carry no chart values, so the
-// inline-secret scan is skipped for them; forbidden fields (chart/values) and an
-// out-of-namespace release are still rejected at admission rather than only at
-// reconcile time.
+// validateApplicationInstance runs admission-time checks shared with the
+// reconciler (ValidateApplicationInstanceSpec) plus inline-secret rejection
+// for managed and native workloads that supply inline values.
 func validateApplicationInstance(app *appsv1alpha1.ApplicationInstance) error {
-	if app.Spec.IsPlaceholder() {
-		return validatePlaceholderSpec(app.Namespace, app.Spec)
+	if err := controller.ValidateApplicationInstanceSpec(app); err != nil {
+		return err
 	}
-	if app.Spec.Values == nil {
+	if app.Spec.IsPlaceholder() {
 		return nil
 	}
-	return validateInlineValues(*app.Spec.Values)
+	if app.Spec.Values != nil {
+		return validateInlineValues(*app.Spec.Values)
+	}
+	return nil
 }
 
 func (w *ApplicationInstanceWebhook) ValidateDelete(_ context.Context, _ *appsv1alpha1.ApplicationInstance) (admission.Warnings, error) {
