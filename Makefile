@@ -44,9 +44,16 @@ help: ## Display this help.
 
 ##@ Development
 
+CHART_CRDS_DIR := charts/vworkspace-operator/files/crds
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(MAKE) sync-chart-crds
+
+.PHONY: sync-chart-crds
+sync-chart-crds: ## Copy generated CRD YAML into the Helm chart (release + crds.install).
+	cp config/crd/bases/*.yaml "$(CHART_CRDS_DIR)/"
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
