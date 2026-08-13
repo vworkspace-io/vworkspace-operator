@@ -115,7 +115,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	opHook, err := NewOperationWebhook(mgr.GetScheme(), mgr.GetClient(), OperationWebhookOptions{
+	opHook, err := NewOperationWebhook(mgr.GetScheme(), mgr.GetAPIReader(), OperationWebhookOptions{
 		ApprovalClaimSecret: envtestApprovalClaimSecret,
 	})
 	if err != nil {

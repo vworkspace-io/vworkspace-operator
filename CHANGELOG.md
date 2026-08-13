@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-08-13
+
+### Fixed
+
+- **Operation admission webhook cache race.** Target existence and concurrency checks now use the API reader instead of the manager cache, fixing flaky envtest/CI failures and false "ApplicationInstance not found" denials immediately after create.
+
 ## [0.0.14] - 2026-08-13
 
 Hotfix — shipped Helm chart and release `crds.yaml` were missing `ApplicationInstance.spec.mode` (and other kubebuilder schema updates) because chart CRDs under `files/crds/` were not synced from `config/crd/bases/` (P10-T011).

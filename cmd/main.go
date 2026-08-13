@@ -232,7 +232,7 @@ func main() {
 	}
 
 	if enableWebhooks {
-		opWebhook, err := webhook.NewOperationWebhook(mgr.GetScheme(), mgr.GetClient(), webhook.OperationWebhookOptions{
+		opWebhook, err := webhook.NewOperationWebhook(mgr.GetScheme(), mgr.GetAPIReader(), webhook.OperationWebhookOptions{
 			ApprovalClaimSecret: strings.TrimSpace(approvalClaimSecret),
 		})
 		if err != nil {

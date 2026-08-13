@@ -68,7 +68,7 @@ type Conflict struct {
 }
 
 // FindConflict returns the first in-flight operation on the same target that conflicts.
-func FindConflict(ctx context.Context, cl client.Client, op *opsv1alpha1.Operation) (*Conflict, error) {
+func FindConflict(ctx context.Context, cl client.Reader, op *opsv1alpha1.Operation) (*Conflict, error) {
 	list := &opsv1alpha1.OperationList{}
 	if err := cl.List(ctx, list, client.InNamespace(op.Namespace)); err != nil {
 		return nil, fmt.Errorf("list operations: %w", err)
