@@ -33,7 +33,7 @@ import (
 // OperationWebhook validates Operation resources at admission time.
 type OperationWebhook struct {
 	decoder             admission.Decoder
-	client              client.Client
+	reader              client.Reader
 	approvalClaimSecret string
 }
 
@@ -42,11 +42,11 @@ type OperationWebhookOptions struct {
 	ApprovalClaimSecret string
 }
 
-func NewOperationWebhook(scheme *runtime.Scheme, cl client.Client, opts OperationWebhookOptions) (*OperationWebhook, error) {
+func NewOperationWebhook(scheme *runtime.Scheme, reader client.Reader, opts OperationWebhookOptions) (*OperationWebhook, error) {
 	decoder := admission.NewDecoder(scheme)
 	return &OperationWebhook{
 		decoder:             decoder,
-		client:              cl,
+		reader:              reader,
 		approvalClaimSecret: opts.ApprovalClaimSecret,
 	}, nil
 }
@@ -83,13 +83,13 @@ func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha
 	if err := validateKnownOperationType(op); err != nil {
 		return err
 	}
-	if err := validateNamespaceAllowedTypes(ctx, w.client, op); err != nil {
+	if err := validateNamespaceAllowedTypes(ctx, w.reader, op); err != nil {
 		return err
 	}
 	if err := validateOperationBuiltinTemplate(op); err != nil {
 		return err
 	}
-	target, err := validateOperationTargetExists(ctx, w.client, op)
+	target, err := validateOperationTargetExists(ctx, w.reader, op)
 	if err != nil {
 		return err
 	}
@@ -107,5 +107,5 @@ func (w *OperationWebhook) validateOperation(ctx context.Context, op *opsv1alpha
 	if err := validateOperationApprovalClaim(w.approvalClaimSecret, op); err != nil {
 		return err
 	}
-	return validateOperationConcurrency(ctx, w.client, op)
+	return validateOperationConcurrency(ctx, w.reader, op)
 }

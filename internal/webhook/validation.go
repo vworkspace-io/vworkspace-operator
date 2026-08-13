@@ -64,7 +64,7 @@ func validateKnownOperationType(op *opsv1alpha1.Operation) error {
 	}
 }
 
-func validateNamespaceAllowedTypes(ctx context.Context, cl client.Client, op *opsv1alpha1.Operation) error {
+func validateNamespaceAllowedTypes(ctx context.Context, cl client.Reader, op *opsv1alpha1.Operation) error {
 	ns := &corev1.Namespace{}
 	if err := cl.Get(ctx, client.ObjectKey{Name: op.Namespace}, ns); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -94,7 +94,7 @@ func parseAllowedTypes(raw string) map[string]struct{} {
 	return out
 }
 
-func validateOperationTargetExists(ctx context.Context, cl client.Client, op *opsv1alpha1.Operation) (*appsv1alpha1.ApplicationInstance, error) {
+func validateOperationTargetExists(ctx context.Context, cl client.Reader, op *opsv1alpha1.Operation) (*appsv1alpha1.ApplicationInstance, error) {
 	target := &appsv1alpha1.ApplicationInstance{}
 	key := client.ObjectKey{Namespace: op.Namespace, Name: op.Spec.TargetRef.Name}
 	if err := cl.Get(ctx, key, target); err != nil {
@@ -189,7 +189,7 @@ func validateOperationCapability(target *appsv1alpha1.ApplicationInstance, op *o
 	return nil
 }
 
-func validateOperationConcurrency(ctx context.Context, cl client.Client, op *opsv1alpha1.Operation) error {
+func validateOperationConcurrency(ctx context.Context, cl client.Reader, op *opsv1alpha1.Operation) error {
 	conflict, err := concurrency.FindConflict(ctx, cl, op)
 	if err != nil {
 		return err
