@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-08-13
+
+Hotfix — shipped Helm chart and release `crds.yaml` were missing `ApplicationInstance.spec.mode` (and other kubebuilder schema updates) because chart CRDs under `files/crds/` were not synced from `config/crd/bases/` (P10-T011).
+
+### Fixed
+
+- **`ApplicationInstance.spec.mode` in shipped CRDs.** Fresh installs of v0.0.13 applied stale chart CRDs that still required `spec.chart`/`spec.release`/`spec.values` and omitted `spec.mode`, causing server-side apply failures for placeholder cluster-ops payloads (`field not declared in schema`). `make manifests` now runs `sync-chart-crds`; CI verifies chart CRDs match generated bases.
+- Upgrade: apply release `crds.yaml` (or `helm upgrade` with `crds.install=true`) **before** reconnecting clusters that emit `spec.mode: placeholder`.
+
 ### Changed
 
 - **P10-T007:** `ApplicationInstance` validation for `catalogId: seaweedfs` rejects
